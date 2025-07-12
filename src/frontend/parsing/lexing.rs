@@ -167,6 +167,7 @@ impl<'a> Lexer<'a> {
             ']' => single_token!(TokenKind::RightBracket),
             '.' => single_token!(TokenKind::Dot),
             ':' => single_token!(TokenKind::Colon),
+            ',' => single_token!(TokenKind::Coma),
             '=' => comp_token!('=', TokenKind::EqualsEquals, TokenKind::Equals),
             '<' => comp_token!('=', TokenKind::LesserEquals, TokenKind::LesserThan),
             '>' => comp_token!('=', TokenKind::GreaterEquals, TokenKind::GreaterThan),
