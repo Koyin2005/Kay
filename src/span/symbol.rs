@@ -123,6 +123,10 @@ symbols! {
         FALSE, False = "false"
         PRINT, Print = "print"
         FUN, Fun = "fun"
+        LET, Let = "let"
+        MUT, Mut = "mut"
+        AND, And = "and"
+        OR, Or = "or"
     }
 
 

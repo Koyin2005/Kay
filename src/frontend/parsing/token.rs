@@ -14,6 +14,7 @@ pub enum TokenKind {
     RightParen,
     Dot,
     Colon,
+    Bang,
 
     EqualsEquals,
     LesserEquals,
@@ -29,6 +30,10 @@ pub enum TokenKind {
     Begin,
     Print,
     Fun,
+    Let,
+    Mut,
+    And,
+    Or,
 
     Ident(Symbol),
     Literal(Literal),

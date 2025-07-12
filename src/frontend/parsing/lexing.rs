@@ -83,6 +83,10 @@ impl<'a> Lexer<'a> {
             keywords::FALSE => TokenKind::Literal(Literal::False),
             keywords::PRINT => TokenKind::Print,
             keywords::FUN => TokenKind::Fun,
+            keywords::LET => TokenKind::Let,
+            keywords::MUT => TokenKind::Mut,
+            keywords::AND => TokenKind::And,
+            keywords::OR => TokenKind::Or,
             symbol => TokenKind::Ident(symbol),
         };
         (kind, len)
@@ -142,6 +146,7 @@ impl<'a> Lexer<'a> {
             c if c.is_ascii_alphabetic() || c == '_' => self.ident_or_keyword(),
             '\"' => self.string(),
             '1'..='9' => self.number(),
+            '!' => single_token!(TokenKind::Bang),
             '/' => single_token!(TokenKind::Slash),
             '*' => single_token!(TokenKind::Star),
             '+' => single_token!(TokenKind::Plus),
