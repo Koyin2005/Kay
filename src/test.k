@@ -1,1 +1,1 @@
-true false "ello world!;
+"ello world!"fun

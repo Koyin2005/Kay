@@ -45,13 +45,22 @@ impl<'a> Lexer<'a> {
         self.chars.next();
         self.curr_offset += 1;
     }
-    ///Returns a symbol formed from the start_offset to the end_offset and its length
-    fn symbol(&self) -> (Symbol, usize) {
+    ///Returns a symbol formed from the current start_offset to the current end_offset and its length
+    fn curent_symbol(&self) -> (Symbol, usize) {
         (
             Symbol::intern(
                 &self.source.source()[self.start_offset as usize..self.curr_offset as usize],
             ),
             (self.curr_offset - self.start_offset) as usize,
+        )
+    }
+    ///Returns a symbol formed from the start_offset to the end_offset and its length
+    fn symbol(&self, start_offset: u32, end_offset : u32) -> (Symbol, usize) {
+        (
+            Symbol::intern(
+                &self.source.source()[start_offset as usize..end_offset as usize],
+            ),
+            (end_offset - start_offset) as usize,
         )
     }
     fn ident_or_keyword(&mut self) -> (TokenKind, usize) {
@@ -60,7 +69,7 @@ impl<'a> Lexer<'a> {
         {
             self.advance();
         }
-        let (symbol, len) = self.symbol();
+        let (symbol, len) = self.curent_symbol();
         let kind = match symbol {
             keywords::IF => TokenKind::If,
             keywords::THEN => TokenKind::Then,
@@ -82,7 +91,7 @@ impl<'a> Lexer<'a> {
         while let Some('0'..='9') = self.peek() {
             self.advance();
         }
-        let (symbol, len) = self.symbol();
+        let (symbol, len) = self.curent_symbol();
         (TokenKind::Literal(Literal::Int(symbol)), len)
     }
     fn string(&mut self) -> (TokenKind, usize) {
@@ -91,16 +100,17 @@ impl<'a> Lexer<'a> {
         {
             self.advance();
         }
-        let is_complete = if matches!(self.peek(), Some('\"')) {
+        let (is_complete,end_offset) = if matches!(self.peek(), Some('\"')) {
             self.advance();
-            StringComplete::Yes
+            (StringComplete::Yes,self.curr_offset - 1)
         } else {
-            StringComplete::No
+            (StringComplete::No,self.curr_offset)
         };
-        let (symbol, len) = self.symbol();
+        let len = self.curr_offset - self.start_offset;
+        let (symbol, _) = self.symbol(self.start_offset + 1, end_offset);
         (
             TokenKind::Literal(Literal::String(symbol, is_complete)),
-            len,
+            len as usize,
         )
     }
     fn next_token(&mut self) -> Token {
