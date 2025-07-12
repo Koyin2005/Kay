@@ -122,6 +122,7 @@ symbols! {
         TRUE, True = "true"
         FALSE, False = "false"
         PRINT, Print = "print"
+        FUN, Fun = "fun"
     }
 
 

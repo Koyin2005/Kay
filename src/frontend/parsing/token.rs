@@ -28,6 +28,7 @@ pub enum TokenKind {
     For,
     Begin,
     Print,
+    Fun,
 
     Ident(Symbol),
     Literal(Literal),

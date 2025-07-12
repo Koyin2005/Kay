@@ -73,6 +73,7 @@ impl<'a> Lexer<'a> {
             keywords::TRUE => TokenKind::Literal(Literal::True),
             keywords::FALSE => TokenKind::Literal(Literal::False),
             keywords::PRINT => TokenKind::Print,
+            keywords::FUN => TokenKind::Fun,
             symbol => TokenKind::Ident(symbol),
         };
         (kind, len)
