@@ -45,6 +45,10 @@ impl<'a> Lexer<'a> {
         self.chars.next();
         self.curr_offset += 1;
     }
+
+    fn current_symbol_str(&self) -> &str{
+        &self.source.source()[self.start_offset as usize..self.curr_offset as usize]
+    }
     ///Returns a symbol formed from the current start_offset to the current end_offset and its length
     fn curent_symbol(&self) -> (Symbol, usize) {
         (
@@ -69,25 +73,30 @@ impl<'a> Lexer<'a> {
         {
             self.advance();
         }
-        let (symbol, len) = self.curent_symbol();
-        let kind = match symbol {
-            keywords::IF => TokenKind::If,
-            keywords::THEN => TokenKind::Then,
-            keywords::ELSE => TokenKind::Else,
-            keywords::END => TokenKind::End,
-            keywords::BEGIN => TokenKind::Begin,
-            keywords::DO => TokenKind::Do,
-            keywords::WHILE => TokenKind::While,
-            keywords::FOR => TokenKind::For,
-            keywords::TRUE => TokenKind::Literal(Literal::True),
-            keywords::FALSE => TokenKind::Literal(Literal::False),
-            keywords::PRINT => TokenKind::Print,
-            keywords::FUN => TokenKind::Fun,
-            keywords::LET => TokenKind::Let,
-            keywords::MUT => TokenKind::Mut,
-            keywords::AND => TokenKind::And,
-            keywords::OR => TokenKind::Or,
-            symbol => TokenKind::Ident(symbol),
+        let len = (self.curr_offset - self.start_offset) as usize;
+        let kind = match self.current_symbol_str() {
+            "if" => TokenKind::If,
+            "then" => TokenKind::Then,
+            "else" => TokenKind::Else,
+            "end" => TokenKind::End,
+            "begin" => TokenKind::Begin,
+            "do" => TokenKind::Do,
+            "while" => TokenKind::While,
+            "for" => TokenKind::For,
+            "true" => TokenKind::Literal(Literal::True),
+            "false" => TokenKind::Literal(Literal::False),
+            "print" => TokenKind::Print,
+            "fun" => TokenKind::Fun,
+            "let" => TokenKind::Let,
+            "mut" => TokenKind::Mut,
+            "and" => TokenKind::And,
+            "or" => TokenKind::Or,
+            "int" => TokenKind::Int,
+            "uint" => TokenKind::Uint,
+            "bool" => TokenKind::Bool,
+            "string" => TokenKind::String,
+            "never" => TokenKind::Never,
+            symbol => TokenKind::Ident(Symbol::intern(symbol)),
         };
         (kind, len)
     }
@@ -117,7 +126,7 @@ impl<'a> Lexer<'a> {
             len as usize,
         )
     }
-    fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Token {
         macro_rules! single_token {
             ($token_kind:expr) => {
                 ($token_kind, 1)

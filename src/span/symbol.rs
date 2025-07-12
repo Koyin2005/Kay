@@ -111,24 +111,5 @@ macro_rules! symbols {
 
 symbols! {
     keywords{
-        IF, If = "if"
-        ELSE, Else = "else"
-        THEN, Then  = "then"
-        END, End = "end"
-        BEGIN, Begin = "begin"
-        WHILE, While = "while"
-        FOR, For = "for"
-        DO, Do = "do"
-        TRUE, True = "true"
-        FALSE, False = "false"
-        PRINT, Print = "print"
-        FUN, Fun = "fun"
-        LET, Let = "let"
-        MUT, Mut = "mut"
-        AND, And = "and"
-        OR, Or = "or"
     }
-
-
-
 }

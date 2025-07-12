@@ -1,1 +1,3 @@
-"ello world!"fun
+fun squared(mut x : int) : int 
+    x * x
+end

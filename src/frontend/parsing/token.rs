@@ -35,6 +35,12 @@ pub enum TokenKind {
     And,
     Or,
 
+    Uint,
+    Int,
+    Bool,
+    String,
+    Never,
+
     Ident(Symbol),
     Literal(Literal),
     Unknown(char),
