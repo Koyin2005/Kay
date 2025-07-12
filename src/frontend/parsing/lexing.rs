@@ -163,6 +163,8 @@ impl<'a> Lexer<'a> {
             ';' => single_token!(TokenKind::Semicolon),
             '(' => single_token!(TokenKind::LeftParen),
             ')' => single_token!(TokenKind::RightParen),
+            '[' => single_token!(TokenKind::LeftBracket),
+            ']' => single_token!(TokenKind::RightBracket),
             '.' => single_token!(TokenKind::Dot),
             ':' => single_token!(TokenKind::Colon),
             '=' => comp_token!('=', TokenKind::EqualsEquals, TokenKind::Equals),

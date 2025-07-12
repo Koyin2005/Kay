@@ -12,6 +12,8 @@ pub enum TokenKind {
     Slash,
     LeftParen,
     RightParen,
+    LeftBracket,
+    RightBracket,
     Dot,
     Colon,
     Bang,
