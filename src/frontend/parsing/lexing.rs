@@ -3,10 +3,7 @@ use std::{iter::Peekable, str::CharIndices};
 use crate::{
     SourceInfo,
     frontend::parsing::token::{Literal, StringComplete, Token, TokenKind},
-    span::{
-        Span,
-        symbol::{Symbol, keywords},
-    },
+    span::{Span, symbol::Symbol},
 };
 
 pub struct Lexer<'source> {
@@ -42,11 +39,11 @@ impl<'a> Lexer<'a> {
         self.chars.peek().map(|(_, c)| *c)
     }
     fn advance(&mut self) {
-        self.chars.next();
-        self.curr_offset += 1;
+        let new_index = self.chars.next().map(|(i, c)| (i + c.len_utf8()) as u32);
+        self.curr_offset = new_index.unwrap_or(self.curr_offset + 1);
     }
 
-    fn current_symbol_str(&self) -> &str{
+    fn current_symbol_str(&self) -> &str {
         &self.source.source()[self.start_offset as usize..self.curr_offset as usize]
     }
     ///Returns a symbol formed from the current start_offset to the current end_offset and its length
@@ -59,11 +56,9 @@ impl<'a> Lexer<'a> {
         )
     }
     ///Returns a symbol formed from the start_offset to the end_offset and its length
-    fn symbol(&self, start_offset: u32, end_offset : u32) -> (Symbol, usize) {
+    fn symbol(&self, start_offset: u32, end_offset: u32) -> (Symbol, usize) {
         (
-            Symbol::intern(
-                &self.source.source()[start_offset as usize..end_offset as usize],
-            ),
+            Symbol::intern(&self.source.source()[start_offset as usize..end_offset as usize]),
             (end_offset - start_offset) as usize,
         )
     }
@@ -78,8 +73,6 @@ impl<'a> Lexer<'a> {
             "if" => TokenKind::If,
             "then" => TokenKind::Then,
             "else" => TokenKind::Else,
-            "end" => TokenKind::End,
-            "begin" => TokenKind::Begin,
             "do" => TokenKind::Do,
             "while" => TokenKind::While,
             "for" => TokenKind::For,
@@ -113,11 +106,11 @@ impl<'a> Lexer<'a> {
         {
             self.advance();
         }
-        let (is_complete,end_offset) = if matches!(self.peek(), Some('\"')) {
+        let (is_complete, end_offset) = if matches!(self.peek(), Some('\"')) {
             self.advance();
-            (StringComplete::Yes,self.curr_offset - 1)
+            (StringComplete::Yes, self.curr_offset - 1)
         } else {
-            (StringComplete::No,self.curr_offset)
+            (StringComplete::No, self.curr_offset)
         };
         let len = self.curr_offset - self.start_offset;
         let (symbol, _) = self.symbol(self.start_offset + 1, end_offset);
@@ -155,7 +148,7 @@ impl<'a> Lexer<'a> {
             c if c.is_ascii_alphabetic() || c == '_' => self.ident_or_keyword(),
             '\"' => self.string(),
             '1'..='9' => self.number(),
-            '!' => single_token!(TokenKind::Bang),
+            '!' => comp_token!('=', TokenKind::BangEquals, TokenKind::Bang),
             '/' => single_token!(TokenKind::Slash),
             '*' => single_token!(TokenKind::Star),
             '+' => single_token!(TokenKind::Plus),
@@ -168,6 +161,9 @@ impl<'a> Lexer<'a> {
             '.' => single_token!(TokenKind::Dot),
             ':' => single_token!(TokenKind::Colon),
             ',' => single_token!(TokenKind::Coma),
+            '^' => single_token!(TokenKind::Caret),
+            '{' => single_token!(TokenKind::LeftBrace),
+            '}' => single_token!(TokenKind::RightBrace),
             '=' => comp_token!('=', TokenKind::EqualsEquals, TokenKind::Equals),
             '<' => comp_token!('=', TokenKind::LesserEquals, TokenKind::LesserThan),
             '>' => comp_token!('=', TokenKind::GreaterEquals, TokenKind::GreaterThan),
@@ -176,16 +172,6 @@ impl<'a> Lexer<'a> {
         Token {
             kind,
             span: Span::new(self.start_offset, len as u32),
-        }
-    }
-    pub fn tokens(mut self) -> Vec<Token> {
-        let mut tokens = Vec::new();
-        loop {
-            let token = self.next_token();
-            tokens.push(token);
-            if let TokenKind::Eof = token.kind {
-                break tokens;
-            }
         }
     }
 }

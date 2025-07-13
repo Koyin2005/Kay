@@ -1,6 +1,6 @@
 use crate::span::{Span, symbol::Symbol};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
     Semicolon,
     Equals,
@@ -14,23 +14,25 @@ pub enum TokenKind {
     RightParen,
     LeftBracket,
     RightBracket,
+    LeftBrace,
+    RightBrace,
     Dot,
     Colon,
     Bang,
     Coma,
+    Caret,
 
+    BangEquals,
     EqualsEquals,
     LesserEquals,
     GreaterEquals,
 
-    End,
     Then,
     Else,
     If,
     While,
     Do,
     For,
-    Begin,
     Print,
     Fun,
     Let,
@@ -50,12 +52,12 @@ pub enum TokenKind {
     Eof,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StringComplete {
     Yes,
     No,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Literal {
     Int(Symbol),
     True,

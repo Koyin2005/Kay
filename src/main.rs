@@ -1,5 +1,5 @@
 use pl5::{
-    Lexer, SourceInfo,
+    Lexer, Parser, SourceInfo,
     config::{Config, ConfigError},
 };
 
@@ -44,6 +44,10 @@ fn main() {
     };
 
     let lexer = Lexer::new(&source_file);
-    let tokens = lexer.tokens();
-    println!("{tokens:?}");
+
+    let parser = Parser::new(lexer);
+    let block = parser.parse();
+    for stmt in block.stmts {
+        println!("{stmt:?}\n")
+    }
 }
