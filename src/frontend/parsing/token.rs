@@ -35,6 +35,7 @@ pub enum TokenKind {
     For,
     Print,
     Fun,
+    Break,
     Let,
     Mut,
     And,
