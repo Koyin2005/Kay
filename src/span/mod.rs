@@ -19,7 +19,7 @@ impl SpanInfo {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Hash,Debug)]
 pub struct SourceLocation {
     pub line: u32,
     pub column: u32,
@@ -43,9 +43,9 @@ impl LineInfo {
         self.end_offset
     }
     pub fn location_within(&self, offset: u32, source: &str) -> SourceLocation {
-        let start_offset = offset as usize;
+        let start_offset = self.start_offset as usize;
         let mut last_column = 0;
-        let Some(column) = source[start_offset..offset as usize]
+        let Some(column) = source[start_offset..self.end_offset as usize]
             .char_indices()
             .enumerate()
             .find_map(|(i, (rel_offset, char))| {
@@ -57,12 +57,12 @@ impl LineInfo {
         else {
             return SourceLocation {
                 line: self.line_number,
-                column: last_column as u32,
+                column: last_column as u32 + 1,
             };
         };
         SourceLocation {
             line: self.line_number,
-            column: column as u32,
+            column: column as u32 + 1,
         }
     }
 }
@@ -105,8 +105,8 @@ impl Span {
     pub fn combined(self, other: Self) -> Self {
         let self_info = self.info();
         let other_info = other.info();
-        let start_offset = self_info.start_offset.min(other_info.start_offset);
-        let end_offset = self_info.end_offset.max(other_info.end_offset);
+        let mut start_offset = self_info.start_offset.min(other_info.start_offset);
+        let mut end_offset = self_info.end_offset.max(other_info.end_offset);
         Self::new(start_offset, end_offset - start_offset)
     }
     pub fn with_lower(self, other_offset: u32) -> Self {
@@ -169,11 +169,20 @@ impl SourceInfo {
         }
         let mut source_offset = 0;
         let lines = source
-            .lines()
+            .split_inclusive('\n')
             .enumerate()
             .map(|(line_index, line_src)| {
                 let start = source_offset as u32;
-                let end = (source_offset + line_src.len()) as u32;
+                
+                let end = if line_src.ends_with("\r\n"){
+                    source_offset + line_src.len() - 2
+                }
+                else if line_src.ends_with('\n'){
+                    source_offset + line_src.len() - 1
+                }
+                else{
+                    source_offset + line_src.len()
+                } as u32;
                 source_offset += line_src.len();
                 LineInfo {
                     line_number: (line_index + 1) as u32,
@@ -200,7 +209,7 @@ impl SourceInfo {
         let Some(line) = self
             .lines
             .iter()
-            .find(|line| line.start_offset <= offset && offset < line.end_offset)
+            .find(|line| line.start_offset <= offset && offset <= line.end_offset)
         else {
             panic!("'{offset}' is not within any line.")
         };
@@ -213,9 +222,9 @@ impl SourceInfo {
         let Some(line) = self
             .lines
             .iter()
-            .find(|line| line.start_offset <= offset && offset < line.end_offset)
+            .find(|line| line.start_offset <= offset && offset <= line.end_offset)
         else {
-            return SourceLocation { line: 1, column: 1 };
+            return SourceLocation { line: self.lines.len() as u32, column: 1 };
         };
         line.location_within(offset, &self.source)
     }

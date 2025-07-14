@@ -1,3 +1,4 @@
+pub mod errors;
 mod frontend;
 pub(crate) mod indexvec;
 pub(crate) mod span;

@@ -80,11 +80,12 @@ pub enum LiteralKind {
 pub enum ExprKind {
     Tuple(Vec<Expr>),
     Block(Block),
-    If(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
+    If(Box<Expr>, Box<Block>, Option<Box<Expr>>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Literal(LiteralKind),
+    Array(Vec<Expr>),
+    While(Box<Expr>,Box<Block>),
     Grouped(Box<Expr>),
-    Error,
 }
 
 define_id! {

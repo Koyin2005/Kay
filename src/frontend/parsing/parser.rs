@@ -1,26 +1,30 @@
 use crate::{
-    Lexer,
-    frontend::{
+    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
         ast::{BinaryOp, BinaryOpKind, Block, Expr, ExprKind, LiteralKind, NodeId, Stmt, StmtKind},
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    },
-    indexvec::Idx,
+    }, indexvec::Idx, span::Span, Lexer
 };
 
 pub struct Parser<'source> {
+    diag_reporter: DiagnosticReporter<'source>,
     lexer: Lexer<'source>,
     prev_token: Token,
     current_token: Token,
     next_id: NodeId,
 }
 
+
+pub struct ParseError;
+
+type ParseResult<T> = Result<T,ParseError>;
 impl<'source> Parser<'source> {
-    pub fn new(mut lexer: Lexer<'source>) -> Self {
+    pub fn new(mut lexer: Lexer<'source>, diag_reporter: DiagnosticReporter<'source>) -> Self {
         let first_token = lexer.next_token();
         Self {
             prev_token: first_token,
             current_token: first_token,
             lexer,
+            diag_reporter,
             next_id: NodeId::new(0),
         }
     }
@@ -30,15 +34,32 @@ impl<'source> Parser<'source> {
         node
     }
 
-    fn expect(&mut self, kind: TokenKind) -> bool {
-        self.match_current(kind)
+    fn error_at(&self, msg: impl IntoDiagnosticMessage, span: Span){
+        self.diag_reporter.add(Diagnostic::new(
+            msg,
+            span
+        ));
+    }
+    fn error_at_prev(&self, msg: impl IntoDiagnosticMessage){
+        self.error_at(msg, self.prev_token.span);
+    }
+    fn error_at_current(&self, msg: impl IntoDiagnosticMessage){
+        self.error_at(msg, self.current_token.span);
+    }
+    fn expect(&mut self, kind: TokenKind,msg: impl IntoDiagnosticMessage) -> ParseResult<()> {
+        if !self.match_current(kind){
+            self.error_at_current(msg);
+            return Err(ParseError);
+        }
+        Ok(())
     }
     fn advance(&mut self) {
         self.prev_token = self.current_token;
 
         self.current_token = loop {
             let next_token = self.lexer.next_token();
-            if let TokenKind::Unknown(_) = next_token.kind {
+            if let TokenKind::Unknown(c) = next_token.kind {
+                self.error_at(format!("Unknown '{}' character.", c),next_token.span);
                 continue;
             }
             break next_token;
@@ -69,90 +90,150 @@ impl<'source> Parser<'source> {
             _ => return None,
         })
     }
-    fn parse_expr(&mut self, min_bp: u32) -> Expr {
-        self.advance();
-        let id = self.new_id();
-        let mut lhs = match self.prev_token.kind {
-            TokenKind::Literal(literal) => {
-                let kind = match literal {
-                    Literal::Int(value) => LiteralKind::Int(match value.as_str().parse() {
-                        Ok(value) => value,
-                        Err(_) => todo!("Handle too large int literals"),
-                    }),
-                    Literal::True => LiteralKind::Bool(true),
-                    Literal::False => LiteralKind::Bool(false),
-                    Literal::String(string, StringComplete::Yes) => LiteralKind::String(string),
-                    Literal::String(_, StringComplete::No) => {
-                        todo!("Handle incomplete strings")
-                    }
-                };
-                Expr {
-                    id,
-                    kind: ExprKind::Literal(kind),
-                    span: self.current_token.span,
+    fn parse_literal(&mut self, literal: Literal) -> ParseResult<Expr>{
+        let kind = match literal {
+            Literal::Int(value) => LiteralKind::Int(match value.as_str().parse() {
+                Ok(value) => value,
+                Err(err) => {
+                    self.error_at_prev(err.to_string());
+                    return Err(ParseError);
+                },
+            }),
+            Literal::True => LiteralKind::Bool(true),
+            Literal::False => LiteralKind::Bool(false),
+            Literal::String(string, complete) => {
+                if let StringComplete::No = complete{
+                    self.error_at_prev("Unterminated string.");
                 }
+                LiteralKind::String(string)
+            },
+        };
+        Ok(Expr {
+            id:self.new_id(),
+            kind:ExprKind::Literal(kind),
+            span: self.prev_token.span,
+        })
+    }
+    fn parse_grouped_expr(&mut self) -> ParseResult<Expr> {
+        let start = self.prev_token.span;
+        let mut exprs = Vec::new();
+        let mut had_coma = false;
+        while !self.check(TokenKind::RightParen) {
+            exprs.push(self.parse_expr(0)?);
+            if !self.match_current(TokenKind::Coma) {
+                break;
+            }
+            had_coma = true;
+        }
+        let _ = self.expect(TokenKind::RightParen,"Expected ')' to enclose '('.");
+        let end = self.prev_token.span;
+        let span = start.combined(end);
+        Ok(Expr {
+            id:self.new_id(),
+            span,
+            kind: if exprs.is_empty() || had_coma {
+                ExprKind::Tuple(exprs)
+            } else {
+                let first_expr = exprs.remove(0);
+                ExprKind::Grouped(Box::new(first_expr))
+            },
+        })
+    }
+    fn parse_block(&mut self) -> ParseResult<Block>{
+        self.expect(TokenKind::LeftBrace, "Expected '{' at the start of the block")?;
+        self.parse_block_rest()
+    }
+    fn parse_block_expr(&mut self) -> ParseResult<Expr>{
+        let block = self.parse_block()?;
+        Ok(Expr {
+            id:self.new_id(),
+            span: block.span,
+            kind: ExprKind::Block(block),
+        })
+    }
+    fn parse_if_expr(&mut self) -> ParseResult<Expr>{
+        let start = self.prev_token.span;
+        let condition = self.parse_expr(0)?;
+        let _ = self.expect(TokenKind::Then,"Expected 'then' after if condition.");
+        let then_body = self.parse_block()?;
+        let mut end = then_body.span;
+        let else_branch = self.match_current(TokenKind::Else).then(|| {
+            let else_branch = if self.check(TokenKind::If) {
+                self.parse_if_expr()
+            } else {
+                self.parse_block_expr()
+            }?;
+            end = else_branch.span;
+            Ok(else_branch)
+        }).transpose()?;
+        Ok(Expr {
+            id:self.new_id(),
+            span: start.combined(end),
+            kind: ExprKind::If(
+                Box::new(condition),
+                Box::new(then_body),
+                else_branch.map(Box::new),
+            ),
+        })
+    }
+    fn parse_while_expr(&mut self) -> ParseResult<Expr>{
+        let start = self.prev_token.span;
+        let condition = self.parse_expr(0)?;
+        let _ = self.expect(TokenKind::Do, "Expected 'do' after 'while' condition.");
+        let block = self.parse_block()?;
+        let end = self.prev_token.span;
+        Ok(Expr { id: self.new_id(), kind: ExprKind::While(Box::new(condition), Box::new(block)), span: start.combined(end)})
+    }
+    fn parse_exprs(&mut self, end: TokenKind) -> ParseResult<Vec<Expr>>{
+        let mut exprs = Vec::new();
+        while !self.is_at_eof() && !self.check(end) {
+            exprs.push(self.parse_expr(0)?);
+            if !self.match_current(TokenKind::Coma){
+                break;
+            }
+        }
+        Ok(exprs)
+    }
+    fn parse_array_expr(&mut self) -> ParseResult<Expr>{
+        let start = self.prev_token.span;
+        let elements = self.parse_exprs(TokenKind::RightBracket)?;
+        let _ = self.expect(TokenKind::RightBracket, "Expected ']'.");
+        let end = self.prev_token.span;
+        Ok(Expr { id: self.new_id(), kind: ExprKind::Array(elements), span: start.combined(end)})
+    }
+    fn parse_expr_prefix(&mut self) -> ParseResult<Expr>{
+        match self.prev_token.kind {
+            TokenKind::Literal(literal) => {
+                self.parse_literal(literal)
             }
             TokenKind::LeftParen => {
-                let start = self.prev_token.span;
-                let mut exprs = Vec::new();
-                let mut had_coma = false;
-                while !self.check(TokenKind::RightParen) {
-                    exprs.push(self.parse_expr(0));
-                    if !self.match_current(TokenKind::Coma) {
-                        break;
-                    }
-                    had_coma = true;
-                }
-                self.expect(TokenKind::RightParen);
-                let end = self.prev_token.span;
-                let span = start.combined(end);
-                Expr {
-                    id,
-                    span,
-                    kind: if exprs.is_empty() || had_coma {
-                        ExprKind::Tuple(exprs)
-                    } else {
-                        let first_expr = exprs.remove(0);
-                        ExprKind::Grouped(Box::new(first_expr))
-                    },
-                }
+                self.parse_grouped_expr()
             }
             TokenKind::LeftBrace => {
-                let block = self.parse_block();
-                Expr {
-                    id,
-                    span: block.span,
-                    kind: ExprKind::Block(block),
-                }
+                self.parse_block_rest().map(|block|{
+                    Expr{
+                        id:self.new_id(),
+                        span:block.span,
+                        kind: ExprKind::Block(block)
+                    }
+                })
             }
             TokenKind::If => {
-                let start = self.prev_token.span;
-                let condition = self.parse_expr(0);
-                self.expect(TokenKind::Then);
-
-                let then_body = self.parse_block_expr();
-                let mut end = then_body.span;
-                let else_branch = self.match_current(TokenKind::Else).then(|| {
-                    let else_branch = if self.check(TokenKind::If) {
-                        self.parse_expr(0)
-                    } else {
-                        self.parse_block_expr()
-                    };
-                    end = else_branch.span;
-                    else_branch
-                });
-                Expr {
-                    id,
-                    span: start.combined(end),
-                    kind: ExprKind::If(
-                        Box::new(condition),
-                        Box::new(then_body),
-                        else_branch.map(Box::new),
-                    ),
-                }
+                self.parse_if_expr()
+            },
+            TokenKind::While => {
+                self.parse_while_expr()
+            },
+            TokenKind::LeftBracket => {
+                self.parse_array_expr()
+            },
+            _ => {
+                self.error_at_prev("Expected an expression.");
+                Err(ParseError)
             }
-            kind => todo!("Other exprs {:?} at {:?}", kind, self.prev_token.span),
-        };
+        }
+    }
+    fn parse_rest_infix(&mut self,mut lhs: Expr, min_bp: u32) -> ParseResult<Expr>{
         while let Some((l_bp, r_bp)) = self.infix_binding_power()
             && l_bp >= min_bp
         {
@@ -169,7 +250,7 @@ impl<'source> Parser<'source> {
                 _ => unreachable!("Can only have infix ops here"),
             };
             self.advance();
-            let rhs = self.parse_expr(r_bp);
+            let rhs = self.parse_expr(r_bp)?;
             let id = self.new_id();
             let span = lhs.span.combined(rhs.span);
             lhs = Expr {
@@ -185,43 +266,63 @@ impl<'source> Parser<'source> {
                 span,
             };
         }
-        lhs
+        Ok(lhs)
+
     }
-    fn parse_stmt(&mut self) -> Stmt {
-        let id = self.new_id();
-        let expr = self.parse_expr(0);
+    fn parse_expr(&mut self, min_bp: u32) -> ParseResult<Expr> {
+        self.advance();
+        let lhs = self.parse_expr_prefix()?;
+        self.parse_rest_infix(lhs, min_bp)
+    }
+    fn expr_needs_semi(&self, expr: &ExprKind) -> bool{
+        match expr{
+            ExprKind::If(..) | ExprKind::Block(..) | ExprKind::While(..) => false,
+            _ => true
+        }
+    }
+    fn parse_expr_stmt(&mut self) -> ParseResult<Stmt>{
+        let expr = self.parse_expr(0)?;
         let (span, kind) = if self.match_current(TokenKind::Semicolon) {
             (
                 expr.span.combined(self.prev_token.span),
                 StmtKind::ExprWithSemi(Box::new(expr)),
             )
         } else {
+            if self.expr_needs_semi(&expr.kind) && !self.check(TokenKind::RightBrace){
+                self.error_at("Expected a ';'.", expr.span);
+            }
             (expr.span, StmtKind::Expr(Box::new(expr)))
         };
-        Stmt { id, kind, span }
-    }
-    fn parse_block_expr(&mut self) -> Expr {
         let id = self.new_id();
-        let block = self.parse_block();
-        Expr {
-            id,
-            span: block.span,
-            kind: ExprKind::Block(block),
-        }
+        Ok(Stmt { id, kind, span })
     }
-    fn parse_block(&mut self) -> Block {
-        self.expect(TokenKind::LeftBrace);
+    fn parse_stmt(&mut self) -> ParseResult<Stmt> {
+        self.parse_expr_stmt()
+    }
+    fn parse_block_rest(&mut self) -> ParseResult<Block> {
         let span = self.prev_token.span;
         let id = self.new_id();
         let mut stmts = Vec::new();
         while !self.is_at_eof() && !self.check(TokenKind::RightBrace) {
-            stmts.push(self.parse_stmt());
+            stmts.push(self.parse_stmt()?);
         }
-        self.expect(TokenKind::RightBrace);
+        self.expect(TokenKind::RightBrace,"Expected '}'.")?;
         let span = span.combined(self.prev_token.span);
-        Block { id, stmts, span }
+        Ok(Block { id, stmts, span })
     }
-    pub fn parse(mut self) -> Block {
-        self.parse_block()
+    pub fn parse(mut self) -> ParseResult<Vec<Stmt>> {
+        let mut stmts = Vec::new();
+        while !self.is_at_eof(){
+            let Ok(stmt) = self.parse_stmt() else{
+                while !self.is_at_eof() 
+                    && !matches!(self.current_token.kind,TokenKind::Semicolon|TokenKind::LeftBrace|TokenKind::If|TokenKind::While){
+                    self.advance();
+                }
+                continue;
+            };
+            stmts.push(stmt);
+        }
+        self.diag_reporter.emit();
+        Ok(stmts)
     }
 }

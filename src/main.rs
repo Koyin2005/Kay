@@ -1,6 +1,7 @@
 use pl5::{
     Lexer, Parser, SourceInfo,
     config::{Config, ConfigError},
+    errors::DiagnosticReporter,
 };
 
 fn main() {
@@ -45,9 +46,12 @@ fn main() {
 
     let lexer = Lexer::new(&source_file);
 
-    let parser = Parser::new(lexer);
-    let block = parser.parse();
-    for stmt in block.stmts {
+    let parse_diagnostics = DiagnosticReporter::new(&source_file);
+    let parser = Parser::new(lexer, parse_diagnostics);
+    let Ok(stmts) = parser.parse() else {
+        return;
+    };
+    for stmt in stmts {
         println!("{stmt:?}\n")
     }
 }
