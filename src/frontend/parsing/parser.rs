@@ -4,14 +4,6 @@ use crate::{
         parsing::token::{Literal, StringComplete, Token, TokenKind},
     }, indexvec::Idx, span::Span, Lexer
 };
-#[derive(PartialEq, PartialOrd,Eq, Ord)]
-enum BindingPower {
-    AddOrSubtract,
-    DivideOrMultiply,
-    Negate
-}
-
-
 
 pub struct Parser<'source> {
     diag_reporter: DiagnosticReporter<'source>,
