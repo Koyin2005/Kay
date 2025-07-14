@@ -26,6 +26,7 @@ pub enum TokenKind {
     EqualsEquals,
     LesserEquals,
     GreaterEquals,
+    DotDot,
 
     Then,
     Else,
@@ -42,6 +43,7 @@ pub enum TokenKind {
     And,
     Struct,
     Or,
+    In,
 
     Uint,
     Int,

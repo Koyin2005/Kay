@@ -92,6 +92,7 @@ impl<'a> Lexer<'a> {
             "struct" => TokenKind::Struct,
             "break" => TokenKind::Break,
             "return" => TokenKind::Return,
+            "in" => TokenKind::In,
             symbol => TokenKind::Ident(Symbol::intern(symbol)),
         };
         (kind, len)
@@ -150,7 +151,7 @@ impl<'a> Lexer<'a> {
         let (kind, len) = match c {
             c if c.is_ascii_alphabetic() || c == '_' => self.ident_or_keyword(),
             '\"' => self.string(),
-            '1'..='9' => self.number(),
+            '0'..='9' => self.number(),
             '!' => comp_token!('=', TokenKind::BangEquals, TokenKind::Bang),
             '/' => single_token!(TokenKind::Slash),
             '*' => single_token!(TokenKind::Star),
@@ -161,7 +162,7 @@ impl<'a> Lexer<'a> {
             ')' => single_token!(TokenKind::RightParen),
             '[' => single_token!(TokenKind::LeftBracket),
             ']' => single_token!(TokenKind::RightBracket),
-            '.' => single_token!(TokenKind::Dot),
+            '.' => comp_token!('.',TokenKind::DotDot,TokenKind::Dot),
             ':' => single_token!(TokenKind::Colon),
             ',' => single_token!(TokenKind::Coma),
             '^' => single_token!(TokenKind::Caret),

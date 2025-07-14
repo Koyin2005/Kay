@@ -94,6 +94,16 @@ pub enum LiteralKind {
 }
 
 #[derive(Clone, Debug)]
+pub enum IteratorExprKind {
+    Range(Box<Expr>,Box<Expr>),
+    Expr(Box<Expr>)
+}
+#[derive(Clone, Debug)]
+pub struct IteratorExpr {
+    pub span : Span,
+    pub kind : IteratorExprKind
+}
+#[derive(Clone, Debug)]
 pub enum ExprKind {
     Tuple(Vec<Expr>),
     Block(Block),
@@ -103,6 +113,8 @@ pub enum ExprKind {
     Literal(LiteralKind),
     Array(Vec<Expr>),
     While(Box<Expr>,Box<Block>),
+    For(Box<Expr>,Box<IteratorExpr>,Box<Block>),
+    Ident(Symbol),
     Grouped(Box<Expr>),
     Call(Box<Expr>,Vec<Expr>),
 }

@@ -1,6 +1,8 @@
+use std::cell::Cell;
+
 use crate::{
     errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
-        ast::{BinaryOp, BinaryOpKind, Block, Expr, ExprKind, LiteralKind, NodeId, Stmt, StmtKind, UnaryOp, UnaryOpKind},
+        ast::{BinaryOp, BinaryOpKind, Block, Expr, ExprKind, IteratorExpr, IteratorExprKind, LiteralKind, NodeId, Stmt, StmtKind, UnaryOp, UnaryOpKind},
         parsing::token::{Literal, StringComplete, Token, TokenKind},
     }, indexvec::Idx, span::Span, Lexer
 };
@@ -10,6 +12,7 @@ pub struct Parser<'source> {
     lexer: Lexer<'source>,
     current_token: Token,
     next_id: NodeId,
+    panic_mode : Cell<bool>
 }
 pub struct ParseError;
 
@@ -21,6 +24,7 @@ impl<'source> Parser<'source> {
             lexer,
             diag_reporter,
             next_id: NodeId::new(0),
+            panic_mode : Cell::new(false)
         }
     }
     fn new_id(&mut self) -> NodeId {
@@ -30,6 +34,10 @@ impl<'source> Parser<'source> {
     }
 
     fn error_at(&self, msg: impl IntoDiagnosticMessage, span: Span){
+        if self.panic_mode.get(){
+            return;
+        }
+        self.panic_mode.set(true);
         self.diag_reporter.add(Diagnostic::new(
             msg,
             span
@@ -81,6 +89,7 @@ impl<'source> Parser<'source> {
         })
     }
     fn parse_literal(&mut self, literal: Literal) -> ParseResult<Expr>{
+        let span = self.current_token.span;
         let kind = match literal {
             Literal::Int(value) => LiteralKind::Int(match value.as_str().parse() {
                 Ok(value) => value,
@@ -102,7 +111,7 @@ impl<'source> Parser<'source> {
         Ok(Expr {
             id:self.new_id(),
             kind:ExprKind::Literal(kind),
-            span: self.current_token.span,
+            span,
         })
     }
     fn parse_grouped_expr(&mut self) -> ParseResult<Expr> {
@@ -169,6 +178,25 @@ impl<'source> Parser<'source> {
             ),
         })
     }
+    fn parse_for_expr(&mut self) -> ParseResult<Expr>{
+        let start = self.current_token.span;
+        self.advance();
+        let pattern = self.parse_expr(0)?;
+        let _ = self.expect(TokenKind::In, "Expected 'in' after 'for' pattern.");
+        let expr = self.parse_expr(0)?;
+        let iterator = if self.match_current(TokenKind::DotDot){
+            let end = self.parse_expr(0)?;
+            let span = start.combined(end.span);
+            IteratorExpr{ span, kind: IteratorExprKind::Range(Box::new(expr), Box::new(end)) }
+        }
+        else{
+            IteratorExpr{ span: expr.span, kind: IteratorExprKind::Expr(Box::new(expr))}
+        };
+        let _ = self.expect(TokenKind::Do, "Expected 'do' after 'for' iterator.");
+        let block = self.parse_block()?;
+        let span = start.combined(block.span);
+        Ok(Expr { id: self.new_id(), kind: ExprKind::For(Box::new(pattern), Box::new(iterator),Box::new(block)), span })
+    }
     fn parse_while_expr(&mut self) -> ParseResult<Expr>{
         let start = self.current_token.span;
         self.advance();
@@ -220,6 +248,14 @@ impl<'source> Parser<'source> {
             TokenKind::LeftBracket => {
                 self.parse_array_expr()
             },
+            TokenKind::For => {
+                self.parse_for_expr()
+            },
+            TokenKind::Ident(name) => {
+                let span = self.current_token.span;
+                self.advance();
+                Ok(Expr{ id : self.new_id(), kind: ExprKind::Ident(name), span})
+            },
             _ => {
                 let Some(op) = self.unary_op() else {
                     self.error_at_current("Expected an expression.");
@@ -268,19 +304,39 @@ impl<'source> Parser<'source> {
         Ok(lhs)
 
     }
+    fn parse_call(&mut self, callee: Expr) -> ParseResult<Expr>{
+        let start = callee.span;
+        self.advance();
+        let args = self.parse_exprs(TokenKind::RightParen)?;
+        let end = self.current_token.span;
+        let _ = self.expect(TokenKind::RightParen, "Expected ')' after arguments.");
+        Ok(Expr { id: self.new_id(), kind: ExprKind::Call(Box::new(callee), args), span: start.combined(end) })
+    }
+    fn parse_expr_postfix(&mut self, mut lhs: Expr) -> ParseResult<Expr>{
+        loop{   
+            match self.current_token.kind {
+                TokenKind::LeftParen => {
+                    lhs = self.parse_call(lhs)?;
+                },
+                _ => break Ok(lhs)
+            }
+        }
+    }
     fn parse_expr(&mut self, min_bp: u32) -> ParseResult<Expr> {
         let lhs = self.parse_expr_prefix()?;
+        let lhs = self.parse_expr_postfix(lhs)?;
         self.parse_rest_infix(lhs, min_bp)
     }
     fn expr_needs_semi(&self, expr: &ExprKind) -> bool{
         match expr{
-            ExprKind::If(..) | ExprKind::Block(..) | ExprKind::While(..) => false,
+            ExprKind::If(..) | ExprKind::Block(..) | ExprKind::While(..) | ExprKind::For(..) => false,
             _ => true
         }
     }
     fn parse_expr_stmt(&mut self) -> ParseResult<Stmt>{
         let expr = self.parse_expr(0)?;
         let end_token = self.current_token;
+        
         let (span, kind) = if self.match_current(TokenKind::Semicolon) {
             (
                 expr.span.combined(end_token.span),
@@ -314,10 +370,17 @@ impl<'source> Parser<'source> {
         self.advance();
         while !self.is_at_eof(){
             let Ok(stmt) = self.parse_stmt() else{
-                while !self.is_at_eof() 
-                    && !matches!(self.current_token.kind,TokenKind::Semicolon|TokenKind::LeftBrace|TokenKind::If|TokenKind::While){
+                while !self.is_at_eof() {
+                    if matches!(self.current_token.kind,TokenKind::Semicolon|TokenKind::RightBrace){
+                        self.advance();
+                        break;
+                    }
                     self.advance();
+                    if matches!(self.current_token.kind,TokenKind::LeftBrace|TokenKind::For|TokenKind::While){
+                        break;
+                    }
                 }
+                self.panic_mode.set(false);
                 continue;
             };
             stmts.push(stmt);
