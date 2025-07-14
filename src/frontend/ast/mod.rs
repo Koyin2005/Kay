@@ -104,6 +104,7 @@ pub enum ExprKind {
     Array(Vec<Expr>),
     While(Box<Expr>,Box<Block>),
     Grouped(Box<Expr>),
+    Call(Box<Expr>,Vec<Expr>),
 }
 
 define_id! {

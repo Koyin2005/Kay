@@ -204,6 +204,10 @@ impl<'source> Parser<'source> {
         let _ = self.expect(TokenKind::RightBracket, "Expected ']'.");
         Ok(Expr { id: self.new_id(), kind: ExprKind::Array(elements), span: start.combined(end)})
     }
+    fn unary_op(&mut self) -> Option<UnaryOp>{
+        let start_token = self.current_token;
+        self.match_current(TokenKind::Minus).then_some( UnaryOp{node: UnaryOpKind::Negate,span:start_token.span})
+    }
     fn parse_expr_prefix(&mut self) -> ParseResult<Expr>{
         match self.current_token.kind {
             TokenKind::Literal(literal) => {
@@ -224,16 +228,15 @@ impl<'source> Parser<'source> {
             TokenKind::LeftBracket => {
                 self.parse_array_expr()
             },
-            TokenKind::Minus => {
-                let op = UnaryOp{node: UnaryOpKind::Negate,span:self.current_token.span};
-                self.advance();
+            _ => {
+                let Some(op) = self.unary_op() else {
+                    self.error_at_current("Expected an expression.");
+                    return Err(ParseError)
+                };
                 let expr = self.parse_expr(9)?;
                 let span = expr.span.combined(op.span);
                 Ok(Expr{ id : self.new_id(), kind : ExprKind::Unary(op,Box::new(expr)), span })
-            }
-            _ => {
-                self.error_at_current("Expected an expression.");
-                Err(ParseError)
+
             }
         }
     }
