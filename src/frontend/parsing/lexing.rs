@@ -91,6 +91,7 @@ impl<'a> Lexer<'a> {
             "never" => TokenKind::Never,
             "struct" => TokenKind::Struct,
             "break" => TokenKind::Break,
+            "return" => TokenKind::Return,
             symbol => TokenKind::Ident(Symbol::intern(symbol)),
         };
         (kind, len)
