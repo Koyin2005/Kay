@@ -72,3 +72,12 @@ pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
 }
+
+impl Token{
+    pub fn empty() -> Self{
+        Self { kind: TokenKind::Bang, span: Span::new(0, 0) }
+    }
+    pub fn is_empty(&self) -> bool{
+        self.span.is_empty()
+    } 
+}

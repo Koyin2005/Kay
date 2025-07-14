@@ -92,6 +92,9 @@ impl Span {
             len_or_marker,
         }
     }
+    pub fn is_empty(self) -> bool{
+        self.info().len() == 0
+    }
     pub fn info(self) -> SpanInfo {
         if self.len_or_marker == u16::MAX {
             SPAN_INTERNER.lock().unwrap().seen[self.index_or_offset as usize]
@@ -105,8 +108,8 @@ impl Span {
     pub fn combined(self, other: Self) -> Self {
         let self_info = self.info();
         let other_info = other.info();
-        let mut start_offset = self_info.start_offset.min(other_info.start_offset);
-        let mut end_offset = self_info.end_offset.max(other_info.end_offset);
+        let start_offset = self_info.start_offset.min(other_info.start_offset);
+        let end_offset = self_info.end_offset.max(other_info.end_offset);
         Self::new(start_offset, end_offset - start_offset)
     }
     pub fn with_lower(self, other_offset: u32) -> Self {

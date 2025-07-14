@@ -28,15 +28,16 @@ pub struct Expr {
     pub span: Span,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,Copy)]
 pub struct Spanned<T> {
-    pub value: T,
+    pub node: T,
     pub span: Span,
 }
 
 pub type BinaryOp = Spanned<BinaryOpKind>;
+pub type UnaryOp = Spanned<UnaryOpKind>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,Copy)]
 pub enum BinaryOpKind {
     Add,
     Subtract,
@@ -68,6 +69,22 @@ impl std::fmt::Display for BinaryOpKind {
         f.write_str(self.as_str())
     }
 }
+#[derive(Clone, Debug,Copy)]
+pub enum UnaryOpKind {
+    Negate
+}
+impl UnaryOpKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Negate => "-",
+        }
+    }
+}
+impl std::fmt::Display for UnaryOpKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum LiteralKind {
@@ -82,6 +99,7 @@ pub enum ExprKind {
     Block(Block),
     If(Box<Expr>, Box<Block>, Option<Box<Expr>>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
+    Unary(UnaryOp, Box<Expr>),
     Literal(LiteralKind),
     Array(Vec<Expr>),
     While(Box<Expr>,Box<Block>),

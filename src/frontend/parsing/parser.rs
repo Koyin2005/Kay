@@ -1,28 +1,31 @@
 use crate::{
     errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
-        ast::{BinaryOp, BinaryOpKind, Block, Expr, ExprKind, LiteralKind, NodeId, Stmt, StmtKind},
+        ast::{BinaryOp, BinaryOpKind, Block, Expr, ExprKind, LiteralKind, NodeId, Stmt, StmtKind, UnaryOp, UnaryOpKind},
         parsing::token::{Literal, StringComplete, Token, TokenKind},
     }, indexvec::Idx, span::Span, Lexer
 };
+#[derive(PartialEq, PartialOrd,Eq, Ord)]
+enum BindingPower {
+    AddOrSubtract,
+    DivideOrMultiply,
+    Negate
+}
+
+
 
 pub struct Parser<'source> {
     diag_reporter: DiagnosticReporter<'source>,
     lexer: Lexer<'source>,
-    prev_token: Token,
     current_token: Token,
     next_id: NodeId,
 }
-
-
 pub struct ParseError;
 
 type ParseResult<T> = Result<T,ParseError>;
 impl<'source> Parser<'source> {
-    pub fn new(mut lexer: Lexer<'source>, diag_reporter: DiagnosticReporter<'source>) -> Self {
-        let first_token = lexer.next_token();
+    pub fn new(lexer: Lexer<'source>, diag_reporter: DiagnosticReporter<'source>) -> Self {
         Self {
-            prev_token: first_token,
-            current_token: first_token,
+            current_token: Token::empty(),
             lexer,
             diag_reporter,
             next_id: NodeId::new(0),
@@ -40,9 +43,6 @@ impl<'source> Parser<'source> {
             span
         ));
     }
-    fn error_at_prev(&self, msg: impl IntoDiagnosticMessage){
-        self.error_at(msg, self.prev_token.span);
-    }
     fn error_at_current(&self, msg: impl IntoDiagnosticMessage){
         self.error_at(msg, self.current_token.span);
     }
@@ -54,8 +54,6 @@ impl<'source> Parser<'source> {
         Ok(())
     }
     fn advance(&mut self) {
-        self.prev_token = self.current_token;
-
         self.current_token = loop {
             let next_token = self.lexer.next_token();
             if let TokenKind::Unknown(c) = next_token.kind {
@@ -95,7 +93,7 @@ impl<'source> Parser<'source> {
             Literal::Int(value) => LiteralKind::Int(match value.as_str().parse() {
                 Ok(value) => value,
                 Err(err) => {
-                    self.error_at_prev(err.to_string());
+                    self.error_at_current(err.to_string());
                     return Err(ParseError);
                 },
             }),
@@ -103,19 +101,21 @@ impl<'source> Parser<'source> {
             Literal::False => LiteralKind::Bool(false),
             Literal::String(string, complete) => {
                 if let StringComplete::No = complete{
-                    self.error_at_prev("Unterminated string.");
+                    self.error_at_current("Unterminated string.");
                 }
                 LiteralKind::String(string)
             },
         };
+        self.advance();
         Ok(Expr {
             id:self.new_id(),
             kind:ExprKind::Literal(kind),
-            span: self.prev_token.span,
+            span: self.current_token.span,
         })
     }
     fn parse_grouped_expr(&mut self) -> ParseResult<Expr> {
-        let start = self.prev_token.span;
+        let start = self.current_token.span;
+        self.advance();
         let mut exprs = Vec::new();
         let mut had_coma = false;
         while !self.check(TokenKind::RightParen) {
@@ -125,8 +125,8 @@ impl<'source> Parser<'source> {
             }
             had_coma = true;
         }
+        let end = self.current_token.span;
         let _ = self.expect(TokenKind::RightParen,"Expected ')' to enclose '('.");
-        let end = self.prev_token.span;
         let span = start.combined(end);
         Ok(Expr {
             id:self.new_id(),
@@ -152,7 +152,8 @@ impl<'source> Parser<'source> {
         })
     }
     fn parse_if_expr(&mut self) -> ParseResult<Expr>{
-        let start = self.prev_token.span;
+        let start = self.current_token.span;
+        self.advance();
         let condition = self.parse_expr(0)?;
         let _ = self.expect(TokenKind::Then,"Expected 'then' after if condition.");
         let then_body = self.parse_block()?;
@@ -177,11 +178,12 @@ impl<'source> Parser<'source> {
         })
     }
     fn parse_while_expr(&mut self) -> ParseResult<Expr>{
-        let start = self.prev_token.span;
+        let start = self.current_token.span;
+        self.advance();
         let condition = self.parse_expr(0)?;
         let _ = self.expect(TokenKind::Do, "Expected 'do' after 'while' condition.");
         let block = self.parse_block()?;
-        let end = self.prev_token.span;
+        let end = block.span;
         Ok(Expr { id: self.new_id(), kind: ExprKind::While(Box::new(condition), Box::new(block)), span: start.combined(end)})
     }
     fn parse_exprs(&mut self, end: TokenKind) -> ParseResult<Vec<Expr>>{
@@ -195,14 +197,15 @@ impl<'source> Parser<'source> {
         Ok(exprs)
     }
     fn parse_array_expr(&mut self) -> ParseResult<Expr>{
-        let start = self.prev_token.span;
+        let start = self.current_token.span;
+        self.advance();
         let elements = self.parse_exprs(TokenKind::RightBracket)?;
+        let end = self.current_token.span;
         let _ = self.expect(TokenKind::RightBracket, "Expected ']'.");
-        let end = self.prev_token.span;
         Ok(Expr { id: self.new_id(), kind: ExprKind::Array(elements), span: start.combined(end)})
     }
     fn parse_expr_prefix(&mut self) -> ParseResult<Expr>{
-        match self.prev_token.kind {
+        match self.current_token.kind {
             TokenKind::Literal(literal) => {
                 self.parse_literal(literal)
             }
@@ -210,13 +213,7 @@ impl<'source> Parser<'source> {
                 self.parse_grouped_expr()
             }
             TokenKind::LeftBrace => {
-                self.parse_block_rest().map(|block|{
-                    Expr{
-                        id:self.new_id(),
-                        span:block.span,
-                        kind: ExprKind::Block(block)
-                    }
-                })
+                self.parse_block_expr()
             }
             TokenKind::If => {
                 self.parse_if_expr()
@@ -227,8 +224,15 @@ impl<'source> Parser<'source> {
             TokenKind::LeftBracket => {
                 self.parse_array_expr()
             },
+            TokenKind::Minus => {
+                let op = UnaryOp{node: UnaryOpKind::Negate,span:self.current_token.span};
+                self.advance();
+                let expr = self.parse_expr(9)?;
+                let span = expr.span.combined(op.span);
+                Ok(Expr{ id : self.new_id(), kind : ExprKind::Unary(op,Box::new(expr)), span })
+            }
             _ => {
-                self.error_at_prev("Expected an expression.");
+                self.error_at_current("Expected an expression.");
                 Err(ParseError)
             }
         }
@@ -258,7 +262,7 @@ impl<'source> Parser<'source> {
                 kind: ExprKind::Binary(
                     BinaryOp {
                         span: op_span,
-                        value: op_kind,
+                        node: op_kind,
                     },
                     Box::new(lhs),
                     Box::new(rhs),
@@ -270,7 +274,6 @@ impl<'source> Parser<'source> {
 
     }
     fn parse_expr(&mut self, min_bp: u32) -> ParseResult<Expr> {
-        self.advance();
         let lhs = self.parse_expr_prefix()?;
         self.parse_rest_infix(lhs, min_bp)
     }
@@ -282,9 +285,10 @@ impl<'source> Parser<'source> {
     }
     fn parse_expr_stmt(&mut self) -> ParseResult<Stmt>{
         let expr = self.parse_expr(0)?;
+        let end_token = self.current_token;
         let (span, kind) = if self.match_current(TokenKind::Semicolon) {
             (
-                expr.span.combined(self.prev_token.span),
+                expr.span.combined(end_token.span),
                 StmtKind::ExprWithSemi(Box::new(expr)),
             )
         } else {
@@ -300,18 +304,19 @@ impl<'source> Parser<'source> {
         self.parse_expr_stmt()
     }
     fn parse_block_rest(&mut self) -> ParseResult<Block> {
-        let span = self.prev_token.span;
+        let span = self.current_token.span;
         let id = self.new_id();
         let mut stmts = Vec::new();
         while !self.is_at_eof() && !self.check(TokenKind::RightBrace) {
             stmts.push(self.parse_stmt()?);
         }
         self.expect(TokenKind::RightBrace,"Expected '}'.")?;
-        let span = span.combined(self.prev_token.span);
+        let span = span.combined(self.current_token.span);
         Ok(Block { id, stmts, span })
     }
     pub fn parse(mut self) -> ParseResult<Vec<Stmt>> {
         let mut stmts = Vec::new();
+        self.advance();
         while !self.is_at_eof(){
             let Ok(stmt) = self.parse_stmt() else{
                 while !self.is_at_eof() 
