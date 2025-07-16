@@ -42,6 +42,7 @@ pub enum TokenKind {
     Mut,
     And,
     Struct,
+    Ref,
     Or,
     In,
 

@@ -108,6 +108,16 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
                 self.decrease_depth();
                 Ok(())
             },
+            ExprKind::Deref(_,operand) => {
+                self.print("deref")?;
+                self.print_newline()?;
+
+                self.increase_depth();
+                self.print_depth()?;
+                self.pretty_print_expr(operand)?;
+                self.decrease_depth();
+                Ok(())
+            },
             ExprKind::Call(callee,args) => {
                 self.print("call\n")?;
 

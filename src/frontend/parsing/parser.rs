@@ -244,7 +244,21 @@ impl<'source> Parser<'source> {
     }
     fn unary_op(&mut self) -> Option<UnaryOp>{
         let start_token = self.current_token;
-        self.match_current(TokenKind::Minus).then_some( UnaryOp{node: UnaryOpKind::Negate,span:start_token.span})
+        if self.match_current(TokenKind::Minus){
+            Some(UnaryOp{node: UnaryOpKind::Negate,span:start_token.span})
+        }
+        else if self.match_current(TokenKind::Ref){
+            let next_span = start_token.span;
+            if self.match_current(TokenKind::Mut){
+                Some(UnaryOp{node: UnaryOpKind::Ref(Mutable::Yes(next_span)),span:start_token.span.combined(next_span)})
+            }
+            else{
+                Some(UnaryOp{node: UnaryOpKind::Ref(Mutable::No),span:start_token.span})
+            }
+        }
+        else{
+            None
+        }
     }
     fn is_expr_start(&self) -> bool{
         match self.current_token.kind{
@@ -401,6 +415,11 @@ impl<'source> Parser<'source> {
                     };
                     Expr{id:self.new_id(),span:lhs.span.combined(field_name.span),kind:ExprKind::Field(Box::new(lhs),field_name)}
                 },
+                TokenKind::Caret => {
+                    let caret_span = self.current_token.span;
+                    self.advance();
+                    Expr{id:self.new_id(),span:lhs.span.combined(caret_span),kind:ExprKind::Deref(caret_span,Box::new(lhs))}
+                }
                 _ => break Ok(lhs)
             };
         }

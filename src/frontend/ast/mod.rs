@@ -82,12 +82,15 @@ impl std::fmt::Display for BinaryOpKind {
 }
 #[derive(Clone, Debug,Copy)]
 pub enum UnaryOpKind {
-    Negate
+    Negate,
+    Ref(Mutable)
 }
 impl UnaryOpKind {
     fn as_str(&self) -> &'static str {
         match self {
             Self::Negate => "-",
+            Self::Ref(Mutable::Yes(_)) => "ref mut",
+            Self::Ref(Mutable::No) => "ref"
         }
     }
 }
@@ -122,6 +125,7 @@ pub enum ExprKind {
     Assign(Box<Expr>,Box<Expr>,Span),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Unary(UnaryOp, Box<Expr>),
+    Deref(Span,Box<Expr>),
     Literal(LiteralKind),
     Array(Vec<Expr>),
     While(Box<Expr>,Box<Block>),
@@ -140,7 +144,7 @@ pub struct Pattern{
     pub id : NodeId
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,Copy)]
 pub enum Mutable {
     Yes(Span),
     No
