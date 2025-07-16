@@ -1,6 +1,9 @@
 use crate::{
     define_id,
-    span::{symbol::{Ident, Symbol}, Span},
+    span::{
+        Span,
+        symbol::{Ident, Symbol},
+    },
 };
 pub mod pretty_print;
 #[derive(Clone, Debug)]
@@ -18,7 +21,7 @@ pub struct Stmt {
 }
 #[derive(Clone, Debug)]
 pub enum StmtKind {
-    Let(Box<Pattern>,Box<Expr>),
+    Let(Box<Pattern>, Box<Expr>),
     ExprWithSemi(Box<Expr>),
     Expr(Box<Expr>),
 }
@@ -29,7 +32,7 @@ pub struct Expr {
     pub span: Span,
 }
 
-#[derive(Clone, Debug,Copy)]
+#[derive(Clone, Debug, Copy)]
 pub struct Spanned<T> {
     pub node: T,
     pub span: Span,
@@ -38,7 +41,7 @@ pub struct Spanned<T> {
 pub type BinaryOp = Spanned<BinaryOpKind>;
 pub type UnaryOp = Spanned<UnaryOpKind>;
 
-#[derive(Clone, Debug,Copy)]
+#[derive(Clone, Debug, Copy)]
 pub enum BinaryOpKind {
     Add,
     Subtract,
@@ -80,17 +83,17 @@ impl std::fmt::Display for BinaryOpKind {
         f.write_str(self.as_str())
     }
 }
-#[derive(Clone, Debug,Copy)]
+#[derive(Clone, Debug, Copy)]
 pub enum UnaryOpKind {
     Negate,
-    Ref(Mutable)
+    Ref(Mutable),
 }
 impl UnaryOpKind {
     fn as_str(&self) -> &'static str {
         match self {
             Self::Negate => "-",
             Self::Ref(Mutable::Yes(_)) => "ref mut",
-            Self::Ref(Mutable::No) => "ref"
+            Self::Ref(Mutable::No) => "ref",
         }
     }
 }
@@ -109,53 +112,59 @@ pub enum LiteralKind {
 
 #[derive(Clone, Debug)]
 pub enum IteratorExprKind {
-    Range(Box<Expr>,Box<Expr>),
-    Expr(Box<Expr>)
+    Range(Box<Expr>, Box<Expr>),
+    Expr(Box<Expr>),
 }
 #[derive(Clone, Debug)]
 pub struct IteratorExpr {
-    pub span : Span,
-    pub kind : IteratorExprKind
+    pub span: Span,
+    pub kind: IteratorExprKind,
 }
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Tuple(Vec<Expr>),
     Block(Block),
     If(Box<Expr>, Box<Block>, Option<Box<Expr>>),
-    Assign(Box<Expr>,Box<Expr>,Span),
+    Assign(Box<Expr>, Box<Expr>, Span),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Unary(UnaryOp, Box<Expr>),
-    Deref(Span,Box<Expr>),
+    Deref(Span, Box<Expr>),
     Literal(LiteralKind),
     Array(Vec<Expr>),
-    While(Box<Expr>,Box<Block>),
-    For(Box<Expr>,Box<IteratorExpr>,Box<Block>),
+    While(Box<Expr>, Box<Block>),
+    For(Box<Expr>, Box<IteratorExpr>, Box<Block>),
     Ident(Symbol),
     Grouped(Box<Expr>),
-    Call(Box<Expr>,Vec<Expr>),
+    Call(Box<Expr>, Vec<Expr>),
     Break(Option<Box<Expr>>),
     Return(Option<Box<Expr>>),
-    Field(Box<Expr>,Ident),
+    Field(Box<Expr>, Ident),
 }
-#[derive(Clone,Debug)]
-pub struct Pattern{
-    pub span : Span,
-    pub kind : PatternKind,
-    pub id : NodeId
+#[derive(Clone, Debug)]
+pub struct Pattern {
+    pub span: Span,
+    pub kind: PatternKind,
+    pub id: NodeId,
 }
 
-#[derive(Clone,Debug,Copy)]
+#[derive(Clone, Debug, Copy)]
 pub enum Mutable {
     Yes(Span),
-    No
+    No,
 }
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug, Copy)]
+pub enum ByRef {
+    Yes(Span),
+    No,
+}
+#[derive(Clone, Debug)]
 pub enum PatternKind {
-    Ident(Symbol,Mutable),
+    Ident(Symbol, Mutable, ByRef),
     Tuple(Vec<Pattern>),
     Grouped(Box<Pattern>),
     Literal(LiteralKind),
-    Wildcard
+    Deref(Box<Pattern>),
+    Wildcard,
 }
 define_id! {
     #[derive(Debug)]

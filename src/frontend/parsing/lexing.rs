@@ -164,7 +164,7 @@ impl<'a> Lexer<'a> {
             ')' => single_token!(TokenKind::RightParen),
             '[' => single_token!(TokenKind::LeftBracket),
             ']' => single_token!(TokenKind::RightBracket),
-            '.' => comp_token!('.',TokenKind::DotDot,TokenKind::Dot),
+            '.' => comp_token!('.', TokenKind::DotDot, TokenKind::Dot),
             ':' => single_token!(TokenKind::Colon),
             ',' => single_token!(TokenKind::Coma),
             '^' => single_token!(TokenKind::Caret),

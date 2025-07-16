@@ -1,5 +1,7 @@
 use std::{
-    fmt::Debug, str::Lines, sync::{LazyLock, Mutex}
+    fmt::Debug,
+    str::Lines,
+    sync::{LazyLock, Mutex},
 };
 
 use indexmap::IndexSet;
@@ -17,7 +19,7 @@ impl SpanInfo {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Hash,Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Hash, Debug)]
 pub struct SourceLocation {
     pub line: u32,
     pub column: u32,
@@ -90,7 +92,7 @@ impl Span {
             len_or_marker,
         }
     }
-    pub fn is_empty(self) -> bool{
+    pub fn is_empty(self) -> bool {
         self.info().len() == 0
     }
     pub fn info(self) -> SpanInfo {
@@ -175,16 +177,14 @@ impl SourceInfo {
             .enumerate()
             .map(|(line_index, line_src)| {
                 let start = source_offset as u32;
-                
-                let end = if line_src.ends_with("\r\n"){
+
+                let end = if line_src.ends_with("\r\n") {
                     has_newline_at_end = true;
                     source_offset + line_src.len() - 2
-                }
-                else if line_src.ends_with('\n'){
+                } else if line_src.ends_with('\n') {
                     has_newline_at_end = true;
                     source_offset + line_src.len() - 1
-                }
-                else{
+                } else {
                     has_newline_at_end = false;
                     source_offset + line_src.len()
                 } as u32;
@@ -196,12 +196,16 @@ impl SourceInfo {
                 }
             })
             .collect::<Vec<_>>();
-        if has_newline_at_end{
-            lines.push(LineInfo { line_number: (lines.len() + 1) as u32, start_offset: source_offset  as u32 -1, end_offset: source_offset as u32  });
+        if has_newline_at_end {
+            lines.push(LineInfo {
+                line_number: (lines.len() + 1) as u32,
+                start_offset: source_offset as u32 - 1,
+                end_offset: source_offset as u32,
+            });
         }
         Ok(SourceInfo {
             source: source.into_boxed_str(),
-            lines:lines.into_boxed_slice(),
+            lines: lines.into_boxed_slice(),
         })
     }
     pub fn source(&self) -> &str {
@@ -233,9 +237,15 @@ impl SourceInfo {
             .find(|line| line.start_offset <= offset && offset <= line.end_offset)
         else {
             let last_line = self.lines.last().expect("There should be at least 1 line");
-            return SourceLocation { line: last_line.line_number, column: {
-                self.source_within(last_line.start_offset, last_line.end_offset).char_indices().map(|(i,c)| i + c.len_utf8()).last().unwrap_or(1) as u32
-             } 
+            return SourceLocation {
+                line: last_line.line_number,
+                column: {
+                    self.source_within(last_line.start_offset, last_line.end_offset)
+                        .char_indices()
+                        .map(|(i, c)| i + c.len_utf8())
+                        .last()
+                        .unwrap_or(1) as u32
+                },
             };
         };
         line.location_within(offset, &self.source)

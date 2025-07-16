@@ -84,7 +84,7 @@ impl Debug for Symbol {
         f.write_str(self.as_str())
     }
 }
-#[derive(Clone, Copy,Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Ident {
     pub symbol: Symbol,
     pub span: Span,
