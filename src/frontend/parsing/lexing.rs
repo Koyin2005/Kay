@@ -93,6 +93,7 @@ impl<'a> Lexer<'a> {
             "break" => TokenKind::Break,
             "return" => TokenKind::Return,
             "in" => TokenKind::In,
+            "_" => TokenKind::Wildcard,
             symbol => TokenKind::Ident(Symbol::intern(symbol)),
         };
         (kind, len)

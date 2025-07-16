@@ -148,6 +148,9 @@ pub enum Mutable {
 #[derive(Clone,Debug)]
 pub enum PatternKind {
     Ident(Symbol,Mutable),
+    Tuple(Vec<Pattern>),
+    Grouped(Box<Pattern>),
+    Wildcard
 }
 define_id! {
     #[derive(Debug)]

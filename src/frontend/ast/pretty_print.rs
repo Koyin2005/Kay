@@ -264,6 +264,28 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
                     Mutable::No => {}
                 };
                 self.print(name.as_str())
+            },
+            PatternKind::Wildcard => {
+                self.print("_")
+            },
+            PatternKind::Grouped(pattern) => {
+                self.print("grouped\n")?;
+                self.increase_depth();
+                self.print_depth()?;
+                self.print_pattern(pattern)
+            },
+            PatternKind::Tuple(patterns) => {
+                self.print("tuple\n")?;
+                self.increase_depth();
+                for (i,pattern) in patterns.iter().enumerate(){
+                    self.print_depth()?;
+                    self.print_pattern(pattern)?;
+                    if i + 1 < patterns.len(){
+                        self.print_newline()?;
+                    }
+                }
+                self.decrease_depth();
+                Ok(())
             }
         }
     }

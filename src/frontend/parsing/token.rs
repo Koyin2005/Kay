@@ -50,6 +50,7 @@ pub enum TokenKind {
     Bool,
     String,
     Never,
+    Wildcard,
 
     Ident(Symbol),
     Literal(Literal),

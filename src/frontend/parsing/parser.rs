@@ -46,6 +46,16 @@ impl<'source> Parser<'source> {
     fn error_at_current(&self, msg: impl IntoDiagnosticMessage){
         self.error_at(msg, self.current_token.span);
     }
+    fn match_ident(&mut self) -> Option<Ident>{
+        if let TokenKind::Ident(name) = self.current_token.kind{
+            let span = self.current_token.span;
+            self.advance();
+            Some(Ident { symbol: name, span })
+        }
+        else {
+            None
+        }
+    }
     fn expect_ident(&mut self, msg: impl IntoDiagnosticMessage) -> ParseResult<Ident> {
         let span = self.current_token.span;
         let TokenKind::Ident(symbol) = self.current_token.kind else {
@@ -427,16 +437,61 @@ impl<'source> Parser<'source> {
         Ok(Stmt { id, kind, span })
     }
     fn parse_pattern(&mut self) -> ParseResult<Pattern>{
-        let mutable = if self.check(TokenKind::Mut){
-            let span = self.current_token.span;
-            self.advance();
-            Mutable::Yes(span)
-        }
-        else{
-            Mutable::No
+        let (kind,span) = match self.current_token.kind{
+            TokenKind::LeftParen => {
+                let start = self.current_token.span;
+                self.advance();
+                let mut patterns = Vec::new();
+                let mut had_coma = false;
+                while !self.is_at_eof() && !self.check(TokenKind::RightParen) {
+                    let pattern = self.parse_pattern()?;
+                    patterns.push(pattern);
+                    if !self.match_current(TokenKind::Coma){
+                        break;
+                    }
+                    had_coma = true;
+                }
+                let end = self.current_token.span;
+                let _ = self.expect(TokenKind::RightParen, "Expected ')' at end of pattern.");
+                (if patterns.is_empty(){
+                    PatternKind::Tuple(vec![])
+                }
+                else if patterns.len() > 1 || had_coma{
+                    PatternKind::Tuple(patterns)
+                } else {
+                    PatternKind::Grouped(Box::new(patterns.into_iter().next().expect("There should be 1 pattern here")))
+                },
+                start.combined(end)
+                )
+            },
+            TokenKind::Wildcard => {
+                let span = self.current_token.span;
+                self.advance();
+                (PatternKind::Wildcard,span)
+            },
+            TokenKind::Ident(name) => {
+                let span = self.current_token.span;
+                self.advance();
+                (PatternKind::Ident(name, Mutable::No),span)
+            },
+            TokenKind::Mut => {
+                let span = self.current_token.span;
+                self.advance();
+                if let Some(name) =  self.match_ident(){
+                    (PatternKind::Ident(name.symbol, Mutable::Yes(span)),name.span)
+                }
+                else{
+                    let pattern =  self.parse_pattern()?;
+                    self.error_at("Expected a variable name after 'mut'.", pattern.span);
+                    return Ok(pattern);
+                }
+            }
+            _ => {
+                self.error_at_current("Invalid pattern.");
+                return Err(ParseError);
+            }
         };
-        let name = self.expect_ident("Expected valid variable name")?;
-        Ok(Pattern { id : self.new_id(), span: name.span, kind: PatternKind::Ident(name.symbol, mutable) })
+        Ok(Pattern { id : self.new_id(), span: span, kind: kind })
     }
     fn parse_let_stmt(&mut self) -> ParseResult<Stmt>{
         let start = self.current_token.span;
