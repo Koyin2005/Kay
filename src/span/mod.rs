@@ -1,7 +1,5 @@
 use std::{
-    fmt::Debug,
-    str::Lines,
-    sync::{LazyLock, Mutex},
+    fmt::Debug, ops::Deref, str::Lines, sync::{LazyLock, Mutex}
 };
 
 use indexmap::IndexSet;

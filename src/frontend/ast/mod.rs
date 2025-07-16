@@ -1,6 +1,6 @@
 use crate::{
     define_id,
-    span::{Span, symbol::Symbol},
+    span::{symbol::{Ident, Symbol}, Span},
 };
 
 #[derive(Clone, Debug)]
@@ -18,6 +18,7 @@ pub struct Stmt {
 }
 #[derive(Clone, Debug)]
 pub enum StmtKind {
+    Let(Box<Expr>,Box<Expr>),
     ExprWithSemi(Box<Expr>),
     Expr(Box<Expr>),
 }
@@ -49,6 +50,12 @@ pub enum BinaryOpKind {
 
     Equals,
     NotEquals,
+
+    LesserThan,
+    GreaterThan,
+
+    LesserEquals,
+    GreaterEquals,
 }
 impl BinaryOpKind {
     fn as_str(&self) -> &'static str {
@@ -61,6 +68,10 @@ impl BinaryOpKind {
             Self::NotEquals => "!=",
             Self::And => "and",
             Self::Or => "or",
+            Self::LesserEquals => "<",
+            Self::LesserThan => ">",
+            Self::GreaterEquals => ">=",
+            Self::GreaterThan => ">",
         }
     }
 }
@@ -108,6 +119,7 @@ pub enum ExprKind {
     Tuple(Vec<Expr>),
     Block(Block),
     If(Box<Expr>, Box<Block>, Option<Box<Expr>>),
+    Assign(Box<Expr>,Box<Expr>,Span),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Unary(UnaryOp, Box<Expr>),
     Literal(LiteralKind),
@@ -117,6 +129,8 @@ pub enum ExprKind {
     Ident(Symbol),
     Grouped(Box<Expr>),
     Call(Box<Expr>,Vec<Expr>),
+    Break(Option<Box<Expr>>),
+    Field(Box<Expr>,Ident),
 }
 
 define_id! {
