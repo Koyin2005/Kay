@@ -1,1 +1,2 @@
-let a = if true then { 5} else if true { 6};
+let a = if true then { 5} else if true then { return 6};
+let a = if true then { 5} else if true then { break return 6};

@@ -130,6 +130,7 @@ pub enum ExprKind {
     Grouped(Box<Expr>),
     Call(Box<Expr>,Vec<Expr>),
     Break(Option<Box<Expr>>),
+    Return(Option<Box<Expr>>),
     Field(Box<Expr>,Ident),
 }
 

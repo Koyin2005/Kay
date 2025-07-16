@@ -242,8 +242,10 @@ impl<'source> Parser<'source> {
     }
     fn is_expr_start(&self) -> bool{
         match self.current_token.kind{
-            TokenKind::Ident(..) | TokenKind::Literal(..) | TokenKind::LeftBrace | TokenKind::LeftParen | TokenKind::Return |
-             TokenKind::Break | TokenKind::Minus | TokenKind::If | TokenKind::While | TokenKind::For => true,
+            TokenKind::Ident(..) | TokenKind::Literal(..) | 
+            TokenKind::LeftBrace | TokenKind::LeftParen | 
+            TokenKind::Return | TokenKind::Break | 
+            TokenKind::Minus | TokenKind::If | TokenKind::While | TokenKind::For => true,
             _ => false
         }
     }
@@ -289,6 +291,13 @@ impl<'source> Parser<'source> {
                 let expr = self.parse_optional_expr().transpose()?;
                 let span = if let Some(expr) = expr.as_ref() { expr.span.combined(start)} else { start};
                 Ok(Expr { id: self.new_id(), kind: ExprKind::Break(expr.map(Box::new)), span })
+            },
+            TokenKind::Return => {
+                let start = self.current_token.span;
+                self.advance();
+                let expr = self.parse_optional_expr().transpose()?;
+                let span = if let Some(expr) = expr.as_ref() { expr.span.combined(start)} else { start};
+                Ok(Expr { id: self.new_id(), kind: ExprKind::Return(expr.map(Box::new)), span })
             },
             _ => {
                 let Some(op) = self.unary_op() else {

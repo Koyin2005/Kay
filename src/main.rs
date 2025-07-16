@@ -51,7 +51,7 @@ fn main() {
     };
     let mut pretty = PrettyPrint::new(String::new());
     for stmt in stmts {
-        let Ok(_) = pretty.pretty_print_stmt(&stmt) else {
+        let Ok(_) = pretty.pretty_print_stmt(&stmt,true) else {
             continue;
         };
     }

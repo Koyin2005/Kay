@@ -29,8 +29,8 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
     fn print_block(&mut self, block: &Block) -> std::fmt::Result{
         self.print("block\n")?;
         self.increase_depth();
-        for stmt in block.stmts.iter(){
-            self.pretty_print_stmt(stmt)?;
+        for (i,stmt) in block.stmts.iter().enumerate(){
+            self.pretty_print_stmt(stmt,i + 1 < block.stmts.len())?;
         }
         self.decrease_depth();
         Ok(())
@@ -41,7 +41,7 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
         for (i,element) in elements.iter().enumerate(){
             self.print_depth()?;
             self.pretty_print_expr(element)?;
-            if i < elements.len() -1 {
+            if i  + 1 < elements.len()  {
                 self.print_newline()?;
             } 
         }
@@ -228,16 +228,32 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
 
                 if let Some(else_branch) = else_branch{
                     self.print_newline()?;
+
+                    self.print_depth()?;
+                    self.print("else\n")?;
+
+                    self.increase_depth();
                     self.print_depth()?;
                     self.pretty_print_expr(else_branch)?;
+                    self.decrease_depth();
                 }
                 self.decrease_depth();
                 Ok(())
             },
+            ExprKind::Return(expr) => {
+                self.print("return")?;
+                if let Some(expr) = expr{
+                    self.print_newline()?;
+                    self.increase_depth();
+                    self.print_depth()?;
+                    self.pretty_print_expr(expr)?;
+                }
+                Ok(())
+            }
         }
 
     }
-    pub fn pretty_print_stmt(&mut self, stmt:&Stmt) -> std::fmt::Result{
+    pub fn pretty_print_stmt(&mut self, stmt:&Stmt, newline : bool) -> std::fmt::Result{
         match &stmt.kind{
             StmtKind::Expr(expr) => {
                 self.print_depth()?;
@@ -248,7 +264,6 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
                 self.print_depth()?;
                 self.pretty_print_expr(expr)?;
                 self.decrease_depth();
-                self.print_newline()
             },
             StmtKind::ExprWithSemi(expr) => {
                 self.print_depth()?;
@@ -259,7 +274,6 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
                 self.print_depth()?;
                 self.pretty_print_expr(expr)?;
                 self.decrease_depth();
-                self.print_newline()
 
             },
             StmtKind::Let(assignee,assigned) => {
@@ -275,8 +289,13 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
                 self.print_depth()?;
                 self.pretty_print_expr(&assigned)?;
                 self.decrease_depth();
-                self.print_newline()
             }
+        }
+        if newline{
+            self.print_newline()
+        }
+        else {
+            Ok(())
         }
     }
     pub fn finish(self) -> W{
