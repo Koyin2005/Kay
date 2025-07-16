@@ -48,20 +48,23 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
         self.decrease_depth();
         Ok(())
     }
+    fn print_literal(&mut self, literal: &LiteralKind) -> std::fmt::Result{
+        match literal{
+            LiteralKind::Int(value) => {
+                self.print(&value.to_string())
+            },
+            &LiteralKind::Bool(value) => {
+                self.print(if value { "true" } else { "false" })
+            },
+            LiteralKind::String(value) => {
+                self.print(value.as_str())
+            }
+        }
+    }
     fn pretty_print_expr(&mut self, expr: &Expr) -> std::fmt::Result{
         match &expr.kind{
             ExprKind::Literal(literal) => {
-                match literal{
-                    LiteralKind::Int(value) => {
-                        self.print(&value.to_string())
-                    },
-                    &LiteralKind::Bool(value) => {
-                        self.print(if value { "true" } else { "false" })
-                    },
-                    LiteralKind::String(value) => {
-                        self.print(value.as_str())
-                    }
-                }
+                self.print_literal(literal)
             },
             ExprKind::Ident(name) => {
                 self.print(name.as_str())
@@ -269,13 +272,13 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
                 self.print("_")
             },
             PatternKind::Grouped(pattern) => {
-                self.print("grouped\n")?;
+                self.print("grouped pat\n")?;
                 self.increase_depth();
                 self.print_depth()?;
                 self.print_pattern(pattern)
             },
             PatternKind::Tuple(patterns) => {
-                self.print("tuple\n")?;
+                self.print("tuple pat\n")?;
                 self.increase_depth();
                 for (i,pattern) in patterns.iter().enumerate(){
                     self.print_depth()?;
@@ -284,6 +287,14 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
                         self.print_newline()?;
                     }
                 }
+                self.decrease_depth();
+                Ok(())
+            },
+            PatternKind::Literal(literal) => {
+                self.print("literal pat\n")?;
+                self.increase_depth();
+                self.print_depth()?;
+                self.print_literal(literal)?;
                 self.decrease_depth();
                 Ok(())
             }

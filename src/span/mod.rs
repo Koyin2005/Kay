@@ -47,7 +47,7 @@ impl LineInfo {
             .char_indices()
             .enumerate()
             .find_map(|(i, (rel_offset, char))| {
-                last_column = i;
+                last_column = i + char.len_utf8();
                 (start_offset + rel_offset <= offset as usize
                     && (offset as usize) < start_offset + rel_offset + char.len_utf8())
                 .then_some(i)
@@ -168,20 +168,24 @@ impl SourceInfo {
         if source.len() >= u32::MAX as usize {
             return Err(SourceTooLarge);
         }
+        let mut has_newline_at_end = false;
         let mut source_offset = 0;
-        let lines = source
+        let mut lines = source
             .split_inclusive('\n')
             .enumerate()
             .map(|(line_index, line_src)| {
                 let start = source_offset as u32;
                 
                 let end = if line_src.ends_with("\r\n"){
+                    has_newline_at_end = true;
                     source_offset + line_src.len() - 2
                 }
                 else if line_src.ends_with('\n'){
+                    has_newline_at_end = true;
                     source_offset + line_src.len() - 1
                 }
                 else{
+                    has_newline_at_end = false;
                     source_offset + line_src.len()
                 } as u32;
                 source_offset += line_src.len();
@@ -191,10 +195,13 @@ impl SourceInfo {
                     end_offset: end,
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
+        if has_newline_at_end{
+            lines.push(LineInfo { line_number: (lines.len() + 1) as u32, start_offset: source_offset  as u32 -1, end_offset: source_offset as u32  });
+        }
         Ok(SourceInfo {
             source: source.into_boxed_str(),
-            lines,
+            lines:lines.into_boxed_slice(),
         })
     }
     pub fn source(&self) -> &str {
@@ -225,7 +232,11 @@ impl SourceInfo {
             .iter()
             .find(|line| line.start_offset <= offset && offset <= line.end_offset)
         else {
-            return SourceLocation { line: self.lines.len() as u32, column: 1 };
+            let last_line = self.lines.last().expect("There should be at least 1 line");
+            return SourceLocation { line: last_line.line_number, column: {
+                self.source_within(last_line.start_offset, last_line.end_offset).char_indices().map(|(i,c)| i + c.len_utf8()).last().unwrap_or(1) as u32
+             } 
+            };
         };
         line.location_within(offset, &self.source)
     }

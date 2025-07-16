@@ -117,7 +117,7 @@ impl<'a> Lexer<'a> {
         } else {
             (StringComplete::No, self.curr_offset)
         };
-        let len = self.curr_offset - self.start_offset;
+        let len = end_offset - self.start_offset;
         let (symbol, _) = self.symbol(self.start_offset + 1, end_offset);
         (
             TokenKind::Literal(Literal::String(symbol, is_complete)),

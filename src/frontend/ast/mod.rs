@@ -150,6 +150,7 @@ pub enum PatternKind {
     Ident(Symbol,Mutable),
     Tuple(Vec<Pattern>),
     Grouped(Box<Pattern>),
+    Literal(LiteralKind),
     Wildcard
 }
 define_id! {

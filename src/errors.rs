@@ -28,7 +28,6 @@ impl<'a> DiagnosticReporter<'a> {
         let mut inner = self.0.borrow_mut();
         for diagnostic in std::mem::take(&mut inner.all_diagnostics) {
             let span_info = diagnostic.span.info();
-
             let start = inner.source_info.location_at(span_info.start_offset);
             let end = inner.source_info.location_at(span_info.end_offset);
             eprintln!(
@@ -46,28 +45,30 @@ impl<'a> DiagnosticReporter<'a> {
                 for _ in 1..start.column {
                     eprint!(" ");
                 }
-                for _ in start.column..=end.column {
+                for _ in start.column..end.column {
                     eprint!("^");
                 }
                 eprintln!()
             } else {
-                let lines = &inner.source_info.line_info()[start.line as usize - 1 .. end.line as usize];
+                let  lines = &inner.source_info.line_info()[start.line as usize - 1 .. end.line as usize];
                 for line in lines{
-                    eprintln!("  {}",inner.source_info.source_within(line.start_offset(), line.end_offset()));
+                    let line_source = inner.source_info.source_within(line.start_offset(), line.end_offset());
+                    eprintln!("  {}",line_source);
 
                     let start_of_line = if line.line_number() == start.line { start } else { 
-                        let first_non_space_char =  inner.source_info
-                        .source_within(line.start_offset(), line.end_offset())
+                        let first_non_space_char =  line_source
                         .char_indices().filter_map(|(i,c)| (!c.is_ascii_whitespace()).then_some(i))
-                        .next().unwrap_or(0) as u32 + line.start_offset();
+                        .next().map(|offset| offset as u32 + line.start_offset()).unwrap_or(line.start_offset());
                         inner.source_info.location_at(first_non_space_char)
+                        
                     };
+
+                    let end_of_line = line.location_within(line.end_offset(), inner.source_info.source());
                     eprint!("  ");
-                    for _ in 1..start_of_line.column {
+                    for _ in 1..start_of_line.column.min(start.column) {
                         eprint!(" ");
                     }
-                    let end_of_line = line.location_within(line.end_offset(), inner.source_info.source());
-                    for _ in start_of_line.column..=end_of_line.column {
+                    for _ in start_of_line.column.min(start.column)..end_of_line.column.max(start.column+1) {
                         eprint!("^");
                     }
                     eprintln!()

@@ -110,7 +110,7 @@ impl<'source> Parser<'source> {
             _ => return None,
         })
     }
-    fn parse_literal(&mut self, literal: Literal) -> ParseResult<Expr>{
+    fn parse_literal(&mut self, literal: Literal) -> ParseResult<(Span,LiteralKind)>{
         let span = self.current_token.span;
         let kind = match literal {
             Literal::Int(value) => LiteralKind::Int(match value.as_str().parse() {
@@ -130,11 +130,7 @@ impl<'source> Parser<'source> {
             },
         };
         self.advance();
-        Ok(Expr {
-            id:self.new_id(),
-            kind:ExprKind::Literal(kind),
-            span,
-        })
+        Ok((span,kind))
     }
     fn parse_grouped_expr(&mut self) -> ParseResult<Expr> {
         let start = self.current_token.span;
@@ -270,7 +266,9 @@ impl<'source> Parser<'source> {
     fn parse_expr_prefix(&mut self) -> ParseResult<Expr>{
         match self.current_token.kind {
             TokenKind::Literal(literal) => {
-                self.parse_literal(literal)
+                self.parse_literal(literal).map(|(span,literal)|{
+                    Expr { id: self.new_id(), kind: ExprKind::Literal(literal), span }
+                })
             }
             TokenKind::LeftParen => {
                 self.parse_grouped_expr()
@@ -485,7 +483,11 @@ impl<'source> Parser<'source> {
                     self.error_at("Expected a variable name after 'mut'.", pattern.span);
                     return Ok(pattern);
                 }
-            }
+            },
+            TokenKind::Literal(literal) => {
+                let (span,literal) = self.parse_literal(literal)?;
+                (PatternKind::Literal(literal),span)
+            },
             _ => {
                 self.error_at_current("Invalid pattern.");
                 return Err(ParseError);
@@ -526,6 +528,7 @@ impl<'source> Parser<'source> {
         let mut stmts = Vec::new();
         self.advance();
         while !self.is_at_eof(){
+            self.panic_mode.set(false);
             let Ok(stmt) = self.parse_stmt() else{
                 while !self.is_at_eof() {
                     if matches!(self.current_token.kind,TokenKind::Semicolon|TokenKind::RightBrace){
@@ -537,7 +540,6 @@ impl<'source> Parser<'source> {
                         break;
                     }
                 }
-                self.panic_mode.set(false);
                 continue;
             };
             stmts.push(stmt);
