@@ -18,7 +18,7 @@ pub struct Stmt {
 }
 #[derive(Clone, Debug)]
 pub enum StmtKind {
-    Let(Box<Expr>,Box<Expr>),
+    Let(Box<Pattern>,Box<Expr>),
     ExprWithSemi(Box<Expr>),
     Expr(Box<Expr>),
 }
@@ -133,7 +133,22 @@ pub enum ExprKind {
     Return(Option<Box<Expr>>),
     Field(Box<Expr>,Ident),
 }
+#[derive(Clone,Debug)]
+pub struct Pattern{
+    pub span : Span,
+    pub kind : PatternKind,
+    pub id : NodeId
+}
 
+#[derive(Clone,Debug)]
+pub enum Mutable {
+    Yes(Span),
+    No
+}
+#[derive(Clone,Debug)]
+pub enum PatternKind {
+    Ident(Symbol,Mutable),
+}
 define_id! {
     #[derive(Debug)]
     struct NodeId{

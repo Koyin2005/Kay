@@ -1,4 +1,4 @@
-use crate::frontend::ast::{Block, Expr, ExprKind, IteratorExprKind, LiteralKind, Stmt, StmtKind};
+use crate::frontend::ast::{Block, Expr, ExprKind, IteratorExprKind, LiteralKind, Mutable, Pattern, PatternKind, Stmt, StmtKind};
 
 pub struct PrettyPrint<W>{
     writer : W,
@@ -253,6 +253,20 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
         }
 
     }
+
+    fn print_pattern(&mut self, pattern: &Pattern) -> std::fmt::Result{
+        match &pattern.kind{
+            PatternKind::Ident(name,mutable) => {
+                match mutable {
+                    Mutable::Yes(_) => {
+                        self.print("mut ")?;
+                    },
+                    Mutable::No => {}
+                };
+                self.print(name.as_str())
+            }
+        }
+    }
     pub fn pretty_print_stmt(&mut self, stmt:&Stmt, newline : bool) -> std::fmt::Result{
         match &stmt.kind{
             StmtKind::Expr(expr) => {
@@ -276,14 +290,14 @@ impl<W:std::fmt::Write> PrettyPrint<W>{
                 self.decrease_depth();
 
             },
-            StmtKind::Let(assignee,assigned) => {
+            StmtKind::Let(pattern,assigned) => {
                 self.print_depth()?;
                 self.print("let")?;
                 self.print_newline()?;
 
                 self.increase_depth();
                 self.print_depth()?;
-                self.pretty_print_expr(assignee)?;
+                self.print_pattern(pattern)?;
                 self.print_newline()?;
 
                 self.print_depth()?;

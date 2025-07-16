@@ -2,9 +2,9 @@ use std::cell::Cell;
 
 use crate::{
     errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
-        ast::{BinaryOp, BinaryOpKind, Block, Expr, ExprKind, IteratorExpr, IteratorExprKind, LiteralKind, NodeId, Stmt, StmtKind, UnaryOp, UnaryOpKind},
+        ast::{BinaryOp, BinaryOpKind, Block, Expr, ExprKind, IteratorExpr, IteratorExprKind, LiteralKind, Mutable, NodeId, Pattern, PatternKind, Stmt, StmtKind, UnaryOp, UnaryOpKind},
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    }, indexvec::Idx, span::{self, symbol::{Ident, Symbol}, Span}, Lexer
+    }, indexvec::Idx, span::{ symbol::Ident, Span}, Lexer
 };
 
 pub struct Parser<'source> {
@@ -426,16 +426,27 @@ impl<'source> Parser<'source> {
         let id = self.new_id();
         Ok(Stmt { id, kind, span })
     }
+    fn parse_pattern(&mut self) -> ParseResult<Pattern>{
+        let mutable = if self.check(TokenKind::Mut){
+            let span = self.current_token.span;
+            self.advance();
+            Mutable::Yes(span)
+        }
+        else{
+            Mutable::No
+        };
+        let name = self.expect_ident("Expected valid variable name")?;
+        Ok(Pattern { id : self.new_id(), span: name.span, kind: PatternKind::Ident(name.symbol, mutable) })
+    }
     fn parse_let_stmt(&mut self) -> ParseResult<Stmt>{
         let start = self.current_token.span;
         self.advance();
-        let name = self.expect_ident("Expected valid variable name")?;
-        let name_expr = Expr{id:self.new_id(), kind: ExprKind::Ident(name.symbol), span:name.span};
+        let pattern = self.parse_pattern()?;
         let _ = self.expect(TokenKind::Equals, "Expected '='.");
         let expr = self.parse_expr(0)?;
         let end = self.current_token.span;
         let _ = self.expect(TokenKind::Semicolon, "Expected ';' at end of 'let' statement.");
-        Ok(Stmt { id: self.new_id(), kind: StmtKind::Let(Box::new(name_expr), Box::new(expr)), span: start.combined(end) })
+        Ok(Stmt { id: self.new_id(), kind: StmtKind::Let(Box::new(pattern), Box::new(expr)), span: start.combined(end) })
     }
     fn parse_stmt(&mut self) -> ParseResult<Stmt> {
         match self.current_token.kind{
