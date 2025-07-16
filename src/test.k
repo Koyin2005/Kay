@@ -1,1 +1,1 @@
-a = b = 5;
+let a = if true then { 5} else if true { 6};

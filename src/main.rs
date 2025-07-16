@@ -1,7 +1,5 @@
 use pl5::{
-    Lexer, Parser, SourceInfo,
-    config::{Config, ConfigError},
-    errors::DiagnosticReporter,
+    config::{Config, ConfigError}, errors::DiagnosticReporter, Lexer, Parser, PrettyPrint, SourceInfo
 };
 
 fn main() {
@@ -51,7 +49,12 @@ fn main() {
     let Ok(stmts) = parser.parse() else {
         return;
     };
+    let mut pretty = PrettyPrint::new(String::new());
     for stmt in stmts {
-        println!("{stmt:?}\n")
+        let Ok(_) = pretty.pretty_print_stmt(&stmt) else {
+            continue;
+        };
     }
+    println!("{}",pretty.finish());
+
 }

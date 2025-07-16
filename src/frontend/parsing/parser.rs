@@ -90,7 +90,7 @@ impl<'source> Parser<'source> {
 
     fn infix_binding_power(&self) -> Option<(u32, u32)> {
         Some(match self.current_token.kind {
-            TokenKind::Equals => (1,2), 
+            TokenKind::Equals => (2,1), 
             TokenKind::EqualsEquals | TokenKind::BangEquals => (3,4),
             TokenKind::LesserThan | TokenKind::GreaterThan | 
             TokenKind::LesserEquals | TokenKind::GreaterEquals => (5,6),

@@ -2,7 +2,7 @@ use crate::{
     define_id,
     span::{symbol::{Ident, Symbol}, Span},
 };
-
+pub mod pretty_print;
 #[derive(Clone, Debug)]
 pub struct Block {
     pub id: NodeId,
