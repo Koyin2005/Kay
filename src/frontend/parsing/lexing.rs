@@ -44,15 +44,17 @@ impl<'a> Lexer<'a> {
                             let mut depth = 1;
                             self.advance();
                             while let Some(c) = self.peek(){
-                                self.advance();
                                 let Some(next_c) = self.peek_next() else {
+                                    self.advance();
                                     break;
                                 };
+                                self.advance();
                                 if c == '/' && next_c == '*'{
                                     depth += 1;
                                 }
                                 else if c == '*' && next_c == '/'{
                                     depth -= 1;
+                                    self.advance();
                                 }
                                 if depth == 0{
                                     break;
@@ -69,9 +71,8 @@ impl<'a> Lexer<'a> {
         }
     }
     fn peek_next(&mut self) -> Option<char> {
-        self.chars.next();
-        let next_char = self.chars.peek().map(|(_, c)| *c);
-        self.chars.next_back();
+        let mut temp_iter = self.chars.clone();
+        let next_char = temp_iter.nth(1).map(|(_, c)| c);
         next_char
     }
     fn peek(&mut self) -> Option<char> {
