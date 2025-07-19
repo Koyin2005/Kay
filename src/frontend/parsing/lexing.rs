@@ -28,12 +28,51 @@ impl<'a> Lexer<'a> {
             match c {
                 ' ' | '\t' | '\r' | '\n' => {
                     self.advance();
-                }
+                },
+                '/' => {
+                    let Some(next_char) = self.peek_next() else {
+                        break;
+                    };
+                    match next_char{
+                        '/' => {
+                            self.advance();
+                            while let Some(c) = self.peek() && c != '\n' {
+                                self.advance();
+                            }
+                        },
+                        '*' => {
+                            let mut depth = 1;
+                            self.advance();
+                            while let Some(c) = self.peek(){
+                                self.advance();
+                                let Some(next_c) = self.peek_next() else {
+                                    break;
+                                };
+                                if c == '/' && next_c == '*'{
+                                    depth += 1;
+                                }
+                                else if c == '*' && next_c == '/'{
+                                    depth -= 1;
+                                }
+                                if depth == 0{
+                                    break;
+                                }
+                            }
+                        },
+                        _ => break
+                    }
+                },
                 _ => {
                     break;
                 }
             }
         }
+    }
+    fn peek_next(&mut self) -> Option<char> {
+        self.chars.next();
+        let next_char = self.chars.peek().map(|(_, c)| *c);
+        self.chars.next_back();
+        next_char
     }
     fn peek(&mut self) -> Option<char> {
         self.chars.peek().map(|(_, c)| *c)
