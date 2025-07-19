@@ -516,7 +516,7 @@ impl<'source> Parser<'source> {
         let id = self.new_id();
         Ok(Stmt { id, kind, span })
     }
-    fn parse_pattern(&mut self) -> ParseResult<Pattern> {
+    fn parse_prefix_pattern(&mut self) -> ParseResult<Pattern>{
         let (kind, span) = match self.current_token.kind {
             TokenKind::LeftParen => {
                 let start = self.current_token.span;
@@ -624,6 +624,20 @@ impl<'source> Parser<'source> {
             span: span,
             kind: kind,
         })
+
+    }
+    fn parse_pattern(&mut self) -> ParseResult<Pattern> {
+        let mut pattern = self.parse_prefix_pattern()?;
+        loop{
+            match self.current_token.kind {
+                TokenKind::Caret => {
+                    let span = self.current_token.span;
+                    self.advance();
+                    pattern = Pattern{id:self.new_id(),span:pattern.span.combined(span),kind:PatternKind::Deref(Box::new(pattern))}
+                },
+                _ => break Ok(pattern)
+            }
+        }
     }
     fn parse_let_stmt(&mut self) -> ParseResult<Stmt> {
         let start = self.current_token.span;
