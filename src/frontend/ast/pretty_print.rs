@@ -326,8 +326,7 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
             }
             StmtKind::Let(pattern, assigned) => {
                 self.print_depth()?;
-                self.print("let")?;
-                self.print_newline()?;
+                self.print("let\n")?;
 
                 self.increase_depth();
                 self.print_depth()?;
@@ -337,6 +336,10 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.print_depth()?;
                 self.pretty_print_expr(&assigned)?;
                 self.decrease_depth();
+            },
+            StmtKind::Item => {
+                self.print_depth()?;
+                self.print("item\n")?;
             }
         }
         if newline {

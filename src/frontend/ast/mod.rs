@@ -21,6 +21,7 @@ pub struct Stmt {
 }
 #[derive(Clone, Debug)]
 pub enum StmtKind {
+    Item,
     Let(Box<Pattern>, Box<Expr>),
     ExprWithSemi(Box<Expr>),
     Expr(Box<Expr>),
