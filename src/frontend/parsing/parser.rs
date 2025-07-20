@@ -1,18 +1,12 @@
 use std::cell::Cell;
 
 use crate::{
-    Lexer,
-    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
-    frontend::{
+    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
         ast::{
-            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprKind, IteratorExpr, IteratorExprKind,
-            LiteralKind, Mutable, NodeId, Pattern, PatternKind, Stmt, StmtKind, UnaryOp,
-            UnaryOpKind,
+            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprKind, FunctionDef, IteratorExpr, IteratorExprKind, LiteralKind, Mutable, NodeId, Pattern, PatternKind, Stmt, StmtKind, UnaryOp, UnaryOpKind
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    },
-    indexvec::Idx,
-    span::{Span, symbol::Ident},
+    }, indexvec::Idx, span::{symbol::Ident, Span}, Lexer
 };
 
 pub struct Parser<'source> {
@@ -656,9 +650,27 @@ impl<'source> Parser<'source> {
             span: start.combined(end),
         })
     }
+    fn parse_fun_def(&mut self) -> ParseResult<Stmt>{
+        let start = self.current_token.span;
+        self.advance();
+
+        let function_name = self.expect_ident("Expected a function name")?;
+        let _ = self.expect(TokenKind::LeftParen, "Expected '(' after 'function' name.");
+        let _ = self.expect(TokenKind::RightParen, "Expected ')' after 'function' arguments.");
+
+        let body = self.parse_block()?;
+
+        let end = self.current_token.span;
+
+        let span = start.combined(end);
+        Ok(Stmt { kind : StmtKind::Item(Box::new(FunctionDef { id: self.new_id(), span, name:function_name, body})) , id : self.new_id(), span})
+
+
+    }
     fn parse_stmt(&mut self) -> ParseResult<Stmt> {
         match self.current_token.kind {
             TokenKind::Let => self.parse_let_stmt(),
+            TokenKind::Fun => self.parse_fun_def(),
             _ => self.parse_expr_stmt(),
         }
     }

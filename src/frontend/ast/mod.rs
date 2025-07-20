@@ -10,6 +10,7 @@ pub mod pretty_print;
 #[derive(Clone, Debug)]
 pub struct FunctionDef{
     pub id : NodeId,
+    pub span : Span,
     pub name : Ident,
     pub body : Block
 }
