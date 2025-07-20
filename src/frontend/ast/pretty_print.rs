@@ -1,6 +1,5 @@
 use crate::frontend::ast::{
-    Block, ByRef, Expr, ExprKind, IteratorExprKind, LiteralKind, Mutable, Pattern, PatternKind,
-    Stmt, StmtKind,
+    Block, ByRef, Expr, ExprKind, ItemKind, IteratorExprKind, LiteralKind, Mutable, Pattern, PatternKind, Stmt, StmtKind
 };
 
 pub struct PrettyPrint<W> {
@@ -32,6 +31,32 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
     fn print_newline(&mut self) -> std::fmt::Result {
         self.writer.write_char('\n')
     }
+
+    fn print_item(&mut self, item: &ItemKind) -> std::fmt::Result {
+        match item{
+            ItemKind::Function(function) => {
+                self.print("function def\n")?;
+                self.increase_depth();
+                if !function.params.is_empty(){
+                    self.print_depth()?;
+                    self.print("function params\n")?;
+                    self.increase_depth();
+                    for param in function.params.iter(){
+                        self.print_depth()?;
+                        self.print_pattern(&param.pattern)?;
+                        self.print_newline()?;
+                    }
+                    self.decrease_depth();
+                }
+                self.print_depth()?;
+                self.print_block(&function.body)?;
+                self.decrease_depth();
+
+                Ok(())
+            }
+        }
+    }
+
     fn print_block(&mut self, block: &Block) -> std::fmt::Result {
         self.print("block\n")?;
         self.increase_depth();
@@ -337,18 +362,14 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.pretty_print_expr(&assigned)?;
                 self.decrease_depth();
             },
-            StmtKind::Item(function) => {
+            StmtKind::Item(item) => {
                 self.print_depth()?;
                 self.print("item\n")?;
 
                 self.increase_depth();
                 self.print_depth()?;
-                self.print(function.name.symbol.as_str())?;
-                self.print_newline()?;
 
-                self.increase_depth();
-                self.print_depth()?;
-                self.print_block(&function.body)?;
+                self.print_item(&item)?;
                 self.decrease_depth();
             }
         }

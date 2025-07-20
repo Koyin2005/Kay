@@ -7,11 +7,17 @@ use crate::{
 };
 pub mod pretty_print;
 
+
+#[derive(Clone, Debug)]
+pub struct Param{
+    pub pattern : Pattern
+}
 #[derive(Clone, Debug)]
 pub struct FunctionDef{
     pub id : NodeId,
     pub span : Span,
     pub name : Ident,
+    pub params : Vec<Param>,
     pub body : Block
 }
 #[derive(Clone, Debug)]
@@ -29,7 +35,7 @@ pub struct Stmt {
 }
 #[derive(Clone, Debug)]
 pub enum StmtKind {
-    Item(Box<FunctionDef>),
+    Item(Box<ItemKind>),
     Let(Box<Pattern>, Box<Expr>),
     ExprWithSemi(Box<Expr>),
     Expr(Box<Expr>),
@@ -112,6 +118,10 @@ impl std::fmt::Display for UnaryOpKind {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum ItemKind {
+    Function(FunctionDef),
+}
 #[derive(Clone, Debug)]
 pub enum LiteralKind {
     Int(i64),
