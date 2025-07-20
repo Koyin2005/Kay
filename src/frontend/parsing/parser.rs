@@ -1,25 +1,31 @@
 use std::cell::Cell;
 
 use crate::{
-    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
+    Lexer,
+    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
+    frontend::{
         ast::{
-            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprKind, FunctionDef, ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, Mutable, NodeId, Param, Pattern, PatternKind, Spanned, Stmt, StmtKind, UnaryOp, UnaryOpKind
+            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprKind, FunctionDef, ItemKind,
+            IteratorExpr, IteratorExprKind, LiteralKind, Mutable, NodeId, Param, Pattern,
+            PatternKind, Spanned, Stmt, StmtKind, UnaryOp, UnaryOpKind,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    }, indexvec::Idx, span::{symbol::Ident, Span}, Lexer
+    },
+    indexvec::Idx,
+    span::{Span, symbol::Ident},
 };
 
 /// Multiple variant may have 1 element if it ends with a coma
-enum ElementsParsed<T>{
-    Multiple(Vec<T>,Option<Span>),
+enum ElementsParsed<T> {
+    Multiple(Vec<T>, Option<Span>),
     Single(T),
 }
 
-impl<T> From<ElementsParsed<T>> for Vec<T>{
+impl<T> From<ElementsParsed<T>> for Vec<T> {
     fn from(value: ElementsParsed<T>) -> Self {
-        match value{
+        match value {
             ElementsParsed::Single(element) => vec![element],
-            ElementsParsed::Multiple(elements,_) => elements
+            ElementsParsed::Multiple(elements, _) => elements,
         }
     }
 }
@@ -150,9 +156,8 @@ impl<'source> Parser<'source> {
         let start = self.current_token.span;
         self.advance();
 
-        let elements = self.parse_delimited_by(TokenKind::RightParen, |parser|{
-            parser.parse_expr(0)
-        })?;
+        let elements =
+            self.parse_delimited_by(TokenKind::RightParen, |parser| parser.parse_expr(0))?;
         let end = self.current_token.span;
         let _ = self.expect(TokenKind::RightParen, "Expected ')' to enclose '('.");
         let span = start.combined(end);
@@ -160,12 +165,8 @@ impl<'source> Parser<'source> {
             id: self.new_id(),
             span,
             kind: match elements {
-                ElementsParsed::Multiple(elements,_) => {
-                    ExprKind::Tuple(elements)
-                },
-                ElementsParsed::Single(element) => {
-                    ExprKind::Grouped(Box::new(element))
-                }
+                ElementsParsed::Multiple(elements, _) => ExprKind::Tuple(elements),
+                ElementsParsed::Single(element) => ExprKind::Grouped(Box::new(element)),
             },
         })
     }
@@ -255,7 +256,8 @@ impl<'source> Parser<'source> {
         })
     }
     fn parse_exprs(&mut self, end: TokenKind) -> ParseResult<Vec<Expr>> {
-        self.parse_delimited_by(end, |parser| parser.parse_expr(0)).map(Vec::from)
+        self.parse_delimited_by(end, |parser| parser.parse_expr(0))
+            .map(Vec::from)
     }
     fn parse_array_expr(&mut self) -> ParseResult<Expr> {
         let start = self.current_token.span;
@@ -514,24 +516,19 @@ impl<'source> Parser<'source> {
         let id = self.new_id();
         Ok(Stmt { id, kind, span })
     }
-    fn parse_prefix_pattern(&mut self) -> ParseResult<Pattern>{
+    fn parse_prefix_pattern(&mut self) -> ParseResult<Pattern> {
         let (kind, span) = match self.current_token.kind {
             TokenKind::LeftParen => {
                 let start = self.current_token.span;
                 self.advance();
-                let patterns = self.parse_delimited_by(TokenKind::RightParen, |parser|{
-                    parser.parse_pattern()
-                })?;
+                let patterns = self
+                    .parse_delimited_by(TokenKind::RightParen, |parser| parser.parse_pattern())?;
                 let end = self.current_token.span;
                 let _ = self.expect(TokenKind::RightParen, "Expected ')' at end of pattern.");
                 (
                     match patterns {
-                        ElementsParsed::Single(element) => {
-                            PatternKind::Grouped(Box::new(element))
-                        },
-                        ElementsParsed::Multiple(elements,_) => {
-                            PatternKind::Tuple(elements)
-                        }
+                        ElementsParsed::Single(element) => PatternKind::Grouped(Box::new(element)),
+                        ElementsParsed::Multiple(elements, _) => PatternKind::Tuple(elements),
                     },
                     start.combined(end),
                 )
@@ -611,18 +608,21 @@ impl<'source> Parser<'source> {
             span: span,
             kind: kind,
         })
-
     }
     fn parse_pattern(&mut self) -> ParseResult<Pattern> {
         let mut pattern = self.parse_prefix_pattern()?;
-        loop{
+        loop {
             match self.current_token.kind {
                 TokenKind::Caret => {
                     let span = self.current_token.span;
                     self.advance();
-                    pattern = Pattern{id:self.new_id(),span:pattern.span.combined(span),kind:PatternKind::Deref(Box::new(pattern))}
-                },
-                _ => break Ok(pattern)
+                    pattern = Pattern {
+                        id: self.new_id(),
+                        span: pattern.span.combined(span),
+                        kind: PatternKind::Deref(Box::new(pattern)),
+                    }
+                }
+                _ => break Ok(pattern),
             }
         }
     }
@@ -643,61 +643,79 @@ impl<'source> Parser<'source> {
             span: start.combined(end),
         })
     }
-    fn parse_delimited_by<T>(&mut self, delimiter: TokenKind,mut f: impl FnMut(&mut Self) -> ParseResult<T>) -> ParseResult<ElementsParsed<T>>{
-        let mut parsed = ElementsParsed::Multiple(Vec::new(),None);
+    fn parse_delimited_by<T>(
+        &mut self,
+        delimiter: TokenKind,
+        mut f: impl FnMut(&mut Self) -> ParseResult<T>,
+    ) -> ParseResult<ElementsParsed<T>> {
+        let mut parsed = ElementsParsed::Multiple(Vec::new(), None);
         while !self.is_at_eof() && !self.check(delimiter) {
             let element = f(self)?;
             let coma_span = self.current_token.span;
-            if !self.match_current(TokenKind::Coma){
-                match parsed{
-                    ElementsParsed::Multiple(ref mut elements,ref mut old_coma_span) => {
-                        if elements.is_empty(){
+            if !self.match_current(TokenKind::Coma) {
+                match parsed {
+                    ElementsParsed::Multiple(ref mut elements, ref mut old_coma_span) => {
+                        if elements.is_empty() {
                             parsed = ElementsParsed::Single(element);
-                        }
-                        else{
+                        } else {
                             elements.push(element);
                             *old_coma_span = None;
                         }
-                    },
+                    }
                     ElementsParsed::Single(first_element) => {
-                        parsed = ElementsParsed::Multiple(vec![element,first_element],None);
-                    }   
+                        parsed = ElementsParsed::Multiple(vec![element, first_element], None);
+                    }
                 }
                 break;
             }
 
             match parsed {
-                ElementsParsed::Multiple(ref mut elements,ref mut old_coma_span) => {
+                ElementsParsed::Multiple(ref mut elements, ref mut old_coma_span) => {
                     elements.push(element);
                     *old_coma_span = Some(coma_span);
-                },
-                ElementsParsed::Single(first_element) => {
-                    parsed = ElementsParsed::Multiple(vec![element,first_element], Some(coma_span));
                 }
-
+                ElementsParsed::Single(first_element) => {
+                    parsed =
+                        ElementsParsed::Multiple(vec![element, first_element], Some(coma_span));
+                }
             }
         }
         Ok(parsed)
     }
-    fn parse_fun_def(&mut self) -> ParseResult<Stmt>{
+    fn parse_fun_def(&mut self) -> ParseResult<Stmt> {
         let start = self.current_token.span;
         self.advance();
 
         let function_name = self.expect_ident("Expected a function name")?;
         let _ = self.expect(TokenKind::LeftParen, "Expected '(' after 'function' name.");
-        let params = self.parse_delimited_by(TokenKind::RightParen, |parser|{
-            Ok(Param{ pattern:parser.parse_pattern()?})
-        })?.into();
-        let _ = self.expect(TokenKind::RightParen, "Expected ')' after 'function' arguments.");
+        let params = self
+            .parse_delimited_by(TokenKind::RightParen, |parser| {
+                Ok(Param {
+                    pattern: parser.parse_pattern()?,
+                })
+            })?
+            .into();
+        let _ = self.expect(
+            TokenKind::RightParen,
+            "Expected ')' after 'function' arguments.",
+        );
 
         let body = self.parse_block()?;
 
         let end = self.current_token.span;
 
         let span = start.combined(end);
-        Ok(Stmt { kind : StmtKind::Item(Box::new(ItemKind::Function(FunctionDef { id: self.new_id(), span, name:function_name,params, body}))), id : self.new_id(), span})
-
-
+        Ok(Stmt {
+            kind: StmtKind::Item(Box::new(ItemKind::Function(FunctionDef {
+                id: self.new_id(),
+                span,
+                name: function_name,
+                params,
+                body,
+            }))),
+            id: self.new_id(),
+            span,
+        })
     }
     fn parse_stmt(&mut self) -> ParseResult<Stmt> {
         match self.current_token.kind {

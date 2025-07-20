@@ -28,42 +28,43 @@ impl<'a> Lexer<'a> {
             match c {
                 ' ' | '\t' | '\r' | '\n' => {
                     self.advance();
-                },
+                }
                 '/' => {
                     let Some(next_char) = self.peek_next() else {
                         break;
                     };
-                    match next_char{
+                    match next_char {
                         '/' => {
                             self.advance();
-                            while let Some(c) = self.peek() && c != '\n' {
+                            while let Some(c) = self.peek()
+                                && c != '\n'
+                            {
                                 self.advance();
                             }
-                        },
+                        }
                         '*' => {
                             let mut depth = 1;
                             self.advance();
-                            while let Some(c) = self.peek(){
+                            while let Some(c) = self.peek() {
                                 let Some(next_c) = self.peek_next() else {
                                     self.advance();
                                     break;
                                 };
                                 self.advance();
-                                if c == '/' && next_c == '*'{
+                                if c == '/' && next_c == '*' {
                                     depth += 1;
-                                }
-                                else if c == '*' && next_c == '/'{
+                                } else if c == '*' && next_c == '/' {
                                     depth -= 1;
                                     self.advance();
                                 }
-                                if depth == 0{
+                                if depth == 0 {
                                     break;
                                 }
                             }
-                        },
-                        _ => break
+                        }
+                        _ => break,
                     }
-                },
+                }
                 _ => {
                     break;
                 }

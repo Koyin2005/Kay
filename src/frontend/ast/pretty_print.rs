@@ -1,5 +1,6 @@
 use crate::frontend::ast::{
-    Block, ByRef, Expr, ExprKind, ItemKind, IteratorExprKind, LiteralKind, Mutable, Pattern, PatternKind, Stmt, StmtKind
+    Block, ByRef, Expr, ExprKind, ItemKind, IteratorExprKind, LiteralKind, Mutable, Pattern,
+    PatternKind, Stmt, StmtKind,
 };
 
 pub struct PrettyPrint<W> {
@@ -33,15 +34,15 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
     }
 
     fn print_item(&mut self, item: &ItemKind) -> std::fmt::Result {
-        match item{
+        match item {
             ItemKind::Function(function) => {
                 self.print("function def\n")?;
                 self.increase_depth();
-                if !function.params.is_empty(){
+                if !function.params.is_empty() {
                     self.print_depth()?;
                     self.print("function params\n")?;
                     self.increase_depth();
-                    for param in function.params.iter(){
+                    for param in function.params.iter() {
                         self.print_depth()?;
                         self.print_pattern(&param.pattern)?;
                         self.print_newline()?;
@@ -361,7 +362,7 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.print_depth()?;
                 self.pretty_print_expr(&assigned)?;
                 self.decrease_depth();
-            },
+            }
             StmtKind::Item(item) => {
                 self.print_depth()?;
                 self.print("item\n")?;

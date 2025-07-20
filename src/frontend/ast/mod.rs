@@ -7,18 +7,17 @@ use crate::{
 };
 pub mod pretty_print;
 
-
 #[derive(Clone, Debug)]
-pub struct Param{
-    pub pattern : Pattern
+pub struct Param {
+    pub pattern: Pattern,
 }
 #[derive(Clone, Debug)]
-pub struct FunctionDef{
-    pub id : NodeId,
-    pub span : Span,
-    pub name : Ident,
-    pub params : Vec<Param>,
-    pub body : Block
+pub struct FunctionDef {
+    pub id: NodeId,
+    pub span: Span,
+    pub name: Ident,
+    pub params: Vec<Param>,
+    pub body: Block,
 }
 #[derive(Clone, Debug)]
 pub struct Block {
