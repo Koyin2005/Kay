@@ -6,6 +6,13 @@ use crate::{
     },
 };
 pub mod pretty_print;
+
+#[derive(Clone, Debug)]
+pub struct FunctionDef{
+    pub id : NodeId,
+    pub name : Ident,
+    pub body : Block
+}
 #[derive(Clone, Debug)]
 pub struct Block {
     pub id: NodeId,
@@ -21,7 +28,7 @@ pub struct Stmt {
 }
 #[derive(Clone, Debug)]
 pub enum StmtKind {
-    Item,
+    Item(Box<FunctionDef>),
     Let(Box<Pattern>, Box<Expr>),
     ExprWithSemi(Box<Expr>),
     Expr(Box<Expr>),

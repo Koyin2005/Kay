@@ -337,11 +337,22 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.pretty_print_expr(&assigned)?;
                 self.decrease_depth();
             },
-            StmtKind::Item => {
+            StmtKind::Item(function) => {
                 self.print_depth()?;
                 self.print("item\n")?;
+
+                self.increase_depth();
+                self.print_depth()?;
+                self.print(function.name.symbol.as_str())?;
+                self.print_newline()?;
+
+                self.increase_depth();
+                self.print_depth()?;
+                self.print_block(&function.body)?;
+                self.decrease_depth();
             }
         }
+        //Only prints newline if requested
         if newline {
             self.print_newline()
         } else {
