@@ -21,6 +21,7 @@ pub enum TokenKind {
     Bang,
     Coma,
     Caret,
+    Begin,
 
     BangEquals,
     EqualsEquals,
@@ -28,6 +29,7 @@ pub enum TokenKind {
     GreaterEquals,
     DotDot,
 
+    End,
     Then,
     Else,
     If,
