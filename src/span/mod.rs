@@ -177,7 +177,6 @@ impl SourceInfo {
             .enumerate()
             .map(|(line_index, line_src)| {
                 let start = source_offset as u32;
-
                 let end = if line_src.ends_with("\r\n") {
                     has_newline_at_end = true;
                     source_offset + line_src.len() - 2

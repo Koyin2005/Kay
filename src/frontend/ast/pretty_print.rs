@@ -46,6 +46,9 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                         self.print_depth()?;
                         self.print_pattern(&param.pattern)?;
                         self.print_newline()?;
+                        self.print_depth()?;
+                        self.print_ty(&param.ty)?;
+                        self.print_newline()?;
                     }
                     self.decrease_depth();
                 }
@@ -297,6 +300,8 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
         match ty.kind {
             TypeKind::Int => self.print("int"),
             TypeKind::Bool => self.print("bool"),
+            TypeKind::Uint => self.print("uint"),
+            TypeKind::Never => self.print("never"),
             TypeKind::Tuple(ref elements) => {
                 self.print("tuple type\n")?;
                 self.increase_depth();

@@ -29,8 +29,8 @@ impl SymbolInterner {
             seen,
         }))
     }
-    fn intern_str(&self, string: &str) -> Symbol {
-        Symbol(self.intern(string.as_bytes()))
+    fn intern_str(&self, string: &str) -> u32 {
+        self.intern(string.as_bytes())
     }
 
     fn get_str(&self, symbol: Symbol) -> &str {
@@ -71,7 +71,7 @@ impl Symbol {
         Self(index)
     }
     pub fn intern(string: &str) -> Self {
-        SYMBOL_INTERNER.intern_str(string)
+        Self::new(SYMBOL_INTERNER.intern_str(string))
     }
     pub fn as_str(&self) -> &str {
         //SAFETY : Symbol interner will outlive the string, so reducing its lifetime is fine
@@ -90,26 +90,4 @@ pub struct Ident {
     pub span: Span,
 }
 
-macro_rules! symbols {
-
-    (keywords{ $($const_kw_name:ident, $kw_name:ident = $kw_value:expr)*} $($const_name:ident, $name:ident = $value:expr)*) => {
-        enum Sym{
-            $($kw_name,)*
-            $($name,)*
-        }
-        pub mod keywords{
-            use crate::span::symbol::Symbol;
-            use super::Sym;
-            $(pub const $const_kw_name : Symbol = Symbol::new(Sym::$kw_name as u32);)*
-        }
-        $(pub const $const_name : Symbol = Symbol::new(Sym::$name as u32);)*
-
-
-        pub const ALL_SYMBOLS : &'static [&'static str] = &[ $($kw_value,)* $($value,)* ];
-    };
-}
-
-symbols! {
-    keywords{
-    }
-}
+const ALL_SYMBOLS : &'static [&'static str] = &[];

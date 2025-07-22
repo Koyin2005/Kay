@@ -7,7 +7,7 @@ use crate::{
         ast::{
             BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprKind, FunctionDef, ItemKind,
             IteratorExpr, IteratorExprKind, LiteralKind, Mutable, NodeId, Param, Pattern,
-            PatternKind, Spanned, Stmt, StmtKind, Type, TypeKind, UnaryOp, UnaryOpKind,
+            PatternKind, Stmt, StmtKind, Type, TypeKind, UnaryOp, UnaryOpKind,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
     },
@@ -658,7 +658,15 @@ impl<'source> Parser<'source> {
             TokenKind::Bool => {
                 self.advance();
                 (TypeKind::Bool, start_span)
-            }
+            },
+            TokenKind::Uint => {
+                self.advance();
+                (TypeKind::Uint, start_span)
+            },
+            TokenKind::Never => {
+                self.advance();
+                (TypeKind::Never, start_span)
+            },
             TokenKind::LeftParen => {
                 self.advance();
                 let types = self
@@ -667,7 +675,7 @@ impl<'source> Parser<'source> {
                 let span = start_span.combined(self.current_token.span);
                 let _ = self.expect(TokenKind::RightParen, "Expected ')' at end of tuple type.");
                 (TypeKind::Tuple(types), span)
-            }
+            },
             _ => return Err(ParseError),
         };
         Ok(Type {
@@ -791,17 +799,6 @@ impl<'source> Parser<'source> {
             stmts.push(self.parse_stmt(ends)?);
         }
         Ok((id, stmts))
-    }
-    fn parse_block_rest(&mut self) -> ParseResult<Block> {
-        let span = self.current_token.span;
-        let id = self.new_id();
-        let mut stmts = Vec::new();
-        while !self.is_at_eof() && !self.check(TokenKind::RightBrace) {
-            stmts.push(self.parse_stmt([])?);
-        }
-        self.expect(TokenKind::RightBrace, "Expected '}'.")?;
-        let span = span.combined(self.current_token.span);
-        Ok(Block { id, stmts, span })
     }
     pub fn parse(mut self) -> ParseResult<Vec<Stmt>> {
         let mut stmts = Vec::new();

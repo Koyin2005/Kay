@@ -1,5 +1,5 @@
 let a : int = 5;
-fun do_stuff(a:(int,bool)) -> int 
+fun do_stuff(a:never)
     println("Hi") 
 end
 

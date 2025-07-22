@@ -197,6 +197,8 @@ pub struct Type {
 pub enum TypeKind {
     Int,
     Bool,
+    Uint,
+    Never,
     Tuple(Vec<Type>),
 }
 define_id! {
