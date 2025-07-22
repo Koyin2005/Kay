@@ -1,6 +1,6 @@
 use crate::frontend::ast::{
     Block, ByRef, Expr, ExprKind, ItemKind, IteratorExprKind, LiteralKind, Mutable, Pattern,
-    PatternKind, Stmt, StmtKind,
+    PatternKind, Stmt, StmtKind, Type, TypeKind,
 };
 
 pub struct PrettyPrint<W> {
@@ -278,9 +278,40 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 }
                 Ok(())
             }
+            ExprKind::As(expr, ty) => {
+                self.print("as\n")?;
+                self.increase_depth();
+                self.print_depth()?;
+                self.pretty_print_expr(expr)?;
+                self.print_newline()?;
+
+                self.print_depth()?;
+                self.print_ty(ty)?;
+                self.decrease_depth();
+
+                Ok(())
+            }
         }
     }
-
+    fn print_ty(&mut self, ty: &Type) -> std::fmt::Result {
+        match ty.kind {
+            TypeKind::Int => self.print("int"),
+            TypeKind::Bool => self.print("bool"),
+            TypeKind::Tuple(ref elements) => {
+                self.print("tuple type\n")?;
+                self.increase_depth();
+                for (i, ty) in elements.iter().enumerate() {
+                    self.print_depth()?;
+                    self.print_ty(ty)?;
+                    if i + 1 < elements.len() {
+                        self.print_newline()?;
+                    }
+                }
+                self.decrease_depth();
+                Ok(())
+            }
+        }
+    }
     fn print_pattern(&mut self, pattern: &Pattern) -> std::fmt::Result {
         match &pattern.kind {
             PatternKind::Ident(name, mutable, by_ref) => {
@@ -350,7 +381,7 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.pretty_print_expr(expr)?;
                 self.decrease_depth();
             }
-            StmtKind::Let(pattern, assigned) => {
+            StmtKind::Let(pattern, ty, assigned) => {
                 self.print_depth()?;
                 self.print("let\n")?;
 
@@ -358,6 +389,12 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.print_depth()?;
                 self.print_pattern(pattern)?;
                 self.print_newline()?;
+
+                if let Some(ty) = ty {
+                    self.print_depth()?;
+                    self.print_ty(ty)?;
+                    self.print_newline()?;
+                }
 
                 self.print_depth()?;
                 self.pretty_print_expr(&assigned)?;

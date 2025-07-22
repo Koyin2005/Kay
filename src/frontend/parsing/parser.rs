@@ -490,7 +490,7 @@ impl<'source> Parser<'source> {
                     Expr {
                         id: self.new_id(),
                         span: lhs.span.combined(ty.span),
-                        kind: ExprKind::Grouped(Box::new(lhs)),
+                        kind: ExprKind::As(Box::new(lhs), Box::new(ty)),
                     }
                 }
                 TokenKind::Caret => {
@@ -694,7 +694,7 @@ impl<'source> Parser<'source> {
         );
         Ok(Stmt {
             id: self.new_id(),
-            kind: StmtKind::Let(Box::new(pattern), Box::new(expr)),
+            kind: StmtKind::Let(Box::new(pattern), ty.map(Box::new), Box::new(expr)),
             span: start.combined(end),
         })
     }
@@ -741,7 +741,7 @@ impl<'source> Parser<'source> {
         let pattern = self.parse_pattern()?;
         let _ = self.expect(TokenKind::Colon, "Expected ':' after param pattern.");
         let ty = self.parse_type()?;
-        Ok(Param { pattern })
+        Ok(Param { pattern, ty })
     }
     fn parse_fun_def(&mut self) -> ParseResult<Stmt> {
         let start = self.current_token.span;

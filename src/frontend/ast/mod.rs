@@ -10,6 +10,7 @@ pub mod pretty_print;
 #[derive(Clone, Debug)]
 pub struct Param {
     pub pattern: Pattern,
+    pub ty: Type,
 }
 #[derive(Clone, Debug)]
 pub struct FunctionDef {
@@ -35,7 +36,7 @@ pub struct Stmt {
 #[derive(Clone, Debug)]
 pub enum StmtKind {
     Item(Box<ItemKind>),
-    Let(Box<Pattern>, Box<Expr>),
+    Let(Box<Pattern>, Option<Box<Type>>, Box<Expr>),
     ExprWithSemi(Box<Expr>),
     Expr(Box<Expr>),
 }
@@ -157,6 +158,7 @@ pub enum ExprKind {
     Break(Option<Box<Expr>>),
     Return(Option<Box<Expr>>),
     Field(Box<Expr>, Ident),
+    As(Box<Expr>, Box<Type>),
 }
 #[derive(Clone, Debug)]
 pub struct Pattern {
@@ -184,13 +186,14 @@ pub enum PatternKind {
     Deref(Box<Pattern>),
     Wildcard,
 }
-
+#[derive(Clone, Debug)]
 pub struct Type {
     pub id: NodeId,
     pub kind: TypeKind,
     pub span: Span,
 }
 
+#[derive(Clone, Debug)]
 pub enum TypeKind {
     Int,
     Bool,
