@@ -18,6 +18,7 @@ pub struct FunctionDef {
     pub span: Span,
     pub name: Ident,
     pub params: Vec<Param>,
+    pub return_type: Option<Type>,
     pub body: Block,
 }
 #[derive(Clone, Debug)]
@@ -199,7 +200,10 @@ pub enum TypeKind {
     Bool,
     Uint,
     Never,
+    Underscore,
+    Grouped(Box<Type>),
     Tuple(Vec<Type>),
+    Ref(Box<Type>),
 }
 define_id! {
     #[derive(Debug)]

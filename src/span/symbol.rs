@@ -90,4 +90,4 @@ pub struct Ident {
     pub span: Span,
 }
 
-const ALL_SYMBOLS : &'static [&'static str] = &[];
+const ALL_SYMBOLS: &'static [&'static str] = &[];

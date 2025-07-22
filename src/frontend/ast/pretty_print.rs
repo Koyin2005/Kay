@@ -52,6 +52,11 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                     }
                     self.decrease_depth();
                 }
+                if let Some(return_type) = function.return_type.as_ref() {
+                    self.print_depth()?;
+                    self.print_ty(return_type)?;
+                    self.print_newline()?;
+                }
                 self.print_depth()?;
                 self.print_block(&function.body)?;
                 self.decrease_depth();
@@ -150,7 +155,7 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.pretty_print_expr(callee)?;
                 self.print_newline()?;
 
-                self.print_exprs(&args)?;
+                self.print_exprs(args)?;
                 Ok(())
             }
             ExprKind::Tuple(elements) => {
@@ -189,7 +194,7 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.print("while\n")?;
                 self.increase_depth();
                 self.print_depth()?;
-                self.pretty_print_expr(&condition)?;
+                self.pretty_print_expr(condition)?;
                 self.print_newline()?;
                 self.print_depth()?;
                 self.print_block(body)?;
@@ -255,7 +260,7 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.print_newline()?;
 
                 self.print_depth()?;
-                self.print_block(&then)?;
+                self.print_block(then)?;
 
                 if let Some(else_branch) = else_branch {
                     self.print_newline()?;
@@ -302,6 +307,7 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
             TypeKind::Bool => self.print("bool"),
             TypeKind::Uint => self.print("uint"),
             TypeKind::Never => self.print("never"),
+            TypeKind::Underscore => self.print("_"),
             TypeKind::Tuple(ref elements) => {
                 self.print("tuple type\n")?;
                 self.increase_depth();
@@ -312,6 +318,22 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                         self.print_newline()?;
                     }
                 }
+                self.decrease_depth();
+                Ok(())
+            }
+            TypeKind::Ref(ref ty) => {
+                self.print("ref type\n")?;
+                self.increase_depth();
+                self.print_depth()?;
+                self.print_ty(ty)?;
+                self.decrease_depth();
+                Ok(())
+            }
+            TypeKind::Grouped(ref ty) => {
+                self.print("grouped\n")?;
+                self.increase_depth();
+                self.print_depth()?;
+                self.print_ty(ty)?;
                 self.decrease_depth();
                 Ok(())
             }
@@ -402,7 +424,7 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 }
 
                 self.print_depth()?;
-                self.pretty_print_expr(&assigned)?;
+                self.pretty_print_expr(assigned)?;
                 self.decrease_depth();
             }
             StmtKind::Item(item) => {
@@ -412,7 +434,7 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.increase_depth();
                 self.print_depth()?;
 
-                self.print_item(&item)?;
+                self.print_item(item)?;
                 self.decrease_depth();
             }
         }

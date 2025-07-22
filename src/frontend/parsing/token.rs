@@ -22,13 +22,13 @@ pub enum TokenKind {
     Coma,
     Caret,
 
+    Arrow,
     BangEquals,
     EqualsEquals,
     LesserEquals,
     GreaterEquals,
     DotDot,
 
-    
     Begin,
     As,
     End,
@@ -56,6 +56,7 @@ pub enum TokenKind {
     String,
     Never,
     Wildcard,
+    Type,
 
     Ident(Symbol),
     Literal(Literal),

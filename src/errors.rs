@@ -47,7 +47,7 @@ impl<'a> DiagnosticReporter<'a> {
                     eprint!(" ");
                 }
                 eprint!("{}", line.line_number());
-                eprintln!("  {}", line_source);
+                eprintln!("  {line_source}");
 
                 let start_of_line = if line.line_number() == start.line {
                     start

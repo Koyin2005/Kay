@@ -1,6 +1,3 @@
-let a : int = 5;
-fun do_stuff(a:never)
-    println("Hi") 
+fun am_i_bad_rapper(a:string) -> bool
+    true
 end
-
-let b : int = 5;

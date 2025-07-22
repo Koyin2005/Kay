@@ -242,7 +242,7 @@ impl SourceInfo {
                     self.source_within(last_line.start_offset, last_line.end_offset)
                         .char_indices()
                         .map(|(i, c)| i + c.len_utf8())
-                        .last()
+                        .next_back()
                         .unwrap_or(1) as u32
                 },
             };

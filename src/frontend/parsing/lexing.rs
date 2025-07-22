@@ -73,8 +73,7 @@ impl<'a> Lexer<'a> {
     }
     fn peek_next(&mut self) -> Option<char> {
         let mut temp_iter = self.chars.clone();
-        let next_char = temp_iter.nth(1).map(|(_, c)| c);
-        next_char
+        temp_iter.nth(1).map(|(_, c)| c)
     }
     fn peek(&mut self) -> Option<char> {
         self.chars.peek().map(|(_, c)| *c)
@@ -139,6 +138,7 @@ impl<'a> Lexer<'a> {
             "_" => TokenKind::Wildcard,
             "ref" => TokenKind::Ref,
             "as" => TokenKind::As,
+            "type" => TokenKind::Type,
             symbol => TokenKind::Ident(Symbol::intern(symbol)),
         };
         (kind, len)
@@ -202,7 +202,7 @@ impl<'a> Lexer<'a> {
             '/' => single_token!(TokenKind::Slash),
             '*' => single_token!(TokenKind::Star),
             '+' => single_token!(TokenKind::Plus),
-            '-' => single_token!(TokenKind::Minus),
+            '-' => comp_token!('>', TokenKind::Arrow, TokenKind::Minus),
             ';' => single_token!(TokenKind::Semicolon),
             '(' => single_token!(TokenKind::LeftParen),
             ')' => single_token!(TokenKind::RightParen),

@@ -5,7 +5,6 @@ use pl5::{
 };
 
 fn main() {
-    let ref mut a = 6;
     let args = std::env::args().collect::<Vec<_>>();
     let config = match Config::new(&args) {
         Ok(config) => config,
