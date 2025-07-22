@@ -7,7 +7,7 @@ use crate::{
         ast::{
             BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprKind, FunctionDef, ItemKind,
             IteratorExpr, IteratorExprKind, LiteralKind, Mutable, NodeId, Param, Pattern,
-            PatternKind, Spanned, Stmt, StmtKind, UnaryOp, UnaryOpKind,
+            PatternKind, Spanned, Stmt, StmtKind, Type, TypeKind, UnaryOp, UnaryOpKind,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
     },
@@ -171,7 +171,7 @@ impl<'source> Parser<'source> {
         })
     }
     fn parse_block(&mut self, start_span: Span) -> ParseResult<Block> {
-        let (id,stmts) = self.parse_block_body([TokenKind::End])?;
+        let (id, stmts) = self.parse_block_body([TokenKind::End])?;
         let end_span = self.current_token.span;
         let span = start_span.combined(end_span);
         let _ = self.expect(TokenKind::End, "Expected 'end'.");
@@ -181,7 +181,7 @@ impl<'source> Parser<'source> {
         let block = self.parse_block(start_span)?;
         Ok(Expr {
             id: self.new_id(),
-            span:block.span,
+            span: block.span,
             kind: ExprKind::Block(block),
         })
     }
@@ -190,28 +190,27 @@ impl<'source> Parser<'source> {
         self.advance();
         let condition = self.parse_expr(0)?;
         let _ = self.expect(TokenKind::Then, "Expected 'then' after if condition.");
-        let (then_body,has_else) = {
+        let (then_body, has_else) = {
             let start_span = self.current_token.span;
-            let (id,stmts) = self.parse_block_body([TokenKind::End,TokenKind::Else])?;
+            let (id, stmts) = self.parse_block_body([TokenKind::End, TokenKind::Else])?;
             let end_span = self.current_token.span;
             let span = start_span.combined(end_span);
-            (Block { id, stmts, span  },self.check(TokenKind::Else))
+            (Block { id, stmts, span }, self.check(TokenKind::Else))
         };
-        let (end,else_branch) =if has_else{
+        let (end, else_branch) = if has_else {
             let start_span = self.current_token.span;
             self.advance();
-            if self.check(TokenKind::If){
+            if self.check(TokenKind::If) {
                 let if_expr = self.parse_if_expr()?;
-                (start_span.combined(if_expr.span),Some(if_expr))
+                (start_span.combined(if_expr.span), Some(if_expr))
             } else {
                 let block = self.parse_block_expr(start_span)?;
-                (block.span,Some(block))
+                (block.span, Some(block))
             }
-        }
-        else{
+        } else {
             let end = self.current_token.span;
             let _ = self.expect(TokenKind::End, "Expected 'end'.");
-            (end,None)
+            (end, None)
         };
         Ok(Expr {
             id: self.new_id(),
@@ -340,7 +339,7 @@ impl<'source> Parser<'source> {
                 let start_span = self.current_token.span;
                 self.advance();
                 self.parse_block_expr(start_span)
-            },
+            }
             TokenKind::If => self.parse_if_expr(),
             TokenKind::While => self.parse_while_expr(),
             TokenKind::LeftBracket => self.parse_array_expr(),
@@ -485,6 +484,15 @@ impl<'source> Parser<'source> {
                         kind: ExprKind::Field(Box::new(lhs), field_name),
                     }
                 }
+                TokenKind::As => {
+                    self.advance();
+                    let ty = self.parse_type()?;
+                    Expr {
+                        id: self.new_id(),
+                        span: lhs.span.combined(ty.span),
+                        kind: ExprKind::Grouped(Box::new(lhs)),
+                    }
+                }
                 TokenKind::Caret => {
                     let caret_span = self.current_token.span;
                     self.advance();
@@ -511,7 +519,7 @@ impl<'source> Parser<'source> {
             _ => true,
         }
     }
-    fn parse_expr_stmt<const N:usize>(&mut self, stmt_ends : [TokenKind;N]) -> ParseResult<Stmt> {
+    fn parse_expr_stmt<const N: usize>(&mut self, stmt_ends: [TokenKind; N]) -> ParseResult<Stmt> {
         let expr = self.parse_expr(0)?;
         let end_token = self.current_token;
 
@@ -521,7 +529,8 @@ impl<'source> Parser<'source> {
                 StmtKind::ExprWithSemi(Box::new(expr)),
             )
         } else {
-            if self.expr_needs_semi(&expr.kind) && !stmt_ends.into_iter().any(|end| self.check(end)) {
+            if self.expr_needs_semi(&expr.kind) && !stmt_ends.into_iter().any(|end| self.check(end))
+            {
                 self.error_at("Expected a ';'.", expr.span);
             }
             (expr.span, StmtKind::Expr(Box::new(expr)))
@@ -639,10 +648,43 @@ impl<'source> Parser<'source> {
             }
         }
     }
+    fn parse_type(&mut self) -> ParseResult<Type> {
+        let start_span = self.current_token.span;
+        let (kind, span) = match self.current_token.kind {
+            TokenKind::Int => {
+                self.advance();
+                (TypeKind::Int, start_span)
+            }
+            TokenKind::Bool => {
+                self.advance();
+                (TypeKind::Bool, start_span)
+            }
+            TokenKind::LeftParen => {
+                self.advance();
+                let types = self
+                    .parse_delimited_by(TokenKind::RightParen, |this| this.parse_type())?
+                    .into();
+                let span = start_span.combined(self.current_token.span);
+                let _ = self.expect(TokenKind::RightParen, "Expected ')' at end of tuple type.");
+                (TypeKind::Tuple(types), span)
+            }
+            _ => return Err(ParseError),
+        };
+        Ok(Type {
+            id: self.new_id(),
+            kind,
+            span,
+        })
+    }
     fn parse_let_stmt(&mut self) -> ParseResult<Stmt> {
         let start = self.current_token.span;
         self.advance();
         let pattern = self.parse_pattern()?;
+        let ty = if self.match_current(TokenKind::Colon) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         let _ = self.expect(TokenKind::Equals, "Expected '='.");
         let expr = self.parse_expr(0)?;
         let end = self.current_token.span;
@@ -695,6 +737,12 @@ impl<'source> Parser<'source> {
         }
         Ok(parsed)
     }
+    fn parse_fun_param(&mut self) -> ParseResult<Param> {
+        let pattern = self.parse_pattern()?;
+        let _ = self.expect(TokenKind::Colon, "Expected ':' after param pattern.");
+        let ty = self.parse_type()?;
+        Ok(Param { pattern })
+    }
     fn parse_fun_def(&mut self) -> ParseResult<Stmt> {
         let start = self.current_token.span;
         self.advance();
@@ -702,11 +750,7 @@ impl<'source> Parser<'source> {
         let function_name = self.expect_ident("Expected a function name")?;
         let _ = self.expect(TokenKind::LeftParen, "Expected '(' after 'function' name.");
         let params = self
-            .parse_delimited_by(TokenKind::RightParen, |parser| {
-                Ok(Param {
-                    pattern: parser.parse_pattern()?,
-                })
-            })?
+            .parse_delimited_by(TokenKind::RightParen, Self::parse_fun_param)?
             .into();
         let _ = self.expect(
             TokenKind::RightParen,
@@ -730,21 +774,23 @@ impl<'source> Parser<'source> {
             span,
         })
     }
-    fn parse_stmt<const N:usize>(&mut self,stmt_ends : [TokenKind;N]) -> ParseResult<Stmt> {
+    fn parse_stmt<const N: usize>(&mut self, stmt_ends: [TokenKind; N]) -> ParseResult<Stmt> {
         match self.current_token.kind {
             TokenKind::Let => self.parse_let_stmt(),
             TokenKind::Fun => self.parse_fun_def(),
             _ => self.parse_expr_stmt(stmt_ends),
         }
     }
-    fn parse_block_body<const N:usize>(&mut self, ends: [TokenKind;N]) -> ParseResult<(NodeId,Vec<Stmt>)>{
-        
+    fn parse_block_body<const N: usize>(
+        &mut self,
+        ends: [TokenKind; N],
+    ) -> ParseResult<(NodeId, Vec<Stmt>)> {
         let id = self.new_id();
         let mut stmts = Vec::new();
         while !self.is_at_eof() && !ends.into_iter().any(|end| self.check(end)) {
             stmts.push(self.parse_stmt(ends)?);
         }
-        Ok((id,stmts))
+        Ok((id, stmts))
     }
     fn parse_block_rest(&mut self) -> ParseResult<Block> {
         let span = self.current_token.span;

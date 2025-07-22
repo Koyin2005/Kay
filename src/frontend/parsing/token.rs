@@ -29,6 +29,7 @@ pub enum TokenKind {
     GreaterEquals,
     DotDot,
 
+    As,
     End,
     Then,
     Else,

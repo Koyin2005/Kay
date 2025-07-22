@@ -138,6 +138,7 @@ impl<'a> Lexer<'a> {
             "end" => TokenKind::End,
             "_" => TokenKind::Wildcard,
             "ref" => TokenKind::Ref,
+            "as" => TokenKind::As,
             symbol => TokenKind::Ident(Symbol::intern(symbol)),
         };
         (kind, len)

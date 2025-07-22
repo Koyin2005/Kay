@@ -184,6 +184,18 @@ pub enum PatternKind {
     Deref(Box<Pattern>),
     Wildcard,
 }
+
+pub struct Type {
+    pub id: NodeId,
+    pub kind: TypeKind,
+    pub span: Span,
+}
+
+pub enum TypeKind {
+    Int,
+    Bool,
+    Tuple(Vec<Type>),
+}
 define_id! {
     #[derive(Debug)]
     struct NodeId{
