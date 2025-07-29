@@ -120,8 +120,16 @@ impl std::fmt::Display for UnaryOpKind {
 }
 
 #[derive(Clone, Debug)]
+pub struct TypeDef{
+    pub id : NodeId,
+    pub span : Span,
+    pub name : Ident,
+    pub ty : Type
+}
+#[derive(Clone, Debug)]
 pub enum ItemKind {
     Function(FunctionDef),
+    Type(TypeDef)
 }
 #[derive(Clone, Debug)]
 pub enum LiteralKind {
@@ -141,6 +149,13 @@ pub struct IteratorExpr {
     pub kind: IteratorExprKind,
 }
 #[derive(Clone, Debug)]
+pub struct ExprField{
+    pub id : NodeId,
+    pub span : Span,
+    pub name : Ident,
+    pub expr : Expr
+}
+#[derive(Clone, Debug)]
 pub enum ExprKind {
     Tuple(Vec<Expr>),
     Block(Block),
@@ -150,6 +165,7 @@ pub enum ExprKind {
     Unary(UnaryOp, Box<Expr>),
     Deref(Span, Box<Expr>),
     Literal(LiteralKind),
+    Init(Option<Box<Type>>,Vec<ExprField>),
     Array(Vec<Expr>),
     While(Box<Expr>, Box<Block>),
     For(Box<Expr>, Box<IteratorExpr>, Box<Block>),
@@ -187,20 +203,56 @@ pub enum PatternKind {
     Deref(Box<Pattern>),
     Wildcard,
 }
+#[derive(Debug,Clone)]
+pub struct VariantCase{
+    pub id : NodeId,
+    pub name : Ident,
+    pub span : Span,
+    pub fields : Vec<Type>
+}
+#[derive(Debug,Clone)]
+pub struct Variant{
+    pub id : NodeId,
+    pub span : Span,
+    pub cases : Vec<VariantCase>
+}
+#[derive(Debug,Clone)]
+pub struct StructField{
+    pub id : NodeId,
+    pub span : Span,
+    pub name : Ident,
+    pub ty : Type
+}
+#[derive(Debug,Clone)]
+pub struct Struct{
+    pub id : NodeId,
+    pub span : Span,
+    pub fields : Vec<StructField>
+}
 #[derive(Clone, Debug)]
 pub struct Type {
     pub id: NodeId,
     pub kind: TypeKind,
     pub span: Span,
 }
-
+#[derive(Clone,Debug)]
+pub struct QualifiedName{
+    pub span : Span,
+    pub head : Ident,
+    pub tail : Vec<Ident>
+}
 #[derive(Clone, Debug)]
 pub enum TypeKind {
+    Named(Box<QualifiedName>),
     Int,
     Bool,
     Uint,
     Never,
+    String,
     Underscore,
+    Variant(Box<Variant>),
+    Struct(Box<Struct>),
+    Array(Box<Type>),
     Grouped(Box<Type>),
     Tuple(Vec<Type>),
     Ref(Box<Type>),

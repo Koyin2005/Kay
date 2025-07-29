@@ -1,6 +1,5 @@
 use crate::frontend::ast::{
-    Block, ByRef, Expr, ExprKind, ItemKind, IteratorExprKind, LiteralKind, Mutable, Pattern,
-    PatternKind, Stmt, StmtKind, Type, TypeKind,
+    Block, ByRef, Expr, ExprKind, ItemKind, IteratorExprKind, LiteralKind, Mutable, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Type, TypeKind
 };
 
 pub struct PrettyPrint<W> {
@@ -62,6 +61,14 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.decrease_depth();
 
                 Ok(())
+            },
+            ItemKind::Type(type_def) => {
+                self.print("type def\n")?;
+                self.increase_depth();
+                self.print_depth()?;
+                self.print_ty(&type_def.ty)?;
+                self.decrease_depth();
+                Ok(())
             }
         }
     }
@@ -109,6 +116,34 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
 
                 self.print_depth()?;
                 self.pretty_print_expr(rhs)?;
+                self.decrease_depth();
+                Ok(())
+            },
+            ExprKind::Init(ty,fields) => {
+                if let Some(ty) = ty{
+                    self.print("init\n")?;
+                    self.increase_depth();
+                    self.print_depth()?;
+                    self.print_ty(ty)
+                }
+                else{
+                    self.print("init")
+                }?;
+                if fields.is_empty(){
+                    return Ok(());
+                }
+                self.print_newline()?;
+                self.increase_depth();
+                self.print_multiple(fields.iter(), fields.len(), |this,field|{
+                    this.print("field ")?;
+                    this.print(field.name.symbol.as_str())?;
+                    this.print_newline()?;
+                    this.increase_depth();
+                    this.print_depth()?;
+                    this.pretty_print_expr(&field.expr)?;
+                    this.decrease_depth();
+                    Ok(())
+                }, false)?;
                 self.decrease_depth();
                 Ok(())
             }
@@ -301,6 +336,24 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
             }
         }
     }
+    fn print_multiple<T:IntoIterator>(&mut self, elements: T, len : usize,mut f: impl FnMut(&mut Self,T::Item) -> std::fmt::Result, newline: bool) -> std::fmt::Result{
+        for (i,elem) in elements.into_iter().enumerate(){
+            self.print_depth()?;
+            f(self,elem)?;
+            if( i+1 < len )|| newline{
+                self.print_newline()?;
+            }
+        }
+        Ok(())
+    }
+    fn print_qualififed_name(&mut self, name: &QualifiedName) -> std::fmt::Result{
+        self.print(name.head.symbol.as_str())?;
+        for segment in name.tail.iter().copied(){
+            self.print(".")?;
+            self.print(segment.symbol.as_str())?;
+        }
+        Ok(())
+    }
     fn print_ty(&mut self, ty: &Type) -> std::fmt::Result {
         match ty.kind {
             TypeKind::Int => self.print("int"),
@@ -308,6 +361,8 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
             TypeKind::Uint => self.print("uint"),
             TypeKind::Never => self.print("never"),
             TypeKind::Underscore => self.print("_"),
+            TypeKind::String => self.print("string"),
+            TypeKind::Named(ref named) => self.print_qualififed_name(named),
             TypeKind::Tuple(ref elements) => {
                 self.print("tuple type\n")?;
                 self.increase_depth();
@@ -334,6 +389,59 @@ impl<W: std::fmt::Write> PrettyPrint<W> {
                 self.increase_depth();
                 self.print_depth()?;
                 self.print_ty(ty)?;
+                self.decrease_depth();
+                Ok(())
+            },
+            TypeKind::Array(ref element) => {
+                self.print("array\n")?;
+                self.increase_depth();
+                self.print_depth()?;
+                self.print_ty(element)?;
+                self.decrease_depth();
+                Ok(())
+            },
+            TypeKind::Struct(ref struct_) => {
+                self.print("struct")?;
+                if struct_.fields.is_empty(){
+                    return Ok(());
+                }
+                self.print_newline()?;
+                self.increase_depth();
+                self.print_multiple(struct_.fields.iter(), struct_.fields.len(), |this,element|{
+                    this.print("field ")?;
+                    this.print(element.name.symbol.as_str())?;
+                    this.print_newline()?;
+                    this.increase_depth();
+                    this.print_depth()?;
+                    this.print_ty(&element.ty)?;
+                    this.decrease_depth();
+                    Ok(())
+                }, false)?;
+                self.decrease_depth();
+                Ok(())
+            },
+            TypeKind::Variant(ref variant) => {
+                self.print("variant")?;
+                if variant.cases.is_empty(){
+                    return Ok(());
+                }
+                self.print_newline()?;
+                self.increase_depth();
+                self.print_multiple(variant.cases.iter(), variant.cases.len(), |this,element|{
+                    this.print("case ")?;
+                    this.print(element.name.symbol.as_str())?;
+                    if element.fields.is_empty(){
+                        return Ok(());
+                    }
+                    this.print_newline()?;
+                    this.increase_depth();
+                    this.print_multiple(element.fields.iter(), element.fields.len(), |this,field|{
+                        this.print_ty(field)
+                    },false)?;
+                    
+                    this.decrease_depth();
+                    Ok(())
+                },false)?;
                 self.decrease_depth();
                 Ok(())
             }

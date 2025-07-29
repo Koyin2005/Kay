@@ -29,10 +29,9 @@ pub enum TokenKind {
     GreaterEquals,
     DotDot,
 
-    Begin,
     As,
     End,
-    Then,
+    Init,
     Else,
     If,
     While,
@@ -49,6 +48,7 @@ pub enum TokenKind {
     Ref,
     Or,
     In,
+    Variant,
 
     Uint,
     Int,

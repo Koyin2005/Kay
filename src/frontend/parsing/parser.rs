@@ -1,18 +1,12 @@
-use std::cell::Cell;
+use std::{cell::Cell, vec};
 
 use crate::{
-    Lexer,
-    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
-    frontend::{
+    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
         ast::{
-            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprKind, FunctionDef, ItemKind,
-            IteratorExpr, IteratorExprKind, LiteralKind, Mutable, NodeId, Param, Pattern,
-            PatternKind, Stmt, StmtKind, Type, TypeKind, UnaryOp, UnaryOpKind,
+            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, Mutable, NodeId, Param, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField, Type, TypeDef, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    },
-    indexvec::Idx,
-    span::{Span, symbol::Ident},
+    }, indexvec::Idx, span::{symbol::Ident, Span}, Lexer
 };
 
 /// Multiple variant may have 1 element if it ends with a coma
@@ -170,15 +164,21 @@ impl<'source> Parser<'source> {
             },
         })
     }
-    fn parse_block(&mut self, start_span: Span) -> ParseResult<Block> {
-        let (id, stmts) = self.parse_block_body([TokenKind::End])?;
+    fn parse_block(&mut self) -> ParseResult<Block> {
+        let id = self.new_id();
+        let mut stmts = Vec::new();
+        let start_span = self.current_token.span;
+        let _ = self.expect(TokenKind::LeftBrace, "Expected '{' at start of 'block'.");
+        while !self.is_at_eof() && !self.check(TokenKind::RightBrace) {
+            stmts.push(self.parse_stmt(true)?);
+        }
         let end_span = self.current_token.span;
         let span = start_span.combined(end_span);
-        let _ = self.expect(TokenKind::End, "Expected 'end'.");
+        let _ = self.expect(TokenKind::RightBrace, "Expected '}'.");
         Ok(Block { id, stmts, span })
     }
-    fn parse_block_expr(&mut self, start_span: Span) -> ParseResult<Expr> {
-        let block = self.parse_block(start_span)?;
+    fn parse_block_expr(&mut self) -> ParseResult<Expr> {
+        let block = self.parse_block()?;
         Ok(Expr {
             id: self.new_id(),
             span: block.span,
@@ -189,13 +189,8 @@ impl<'source> Parser<'source> {
         let start = self.current_token.span;
         self.advance();
         let condition = self.parse_expr(0)?;
-        let _ = self.expect(TokenKind::Then, "Expected 'then' after if condition.");
         let (then_body, has_else) = {
-            let start_span = self.current_token.span;
-            let (id, stmts) = self.parse_block_body([TokenKind::End, TokenKind::Else])?;
-            let end_span = self.current_token.span;
-            let span = start_span.combined(end_span);
-            (Block { id, stmts, span }, self.check(TokenKind::Else))
+            (self.parse_block()?, self.check(TokenKind::Else))
         };
         let (end, else_branch) = if has_else {
             let start_span = self.current_token.span;
@@ -204,7 +199,7 @@ impl<'source> Parser<'source> {
                 let if_expr = self.parse_if_expr()?;
                 (start_span.combined(if_expr.span), Some(if_expr))
             } else {
-                let block = self.parse_block_expr(start_span)?;
+                let block = self.parse_block_expr()?;
                 (block.span, Some(block))
             }
         } else {
@@ -241,8 +236,7 @@ impl<'source> Parser<'source> {
                 kind: IteratorExprKind::Expr(Box::new(expr)),
             }
         };
-        let _ = self.expect(TokenKind::Do, "Expected 'do' after 'for' iterator.");
-        let block = self.parse_block(self.current_token.span)?;
+        let block = self.parse_block()?;
         let span = start.combined(block.span);
         Ok(Expr {
             id: self.new_id(),
@@ -254,8 +248,7 @@ impl<'source> Parser<'source> {
         let start = self.current_token.span;
         self.advance();
         let condition = self.parse_expr(0)?;
-        let _ = self.expect(TokenKind::Do, "Expected 'do' after 'while' condition.");
-        let block = self.parse_block(self.current_token.span)?;
+        let block = self.parse_block()?;
         let end = block.span;
         Ok(Expr {
             id: self.new_id(),
@@ -308,7 +301,7 @@ impl<'source> Parser<'source> {
             self.current_token.kind,
             TokenKind::Ident(..)
                 | TokenKind::Literal(..)
-                | TokenKind::Begin
+                | TokenKind::Do
                 | TokenKind::LeftParen
                 | TokenKind::Return
                 | TokenKind::Break
@@ -335,11 +328,6 @@ impl<'source> Parser<'source> {
                 })
             }
             TokenKind::LeftParen => self.parse_grouped_expr(),
-            TokenKind::Begin => {
-                let start_span = self.current_token.span;
-                self.advance();
-                self.parse_block_expr(start_span)
-            }
             TokenKind::If => self.parse_if_expr(),
             TokenKind::While => self.parse_while_expr(),
             TokenKind::LeftBracket => self.parse_array_expr(),
@@ -382,7 +370,30 @@ impl<'source> Parser<'source> {
                     kind: ExprKind::Return(expr.map(Box::new)),
                     span,
                 })
-            }
+            },
+            TokenKind::Init => {
+                let start = self.current_token.span;
+                self.advance();
+                let ty = if !self.check(TokenKind::LeftBrace){
+                    Some(self.parse_type()?)
+                }
+                else{
+                    None
+                };
+                let _ = self.expect(TokenKind::LeftBrace, "Expected '{'.");
+
+                let fields : Vec<_> = self.parse_delimited_by(TokenKind::RightBrace, |this|{
+                    let start_span = this.current_token.span;
+                    let name = this.expect_ident("Expected field name");
+                    let _ = this.expect(TokenKind::Equals, "Expected '=' after field name.");
+                    let expr = this.parse_expr(0)?;
+                    Ok(ExprField{id:this.new_id(), span: start_span.combined(expr.span), name:name?, expr})
+                })?.into();
+
+                let end_span = self.current_token.span;
+                let _ = self.expect(TokenKind::RightBrace, "Expected '}'.");
+                Ok(Expr { id: self.new_id(), kind: ExprKind::Init(ty.map(Box::new),fields), span:  start.combined(end_span)})
+            },
             _ => {
                 let Some(op) = self.unary_op() else {
                     self.error_at_current("Expected an expression.");
@@ -517,7 +528,7 @@ impl<'source> Parser<'source> {
             ExprKind::If(..) | ExprKind::Block(..) | ExprKind::While(..) | ExprKind::For(..)
         )
     }
-    fn parse_expr_stmt<const N: usize>(&mut self, stmt_ends: [TokenKind; N]) -> ParseResult<Stmt> {
+    fn parse_expr_stmt(&mut self, in_block : bool) -> ParseResult<Stmt> {
         let expr = self.parse_expr(0)?;
         let end_token = self.current_token;
 
@@ -527,8 +538,7 @@ impl<'source> Parser<'source> {
                 StmtKind::ExprWithSemi(Box::new(expr)),
             )
         } else {
-            if self.expr_needs_semi(&expr.kind) && !stmt_ends.into_iter().any(|end| self.check(end))
-            {
+            if self.expr_needs_semi(&expr.kind) && !(self.check(TokenKind::RightBrace) && in_block) {
                 self.error_at("Expected a ';'.", expr.span);
             }
             (expr.span, StmtKind::Expr(Box::new(expr)))
@@ -646,6 +656,52 @@ impl<'source> Parser<'source> {
             }
         }
     }
+    fn parse_struct_def(&mut self) -> ParseResult<Struct>{
+        let start_span = self.current_token.span;
+        self.advance();
+        let _ = self.expect(TokenKind::LeftBrace, "Expected '{'.");
+        let fields : Vec<_> = self.parse_delimited_by(TokenKind::RightBrace, |this|{
+            let name = this.expect_ident("Expected a valid field name.")?;
+            let _ = this.expect(TokenKind::Colon, "Expected ':' after field name.");
+            let ty = this.parse_type()?;
+            Ok(StructField{ id : this.new_id(), span: name.span.combined(ty.span),name,ty})
+        })?.into();
+        let end_span = self.current_token.span;
+        let _ = self.expect(TokenKind::RightBrace, "Expected '}' after variant cases.");
+        Ok(Struct { id: self.new_id(), span: start_span.combined(end_span), fields })
+    }
+    fn parse_variant_def(&mut self) -> ParseResult<Variant>{
+        let start_span = self.current_token.span;
+        self.advance();
+        let _ = self.expect(TokenKind::LeftBrace, "Expected '{'.");
+        let cases : Vec<_> = self.parse_delimited_by(TokenKind::RightBrace, |this|{
+            let start_span = this.current_token.span;
+            let id = this.new_id();
+            let name = this.expect_ident("Expected variant name.")?;
+            let (span,fields) = if this.match_current(TokenKind::LeftParen){
+                let params : Vec<_> = this.parse_delimited_by(TokenKind::RightParen, |this| this.parse_type())?.into();
+                let end_span = this.current_token.span;
+                let _ = this.expect(TokenKind::RightParen, "Expected ')' after variant fields.");
+                (start_span.combined(end_span),params)
+            }
+            else{
+                (this.current_token.span,Vec::new())
+            };
+            Ok(VariantCase{id,name,span,fields})
+        })?.into();
+        let end_span = self.current_token.span;
+        let _ = self.expect(TokenKind::RightBrace, "Expected '}' after variant cases.");
+        Ok(Variant { id: self.new_id(), span: start_span.combined(end_span), cases })
+    }
+    fn parse_qual_name_tail(&mut self) -> ParseResult<Vec<Ident>>{
+        let mut names = Vec::new();
+        while let TokenKind::Dot = self.current_token.kind {
+            self.advance();
+            let name = self.expect_ident("Expected a valid ident.")?;
+            names.push(name);
+        }
+        Ok(names)
+    }
     fn parse_type(&mut self) -> ParseResult<Type> {
         let start_span = self.current_token.span;
         let (kind, span) = match self.current_token.kind {
@@ -664,6 +720,10 @@ impl<'source> Parser<'source> {
             TokenKind::Never => {
                 self.advance();
                 (TypeKind::Never, start_span)
+            }
+            TokenKind::String => {
+                self.advance();
+                (TypeKind::String, start_span)
             }
             TokenKind::LeftParen => {
                 self.advance();
@@ -688,7 +748,32 @@ impl<'source> Parser<'source> {
             TokenKind::Wildcard => {
                 self.advance();
                 (TypeKind::Underscore,start_span)
+            },
+            TokenKind::LeftBracket => {
+                self.advance();
+                let ty = self.parse_type()?;
+                let end_span = self.current_token.span;
+                let _ = self.expect(TokenKind::RightBracket,"Expected ']' at end of array type.");
+                (TypeKind::Array(Box::new(ty)),start_span.combined(end_span))
+            },
+            TokenKind::Variant => {
+                let variant = self.parse_variant_def()?;
+                let span = variant.span;
+                (TypeKind::Variant(Box::new(variant)),span)
+            },
+            TokenKind::Struct => {
+                let struct_ = self.parse_struct_def()?;
+                let span = struct_.span;
+                (TypeKind::Struct(Box::new(struct_)),span)
             }
+            TokenKind::Ident(name) => {
+                let head = Ident{span:self.current_token.span,symbol:name};
+                self.advance();
+                let rest = self.parse_qual_name_tail()?;
+                let span = if let Some(end) = rest.last() { head.span.combined(end.span)} else { head.span};
+                (TypeKind::Named(Box::new(QualifiedName{ span, head,tail : rest})),span)
+
+            },
             _ => { self.error_at_current("Invalid type.");return Err(ParseError)},
         };
         Ok(Type {
@@ -782,7 +867,7 @@ impl<'source> Parser<'source> {
             .then(|| self.parse_type())
             .transpose()?;
 
-        let body = self.parse_block(self.current_token.span)?;
+        let body = self.parse_block()?;
 
         let end = self.current_token.span;
 
@@ -800,30 +885,30 @@ impl<'source> Parser<'source> {
             span,
         })
     }
-    fn parse_stmt<const N: usize>(&mut self, stmt_ends: [TokenKind; N]) -> ParseResult<Stmt> {
+    fn parse_stmt(&mut self, in_block : bool) -> ParseResult<Stmt> {
         match self.current_token.kind {
             TokenKind::Let => self.parse_let_stmt(),
             TokenKind::Fun => self.parse_fun_def(),
-            _ => self.parse_expr_stmt(stmt_ends),
+            TokenKind::Type => {
+                let start_span = self.current_token.span;
+                self.advance();
+                let name = self.expect_ident("Expect a valid type name.")?;
+                let _ = self.expect(TokenKind::Equals, "Expected an '=' after type name.");
+                let ty = self.parse_type()?;
+                let end_span = self.current_token.span;
+                let _ = self.expect(TokenKind::Semicolon, "Expected ';' at the end of type def");
+                let span = start_span.combined(end_span);
+                Ok(Stmt { id: self.new_id(), kind: StmtKind::Item(Box::new(ItemKind::Type(TypeDef{ id: self.new_id(), span, name, ty}))), span})
+            }
+            _ => self.parse_expr_stmt(in_block),
         }
-    }
-    fn parse_block_body<const N: usize>(
-        &mut self,
-        ends: [TokenKind; N],
-    ) -> ParseResult<(NodeId, Vec<Stmt>)> {
-        let id = self.new_id();
-        let mut stmts = Vec::new();
-        while !self.is_at_eof() && !ends.into_iter().any(|end| self.check(end)) {
-            stmts.push(self.parse_stmt(ends)?);
-        }
-        Ok((id, stmts))
     }
     pub fn parse(mut self) -> ParseResult<Vec<Stmt>> {
         let mut stmts = Vec::new();
         self.advance();
         while !self.is_at_eof() {
             self.panic_mode.set(false);
-            let Ok(stmt) = self.parse_stmt([]) else {
+            let Ok(stmt) = self.parse_stmt(false) else {
                 while !self.is_at_eof() {
                     if matches!(
                         self.current_token.kind,
