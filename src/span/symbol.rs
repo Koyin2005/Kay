@@ -90,4 +90,38 @@ pub struct Ident {
     pub span: Span,
 }
 
-const ALL_SYMBOLS: &'static [&'static str] = &[];
+const ALL_SYMBOLS: &'static [&'static str] = &["main"];
+
+const fn find_symbol_index(txt: &'static str) -> u32 {
+    let mut i = 0;
+    let txt_bytes = txt.as_bytes();
+    while i < ALL_SYMBOLS.len() {
+        let curr = ALL_SYMBOLS[i];
+        let curr_bytes = curr.as_bytes();
+        let is_equal = if curr.len() == txt.len() {
+            let mut j = 0;
+            let mut is_equal = true;
+            while j < curr.len() {
+                if curr_bytes[j] != txt_bytes[j] {
+                    is_equal = false;
+                    break;
+                }
+                j += 1;
+            }
+            is_equal
+        } else {
+            false
+        };
+        if is_equal {
+            return i as u32;
+        }
+        i += 1;
+    }
+    panic!("Found an unknown symbol.")
+}
+
+pub mod symbols {
+    use crate::span::symbol::{Symbol, find_symbol_index};
+
+    pub const MAIN_SYMBOL: Symbol = Symbol::new(find_symbol_index("main"));
+}

@@ -23,6 +23,7 @@ pub enum TokenKind {
     Caret,
 
     Arrow,
+    ThickArrow,
     BangEquals,
     EqualsEquals,
     LesserEquals,
@@ -43,6 +44,7 @@ pub enum TokenKind {
     Return,
     Let,
     Mut,
+    Match,
     And,
     Struct,
     Ref,

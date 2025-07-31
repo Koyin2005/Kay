@@ -139,6 +139,7 @@ impl<'a> Lexer<'a> {
             "as" => TokenKind::As,
             "type" => TokenKind::Type,
             "variant" => TokenKind::Variant,
+            "match" => TokenKind::Match,
             symbol => TokenKind::Ident(Symbol::intern(symbol)),
         };
         (kind, len)
@@ -176,12 +177,12 @@ impl<'a> Lexer<'a> {
             };
         }
         macro_rules! comp_token {
-            ($c:expr,$comp_token_kind:expr,$single_token_kind:expr) => {
+            ($c:expr,TokenKind::$comp_token_kind:ident,TokenKind::$single_token_kind:ident) => {
                 if let Some($c) = self.peek() {
                     self.advance();
-                    ($comp_token_kind, 2)
+                    (TokenKind::$comp_token_kind, 2)
                 } else {
-                    ($single_token_kind, 1)
+                    (TokenKind::$single_token_kind, 1)
                 }
             };
         }
@@ -214,7 +215,17 @@ impl<'a> Lexer<'a> {
             '^' => single_token!(TokenKind::Caret),
             '{' => single_token!(TokenKind::LeftBrace),
             '}' => single_token!(TokenKind::RightBrace),
-            '=' => comp_token!('=', TokenKind::EqualsEquals, TokenKind::Equals),
+            '=' => match self.peek() {
+                Some('=') => {
+                    self.advance();
+                    (TokenKind::EqualsEquals, 2)
+                }
+                Some('>') => {
+                    self.advance();
+                    (TokenKind::ThickArrow, 2)
+                }
+                _ => (TokenKind::Equals, 1),
+            },
             '<' => comp_token!('=', TokenKind::LesserEquals, TokenKind::LesserThan),
             '>' => comp_token!('=', TokenKind::GreaterEquals, TokenKind::GreaterThan),
             c => (TokenKind::Unknown(c), c.len_utf8()),

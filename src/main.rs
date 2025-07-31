@@ -1,5 +1,5 @@
 use pl5::{
-    Lexer, Parser, PrettyPrint, SourceInfo,
+    Lexer, Parser, SourceInfo,
     config::{Config, ConfigError},
     errors::DiagnosticReporter,
 };
@@ -43,19 +43,10 @@ fn main() {
             return;
         }
     };
-
     let lexer = Lexer::new(&source_file);
-
     let parse_diagnostics = DiagnosticReporter::new(&source_file);
     let parser = Parser::new(lexer, parse_diagnostics);
-    let Ok(stmts) = parser.parse() else {
+    let Ok(_stmts) = parser.parse() else {
         return;
     };
-    let mut pretty = PrettyPrint::new(String::new());
-    for stmt in stmts {
-        let Ok(_) = pretty.pretty_print_stmt(&stmt, true) else {
-            continue;
-        };
-    }
-    println!("{}", pretty.finish());
 }
