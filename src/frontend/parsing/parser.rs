@@ -5,10 +5,11 @@ use crate::{
     errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
     frontend::{
         ast::{
-            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, ItemKind,
-            IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Mutable, NodeId, Param, Pattern,
-            PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField, Type, TypeDef,
-            TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase,
+            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, Item,
+            ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Mutable, NodeId,
+            Param, Pattern, PatternKind, Program, QualifiedName, Stmt, StmtKind, Struct,
+            StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant,
+            VariantCase,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
     },
@@ -697,7 +698,6 @@ impl<'source> Parser<'source> {
         let mut pattern = self.parse_prefix_pattern()?;
         loop {
             match self.current_token.kind {
-                
                 TokenKind::Caret => {
                     let span = self.current_token.span;
                     self.advance();
@@ -947,7 +947,7 @@ impl<'source> Parser<'source> {
         let ty = self.parse_type()?;
         Ok(Param { pattern, ty })
     }
-    fn parse_fun_def(&mut self) -> ParseResult<Stmt> {
+    fn parse_fun_def(&mut self) -> ParseResult<FunctionDef> {
         let start = self.current_token.span;
         self.advance();
 
@@ -968,22 +968,17 @@ impl<'source> Parser<'source> {
         let body = self.parse_block()?;
 
         let end = self.current_token.span;
-
         let span = start.combined(end);
-        Ok(Stmt {
-            kind: StmtKind::Item(Box::new(ItemKind::Function(FunctionDef {
-                id: self.new_id(),
-                span,
-                name: function_name,
-                params,
-                body,
-                return_type,
-            }))),
+        Ok(FunctionDef {
             id: self.new_id(),
             span,
+            name: function_name,
+            params,
+            body,
+            return_type,
         })
     }
-    fn parse_type_def(&mut self) -> ParseResult<Stmt> {
+    fn parse_type_def(&mut self) -> ParseResult<TypeDef> {
         let start_span = self.current_token.span;
         self.advance();
         let name = self.expect_ident("Expect a valid type name.")?;
@@ -1011,27 +1006,45 @@ impl<'source> Parser<'source> {
             end_span
         };
         let span = start_span.combined(end_span);
-        Ok(Stmt {
+        Ok(TypeDef {
             id: self.new_id(),
-            kind: StmtKind::Item(Box::new(ItemKind::Type(TypeDef {
-                id: self.new_id(),
-                span,
-                name,
-                kind,
-            }))),
             span,
+            name,
+            kind,
         })
     }
-    fn try_parse_item(&mut self) -> Option<ParseResult<Stmt>> {
-        Some(match self.current_token.kind {
-            TokenKind::Fun => self.parse_fun_def(),
-            TokenKind::Type => self.parse_type_def(),
+    fn try_parse_item(&mut self) -> Option<ParseResult<Item>> {
+        Some(Ok(match self.current_token.kind {
+            TokenKind::Fun => {
+                let Ok(function_def) = self.parse_fun_def() else {
+                    return Some(Err(ParseError));
+                };
+                Item {
+                    id: self.new_id(),
+                    span: function_def.span,
+                    kind: ItemKind::Function(function_def),
+                }
+            }
+            TokenKind::Type => {
+                let Ok(type_def) = self.parse_type_def() else {
+                    return Some(Err(ParseError));
+                };
+                Item {
+                    id: self.new_id(),
+                    span: type_def.span,
+                    kind: ItemKind::Type(type_def),
+                }
+            }
             _ => return None,
-        })
+        }))
     }
     fn parse_stmt(&mut self, in_block: bool) -> ParseResult<Stmt> {
-        if let Some(stmt_result) = self.try_parse_item() {
-            stmt_result
+        if let Some(item) = self.try_parse_item() {
+            item.map(|item| Stmt {
+                id: self.new_id(),
+                span: item.span,
+                kind: StmtKind::Item(Box::new(item)),
+            })
         } else {
             match self.current_token.kind {
                 TokenKind::Let => self.parse_let_stmt(),
@@ -1051,29 +1064,38 @@ impl<'source> Parser<'source> {
             self.advance();
             if matches!(
                 self.current_token.kind,
-                TokenKind::LeftBrace | TokenKind::For | TokenKind::While
+                TokenKind::Type
+                    | TokenKind::Fun
+                    | TokenKind::Let
+                    | TokenKind::LeftBrace
+                    | TokenKind::For
+                    | TokenKind::While
             ) {
                 break;
             }
         }
     }
-    pub fn parse(mut self) -> ParseResult<Vec<Stmt>> {
-        let mut stmts = Vec::new();
+    pub fn parse(mut self) -> ParseResult<Program> {
         self.advance();
-        while !self.is_at_eof() {
+        let items = std::iter::from_fn(|| {
+            if self.is_at_eof() {
+                return None;
+            }
             self.panic_mode.set(false);
             let Some(item) = self.try_parse_item() else {
                 self.error_at_current("Expected a valid item.");
                 self.synchronize();
-                continue;
+                return Some(Err(ParseError));
             };
-            let Ok(stmt) = item else {
+            let Ok(item) = item else {
                 self.synchronize();
-                continue;
+                return Some(Err(ParseError));
             };
-            stmts.push(stmt);
-        }
+            Some(Ok(item))
+        })
+        .filter_map(|item| item.ok())
+        .collect();
         self.diag_reporter.emit();
-        Ok(stmts)
+        Ok(Program { items })
     }
 }

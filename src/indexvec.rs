@@ -64,14 +64,13 @@ pub trait Idx {
 ///Defines an id that can be used with an index vec.
 macro_rules! define_id {
     (
-        $(#[$($attrss:tt)*])* struct $name:ident {}) => {
-        use crate::indexvec::Idx;
+        $(#[$($attrss:tt)*])* $v:vis struct $name:ident {}) => {
 
         $(#[$($attrss)*])*
         #[derive(Copy,Clone,PartialEq,Eq,PartialOrd,Ord,Hash)]
-        pub struct $name(u32);
+        $v struct $name(u32);
 
-        impl Idx for $name{
+        impl crate::indexvec::Idx for $name{
             fn into_index(self) -> usize{
                 self.0 as usize
             }

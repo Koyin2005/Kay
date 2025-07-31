@@ -26,6 +26,12 @@ pub struct Block {
     pub stmts: Vec<Stmt>,
     pub span: Span,
 }
+#[derive(Clone, Debug)]
+pub struct Item {
+    pub id: NodeId,
+    pub span: Span,
+    pub kind: ItemKind,
+}
 
 #[derive(Clone, Debug)]
 pub struct Stmt {
@@ -35,7 +41,7 @@ pub struct Stmt {
 }
 #[derive(Clone, Debug)]
 pub enum StmtKind {
-    Item(Box<ItemKind>),
+    Item(Box<Item>),
     Let(Box<Pattern>, Option<Box<Type>>, Box<Expr>),
     ExprWithSemi(Box<Expr>),
     Expr(Box<Expr>),
@@ -272,7 +278,7 @@ pub enum TypeKind {
 }
 define_id! {
     #[derive(Debug)]
-    struct NodeId{
+    pub struct NodeId{
 
     }
 }
@@ -281,4 +287,8 @@ impl std::fmt::Display for NodeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("NodeId").field(&self.0).finish()
     }
+}
+
+pub struct Program {
+    pub items: Vec<Item>,
 }
