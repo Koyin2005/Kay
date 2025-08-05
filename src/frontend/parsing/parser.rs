@@ -86,7 +86,7 @@ impl<'source> Parser<'source> {
         Ok(Ident { symbol, span })
     }
     fn expect(&mut self, kind: TokenKind, msg: impl IntoDiagnosticMessage) -> ParseResult<()> {
-        if !self.match_current(kind) {
+        if !self.matches_current(kind) {
             self.error_at_current(msg);
             return Err(ParseError);
         }
@@ -106,7 +106,7 @@ impl<'source> Parser<'source> {
     fn check(&self, kind: TokenKind) -> bool {
         self.current_token.kind == kind
     }
-    fn find_match(&mut self, kind: TokenKind) -> Option<Token> {
+    fn match_current(&mut self, kind: TokenKind) -> Option<Token> {
         if self.check(kind) {
             let current = self.current_token;
             self.advance();
@@ -115,7 +115,7 @@ impl<'source> Parser<'source> {
             None
         }
     }
-    fn match_current(&mut self, kind: TokenKind) -> bool {
+    fn matches_current(&mut self, kind: TokenKind) -> bool {
         if self.check(kind) {
             self.advance();
             true
@@ -237,7 +237,7 @@ impl<'source> Parser<'source> {
         let pattern = self.parse_pattern()?;
         let _ = self.expect(TokenKind::In, "Expected 'in' after 'for' pattern.");
         let expr = self.parse_expr(0)?;
-        let iterator = if self.match_current(TokenKind::DotDot) {
+        let iterator = if self.matches_current(TokenKind::DotDot) {
             let end = self.parse_expr(0)?;
             let span = start.combined(end.span);
             IteratorExpr {
@@ -288,14 +288,14 @@ impl<'source> Parser<'source> {
     }
     fn unary_op(&mut self) -> Option<UnaryOp> {
         let start_token = self.current_token;
-        if self.match_current(TokenKind::Minus) {
+        if self.matches_current(TokenKind::Minus) {
             Some(UnaryOp {
                 node: UnaryOpKind::Negate,
                 span: start_token.span,
             })
-        } else if self.match_current(TokenKind::Ref) {
+        } else if self.matches_current(TokenKind::Ref) {
             let next_span = start_token.span;
-            if self.match_current(TokenKind::Mut) {
+            if self.matches_current(TokenKind::Mut) {
                 Some(UnaryOp {
                     node: UnaryOpKind::Ref(Mutable::Yes(next_span)),
                     span: start_token.span.combined(next_span),
@@ -631,7 +631,7 @@ impl<'source> Parser<'source> {
     }
     fn parse_expr_stmt(&mut self, in_block: bool) -> ParseResult<Stmt> {
         let expr = self.parse_expr(0)?;
-        let (span, kind) = if let Some(semi_token) = self.find_match(TokenKind::Semicolon) {
+        let (span, kind) = if let Some(semi_token) = self.match_current(TokenKind::Semicolon) {
             (
                 expr.span.combined(semi_token.span),
                 StmtKind::ExprWithSemi(Box::new(expr)),
@@ -790,7 +790,7 @@ impl<'source> Parser<'source> {
                 let start_span = this.current_token.span;
                 let id = this.new_id();
                 let name = this.expect_ident("Expected variant name.")?;
-                let (span, fields) = if this.match_current(TokenKind::LeftParen) {
+                let (span, fields) = if this.matches_current(TokenKind::LeftParen) {
                     let params: Vec<_> = this
                         .parse_delimited_by(TokenKind::RightParen, |this| {
                             let ty = this.parse_type()?;
@@ -875,9 +875,14 @@ impl<'source> Parser<'source> {
             }
             TokenKind::Ref => {
                 self.advance();
+                let mutable = if let Some(token) = self.match_current(TokenKind::Mut){
+                    Mutable::Yes(token.span)
+                } else {
+                    Mutable::No
+                };
                 let ty = self.parse_type()?;
                 let span = start_span.combined(ty.span);
-                (TypeKind::Ref(Box::new(ty)), span)
+                (TypeKind::Ref(mutable,Box::new(ty)), span)
             }
             TokenKind::Wildcard => {
                 self.advance();
@@ -943,7 +948,7 @@ impl<'source> Parser<'source> {
         let start = self.current_token.span;
         self.advance();
         let pattern = self.parse_pattern()?;
-        let ty = if self.match_current(TokenKind::Colon) {
+        let ty = if self.matches_current(TokenKind::Colon) {
             Some(self.parse_type()?)
         } else {
             None
@@ -970,7 +975,7 @@ impl<'source> Parser<'source> {
         while !self.is_at_eof() && !self.check(delimiter) {
             let element = f(self)?;
             let coma_span = self.current_token.span;
-            if !self.match_current(TokenKind::Coma) {
+            if !self.matches_current(TokenKind::Coma) {
                 match parsed {
                     ElementsParsed::Multiple(ref mut elements, ref mut old_coma_span) => {
                         if elements.is_empty() {
@@ -1020,7 +1025,7 @@ impl<'source> Parser<'source> {
             "Expected ')' after 'function' arguments.",
         );
         let return_type = self
-            .match_current(TokenKind::Arrow)
+            .matches_current(TokenKind::Arrow)
             .then(|| self.parse_type())
             .transpose()?;
 
@@ -1059,7 +1064,7 @@ impl<'source> Parser<'source> {
                 return Err(ParseError);
             }
         };
-        let end_span = if let Some(prev_token) = self.find_match(TokenKind::Semicolon) {
+        let end_span = if let Some(prev_token) = self.match_current(TokenKind::Semicolon) {
             prev_token.span
         } else {
             end_span

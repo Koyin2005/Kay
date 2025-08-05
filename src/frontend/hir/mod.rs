@@ -85,6 +85,7 @@ pub struct Path {
 }
 #[derive(Debug)]
 pub enum PatternKind {
+    Literal(LiteralKind),
     Tuple(Vec<Pattern>),
     Ref(Box<Pattern>),
     Deref(Box<Pattern>),
@@ -170,9 +171,11 @@ pub struct Param {
 }
 #[derive(Debug)]
 pub enum TypeKind {
+    Tuple(Vec<Type>),
+    Path(Path),
     Infer,
-    Array(Box<Expr>),
-    Ref(Box<Type>),
+    Array(Box<Type>),
+    Ref(Mutable,Box<Type>),
     Primitive(PrimitiveType)
 }
 #[derive(Debug)]

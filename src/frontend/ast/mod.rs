@@ -292,7 +292,7 @@ pub enum TypeKind {
     Array(Box<Type>),
     Grouped(Box<Type>),
     Tuple(Vec<Type>),
-    Ref(Box<Type>),
+    Ref(Mutable,Box<Type>),
 }
 define_id! {
     #[derive(Debug)]

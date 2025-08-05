@@ -89,8 +89,11 @@ impl<'diag> AstLower<'diag> {
                 ast::TypeKind::Uint => hir::TypeKind::Primitive(hir::PrimitiveType::Int(hir::IntType::Unsigned)),
                 ast::TypeKind::Int => hir::TypeKind::Primitive(hir::PrimitiveType::Int(hir::IntType::Signed)),
                 ast::TypeKind::String => hir::TypeKind::Primitive(hir::PrimitiveType::String),
-                ast::TypeKind::Ref(ty) => hir::TypeKind::Ref(Box::new(self.lower_ty(ty))),
-                _ => todo!("{ty:?} THE REST OF TYPE LOWERING"),
+                ast::TypeKind::Ref(mutable,ty) => hir::TypeKind::Ref(*mutable,Box::new(self.lower_ty(ty))),
+                ast::TypeKind::Array(ty) => hir::TypeKind::Array(Box::new(self.lower_ty(ty))),
+                ast::TypeKind::Tuple(elements) => hir::TypeKind::Tuple(elements.iter().map(|ty| self.lower_ty(ty)).collect()),
+                ast::TypeKind::Struct(..) | ast::TypeKind::Variant(..) => todo!("Handle anonymous compound types"),
+                ast::TypeKind::Named(_) => hir::TypeKind::Path(hir::Path { id: self.next_hir_id(), res: self.map_res(ty.id).unwrap_or(hir::Resolution::Err) })
             },
         }
     }
@@ -114,7 +117,7 @@ impl<'diag> AstLower<'diag> {
                 let pat = self.lower_pattern(pat);
                 lower_pattern!(hir::PatternKind::Deref(Box::new(pat)))
             }
-            ast::PatternKind::Literal(_) => todo!("LITERAL PATTERNS"),
+            ast::PatternKind::Literal(literal) => lower_pattern!(hir::PatternKind::Literal(literal)),
             ast::PatternKind::Wildcard => lower_pattern!(hir::PatternKind::Wildcard),
             ast::PatternKind::Ident(name, mutable, by_ref) => {
                 let pat_id = self.lower_id(pattern.id);
