@@ -16,9 +16,6 @@ impl<I, V> IndexVec<I, V> {
     pub fn iter(&self) -> impl Iterator<Item = &V> {
         self.0.iter()
     }
-    pub fn into_iter(self) -> impl Iterator<Item = V> {
-        self.0.into_iter()
-    }
 }
 impl<I: Idx, V> IndexVec<I, V> {
     fn next_index(&self) -> I {
@@ -41,6 +38,23 @@ impl<I: Idx, V> IndexVec<I, V> {
     }
 }
 
+impl<I: Idx, V: std::fmt::Debug> std::fmt::Debug for IndexVec<I, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl<I: Idx, V> IntoIterator for IndexVec<I, V> {
+    type Item = V;
+    type IntoIter = std::vec::IntoIter<V>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+impl<I: Idx, V> FromIterator<V> for IndexVec<I, V> {
+    fn from_iter<T: IntoIterator<Item = V>>(iter: T) -> Self {
+        Self(Vec::from_iter(iter), PhantomData)
+    }
+}
 impl<I: Idx, V> Index<I> for IndexVec<I, V> {
     type Output = V;
     fn index(&self, index: I) -> &Self::Output {

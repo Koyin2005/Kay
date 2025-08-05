@@ -1,4 +1,6 @@
 pub mod ast;
+pub mod ast_lowering;
+mod ast_visit;
 pub mod hir;
-pub mod name_resolution;
 pub mod parsing;
+pub mod resolution;

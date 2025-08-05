@@ -15,6 +15,9 @@ impl<'a> DiagnosticReporter<'a> {
             all_diagnostics: Vec::new(),
         }))
     }
+    pub fn emit_diag(&self, message: impl IntoDiagnosticMessage, span: Span) {
+        self.add(Diagnostic::new(message, span));
+    }
     pub fn had_error(&self) -> bool {
         !self.0.borrow().all_diagnostics.is_empty()
     }

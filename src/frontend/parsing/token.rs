@@ -50,6 +50,7 @@ pub enum TokenKind {
     Ref,
     Or,
     In,
+    Is,
     Variant,
 
     Uint,

@@ -5,11 +5,11 @@ use crate::{
     errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
     frontend::{
         ast::{
-            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, Item,
-            ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Mutable, NodeId,
-            Param, Pattern, PatternKind, Program, QualifiedName, Stmt, StmtKind, Struct,
+            Ast, BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef,
+            Item, ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Mutable, NodeId,
+            Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct,
             StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant,
-            VariantCase,
+            VariantCase, VariantField,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
     },
@@ -131,13 +131,14 @@ impl<'source> Parser<'source> {
         Some(match self.current_token.kind {
             TokenKind::Equals => (2, 1),
             TokenKind::EqualsEquals | TokenKind::BangEquals => (3, 4),
+            TokenKind::Or => (5, 6),
+            TokenKind::And => (8, 7),
             TokenKind::LesserThan
             | TokenKind::GreaterThan
             | TokenKind::LesserEquals
-            | TokenKind::GreaterEquals => (5, 6),
-            TokenKind::And | TokenKind::Or => (7, 8),
-            TokenKind::Plus | TokenKind::Minus => (9, 10),
-            TokenKind::Star | TokenKind::Slash => (11, 12),
+            | TokenKind::GreaterEquals => (9, 10),
+            TokenKind::Plus | TokenKind::Minus => (11, 12),
+            TokenKind::Star | TokenKind::Slash => (13, 14),
             _ => return None,
         })
     }
@@ -218,9 +219,7 @@ impl<'source> Parser<'source> {
                 (block.span, Some(block))
             }
         } else {
-            let end = self.current_token.span;
-            let _ = self.expect(TokenKind::End, "Expected 'end' at end of if.");
-            (end, None)
+            (then_body.span, None)
         };
         Ok(Expr {
             id: self.new_id(),
@@ -235,7 +234,7 @@ impl<'source> Parser<'source> {
     fn parse_for_expr(&mut self) -> ParseResult<Expr> {
         let start = self.current_token.span;
         self.advance();
-        let pattern = self.parse_expr(0)?;
+        let pattern = self.parse_pattern()?;
         let _ = self.expect(TokenKind::In, "Expected 'in' after 'for' pattern.");
         let expr = self.parse_expr(0)?;
         let iterator = if self.match_current(TokenKind::DotDot) {
@@ -372,6 +371,7 @@ impl<'source> Parser<'source> {
                     span,
                 })
             }
+            TokenKind::LeftBrace => self.parse_block_expr(),
             TokenKind::LeftParen => self.parse_grouped_expr(),
             TokenKind::If => self.parse_if_expr(),
             TokenKind::While => self.parse_while_expr(),
@@ -455,7 +455,7 @@ impl<'source> Parser<'source> {
                     self.error_at_current("Expected an expression.");
                     return Err(ParseError);
                 };
-                let expr = self.parse_expr(13)?;
+                let expr = self.parse_expr(25)?;
                 let span = expr.span.combined(op.span);
                 Ok(Expr {
                     id: self.new_id(),
@@ -534,21 +534,61 @@ impl<'source> Parser<'source> {
                 TokenKind::LeftParen => self.parse_call(lhs)?,
                 TokenKind::Dot => {
                     self.advance();
-                    let field_name =
+                    let (field_name, is_int) =
                         if let TokenKind::Literal(Literal::Int(field)) = self.current_token.kind {
                             let span = self.current_token.span;
                             self.advance();
-                            Ident {
-                                symbol: field,
-                                span,
-                            }
+                            (
+                                Ident {
+                                    symbol: field,
+                                    span,
+                                },
+                                true,
+                            )
                         } else {
-                            self.expect_ident("Expect a valid field name")?
+                            (self.expect_ident("Expect a valid field name")?, false)
                         };
+
+                    let (kind, span) = match lhs.kind {
+                        ExprKind::Ident(name) if !is_int => {
+                            let span = lhs.span.combined(field_name.span);
+                            (
+                                ExprKind::Path(QualifiedName {
+                                    span,
+                                    head: PathSegment {
+                                        id: lhs.id,
+                                        span: lhs.span,
+                                        name: Ident {
+                                            symbol: name,
+                                            span: lhs.span,
+                                        },
+                                    },
+                                    tail: vec![PathSegment {
+                                        id: self.new_id(),
+                                        span: field_name.span,
+                                        name: field_name,
+                                    }],
+                                }),
+                                span,
+                            )
+                        }
+                        ExprKind::Path(mut path) if !is_int => {
+                            path.tail.push(PathSegment {
+                                id: self.new_id(),
+                                span: field_name.span,
+                                name: field_name,
+                            });
+                            (ExprKind::Path(path), lhs.span.combined(field_name.span))
+                        }
+                        _ => {
+                            let span = lhs.span.combined(field_name.span);
+                            (ExprKind::Field(Box::new(lhs), field_name), span)
+                        }
+                    };
                     Expr {
                         id: self.new_id(),
-                        span: lhs.span.combined(field_name.span),
-                        kind: ExprKind::Field(Box::new(lhs), field_name),
+                        span,
+                        kind,
                     }
                 }
                 TokenKind::As => {
@@ -747,7 +787,13 @@ impl<'source> Parser<'source> {
                 let name = this.expect_ident("Expected variant name.")?;
                 let (span, fields) = if this.match_current(TokenKind::LeftParen) {
                     let params: Vec<_> = this
-                        .parse_delimited_by(TokenKind::RightParen, |this| this.parse_type())?
+                        .parse_delimited_by(TokenKind::RightParen, |this| {
+                            let ty = this.parse_type()?;
+                            Ok(VariantField {
+                                id: this.new_id(),
+                                ty,
+                            })
+                        })?
                         .into();
                     let end_span = this.current_token.span;
                     let _ =
@@ -772,12 +818,16 @@ impl<'source> Parser<'source> {
             cases,
         })
     }
-    fn parse_qual_name_tail(&mut self) -> ParseResult<Vec<Ident>> {
+    fn parse_qual_name_tail(&mut self) -> ParseResult<Vec<PathSegment>> {
         let mut names = Vec::new();
         while let TokenKind::Dot = self.current_token.kind {
             self.advance();
             let name = self.expect_ident("Expected a valid ident.")?;
-            names.push(name);
+            names.push(PathSegment {
+                id: self.new_id(),
+                span: name.span,
+                name,
+            });
         }
         Ok(names)
     }
@@ -863,7 +913,11 @@ impl<'source> Parser<'source> {
                 (
                     TypeKind::Named(Box::new(QualifiedName {
                         span,
-                        head,
+                        head: PathSegment {
+                            id: self.new_id(),
+                            span: head.span,
+                            name: head,
+                        },
                         tail: rest,
                     })),
                     span,
@@ -1075,7 +1129,7 @@ impl<'source> Parser<'source> {
             }
         }
     }
-    pub fn parse(mut self) -> ParseResult<Program> {
+    pub fn parse(mut self) -> ParseResult<Ast> {
         self.advance();
         let items = std::iter::from_fn(|| {
             if self.is_at_eof() {
@@ -1096,6 +1150,6 @@ impl<'source> Parser<'source> {
         .filter_map(|item| item.ok())
         .collect();
         self.diag_reporter.emit();
-        Ok(Program { items })
+        Ok(Ast { items })
     }
 }

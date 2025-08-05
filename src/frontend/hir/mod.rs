@@ -1,13 +1,23 @@
-use crate::{define_id, span::Span};
+use indexmap::IndexMap;
+
+use crate::{
+    define_id,
+    span::{Span, symbol::Ident},
+};
 
 define_id! {
     #[derive(Debug)]
     pub struct HirId{}
 }
-
 define_id! {
     #[derive(Debug)]
-    pub struct ItemId{}
+    pub struct DefId{}
+}
+impl DefId {
+    pub const FIRST: DefId = DefId(0);
+    pub fn add(self, amount: usize) -> Self {
+        Self::new(self.0 as usize + amount)
+    }
 }
 pub enum PatternKind {
     Tuple(Vec<Pattern>),
@@ -29,7 +39,7 @@ pub struct Block {
 }
 pub enum StmtKind {
     Let(Pattern, Box<Expr>),
-    Item(ItemId),
+    Item(DefId),
 }
 pub struct Stmt {
     pub id: HirId,
@@ -38,6 +48,7 @@ pub struct Stmt {
 }
 pub enum ExprKind {
     Loop(Box<Block>),
+    If(Box<Expr>, Box<Block>, Option<Box<Expr>>),
     Break(Option<Box<Expr>>),
 }
 
@@ -45,4 +56,69 @@ pub struct Expr {
     pub id: HirId,
     pub span: Span,
     pub kind: ExprKind,
+}
+pub struct Param {
+    pub pat: Pattern,
+}
+pub enum TypeKind {}
+pub struct Type {
+    pub id: HirId,
+    pub span: Span,
+    pub kind: TypeKind,
+}
+pub struct Body {
+    pub params: Vec<Param>,
+    pub value: Expr,
+}
+pub enum FunctionReturnType {
+    Implicit(Span),
+    Explicit(Type),
+}
+pub struct FunctionSig {
+    pub inputs: Vec<Type>,
+    pub return_ty: FunctionReturnType,
+}
+pub struct FunctionDef {
+    pub id: DefId,
+    pub sig: FunctionSig,
+    pub span: Span,
+}
+pub struct VariantCase {
+    pub span: Span,
+    pub fields: Vec<Type>,
+}
+pub struct VariantDef {
+    pub span: Span,
+    pub cases: Vec<VariantCase>,
+}
+pub struct StructField {
+    pub id: HirId,
+    pub def_id: DefId,
+    pub span: Span,
+    pub name: Ident,
+    pub ty: Type,
+}
+pub struct StructDef {
+    pub span: Span,
+    pub fields: Vec<StructField>,
+}
+pub enum TypeDefKind {
+    Struct(StructDef),
+    Variant(VariantDef),
+}
+pub struct TypeDef {
+    pub id: DefId,
+    pub span: Span,
+    pub kind: TypeDefKind,
+}
+pub enum ItemKind {
+    Function(FunctionDef),
+    TypeDef(TypeDef),
+}
+pub struct Item {
+    pub kind: ItemKind,
+}
+pub struct Hir {
+    pub items: IndexMap<DefId, Item>,
+    pub bodies: IndexMap<HirId, Body>,
 }

@@ -62,7 +62,7 @@ pub struct Spanned<T> {
 pub type BinaryOp = Spanned<BinaryOpKind>;
 pub type UnaryOp = Spanned<UnaryOpKind>;
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub enum BinaryOpKind {
     Add,
     Subtract,
@@ -172,6 +172,12 @@ pub struct MatchArm {
     pub pat: Pattern,
     pub body: Expr,
 }
+#[derive(Clone, Debug, Copy)]
+pub struct PathSegment {
+    pub id: NodeId,
+    pub span: Span,
+    pub name: Ident,
+}
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Tuple(Vec<Expr>),
@@ -186,8 +192,9 @@ pub enum ExprKind {
     Init(Option<Box<Type>>, Vec<ExprField>),
     Array(Vec<Expr>),
     While(Box<Expr>, Box<Block>),
-    For(Box<Expr>, Box<IteratorExpr>, Box<Block>),
+    For(Box<Pattern>, Box<IteratorExpr>, Box<Block>),
     Ident(Symbol),
+    Path(QualifiedName),
     Grouped(Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     Break(Option<Box<Expr>>),
@@ -222,11 +229,16 @@ pub enum PatternKind {
     Wildcard,
 }
 #[derive(Debug, Clone)]
+pub struct VariantField {
+    pub id: NodeId,
+    pub ty: Type,
+}
+#[derive(Debug, Clone)]
 pub struct VariantCase {
     pub id: NodeId,
     pub name: Ident,
     pub span: Span,
-    pub fields: Vec<Type>,
+    pub fields: Vec<VariantField>,
 }
 #[derive(Debug, Clone)]
 pub struct Variant {
@@ -256,8 +268,8 @@ pub struct Type {
 #[derive(Clone, Debug)]
 pub struct QualifiedName {
     pub span: Span,
-    pub head: Ident,
-    pub tail: Vec<Ident>,
+    pub head: PathSegment,
+    pub tail: Vec<PathSegment>,
 }
 
 #[derive(Clone, Debug)]
@@ -289,6 +301,6 @@ impl std::fmt::Display for NodeId {
     }
 }
 
-pub struct Program {
+pub struct Ast {
     pub items: Vec<Item>,
 }

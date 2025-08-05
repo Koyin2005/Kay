@@ -1,5 +1,5 @@
 use pl5::{
-    Lexer, Parser, SourceInfo,
+    AstLower, Lexer, Parser, Resolver, SourceInfo,
     config::{Config, ConfigError},
     errors::DiagnosticReporter,
 };
@@ -46,7 +46,10 @@ fn main() {
     let lexer = Lexer::new(&source_file);
     let parse_diagnostics = DiagnosticReporter::new(&source_file);
     let parser = Parser::new(lexer, parse_diagnostics);
-    let Ok(_stmts) = parser.parse() else {
+    let Ok(ast) = parser.parse() else {
         return;
     };
+    let name_res_diagnostics = DiagnosticReporter::new(&source_file);
+    let results = Resolver::new(&name_res_diagnostics).resolve(&ast);
+    AstLower::new(results).lower_ast(&ast);
 }
