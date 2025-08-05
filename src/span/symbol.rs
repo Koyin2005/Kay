@@ -90,7 +90,7 @@ pub struct Ident {
     pub span: Span,
 }
 
-const ALL_SYMBOLS: &'static [&'static str] = &["main", "println"];
+const ALL_SYMBOLS: &'static [&'static str] = &["main", "0", "iter", "println"];
 
 pub mod symbols {
     use crate::span::symbol::{ALL_SYMBOLS, Symbol};
@@ -122,7 +122,6 @@ pub mod symbols {
         }
         panic!("Found an unknown symbol.")
     }
-
-    pub const MAIN: Symbol = Symbol::new(find_symbol_index("main"));
+    pub const ITER: Symbol = Symbol::new(find_symbol_index("iter"));
     pub const PRINTLN: Symbol = Symbol::new(find_symbol_index("println"));
 }

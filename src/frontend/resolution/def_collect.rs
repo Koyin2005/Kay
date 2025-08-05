@@ -24,7 +24,9 @@ impl<'a, 'b> DefCollector<'a, 'b> {
         self.next_id = self.next_id.add(1);
         self.resolver
             .node_ids_to_defs
-            .insert(id, next_id).ok_or(()).expect_err("There should be only 1 def-id for each stmt.");
+            .insert(id, next_id)
+            .ok_or(())
+            .expect_err("There should be only 1 def-id for each stmt.");
     }
     pub fn collect(mut self, ast: &Ast) {
         self.visit_ast(ast);

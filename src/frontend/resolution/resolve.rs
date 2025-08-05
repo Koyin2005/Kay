@@ -5,47 +5,29 @@ use crate::{
     frontend::{
         ast::{Ast, NodeId},
         ast_visit::Visitor,
-        hir::DefId,
+        hir::{DefId, Resolution},
         resolution::{def_collect::DefCollector, name_res::NameRes},
     },
     span::Span,
 };
-#[derive(Clone, Copy, Debug)]
-pub enum Resolution {
-    Builtin,
-    Type(NodeId),
-    Field,
-    Function,
-    VariantCase,
-    Variable,
-}
-impl Resolution {
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::Field => "field",
-            Self::Builtin => "builtin",
-            Self::Function => "function",
-            Self::Type(_) => "type",
-            Self::Variable => "variable",
-            Self::VariantCase => "case",
-        }
-    }
-}
 pub struct ResolveResults {
-    resolutions: FxHashMap<NodeId, Resolution>,
+    resolutions: FxHashMap<NodeId, Resolution<NodeId>>,
     node_ids_to_defs: FxHashMap<NodeId, DefId>,
 }
 impl ResolveResults {
-    pub fn get_def_id(&self, id: NodeId) -> Option<DefId> {
-        self.node_ids_to_defs.get(&id).copied()
+    pub fn expect_def_id(&self, id: NodeId) -> DefId {
+        self.node_ids_to_defs
+            .get(&id)
+            .copied()
+            .expect("Expected a def-id when there was none.")
     }
-    pub fn get_resolution(&self, id: NodeId) -> Option<Resolution> {
+    pub fn get_resolution(&self, id: NodeId) -> Option<Resolution<NodeId>> {
         self.resolutions.get(&id).copied()
     }
 }
 pub struct Resolver<'source> {
     pub(super) node_ids_to_defs: FxHashMap<NodeId, DefId>,
-    pub(super) resolutions: FxHashMap<NodeId, Resolution>,
+    pub(super) resolutions: FxHashMap<NodeId, Resolution<NodeId>>,
     diag: &'source DiagnosticReporter<'source>,
 }
 
@@ -61,8 +43,8 @@ impl<'source> Resolver<'source> {
         self.diag.emit_diag(msg, span);
     }
     pub fn resolve(mut self, ast: &Ast) -> ResolveResults {
-        NameRes::new(&mut self).visit_ast(ast);
         DefCollector::new(&mut self, DefId::new(0)).collect(ast);
+        NameRes::new(&mut self).visit_ast(ast);
         self.diag.emit();
         ResolveResults {
             node_ids_to_defs: self.node_ids_to_defs,

@@ -9,7 +9,7 @@ use crate::{
             PatternKind, StmtKind, Type, TypeDef, TypeDefKind,
         },
         ast_visit::{Visitor, walk_ast, walk_block, walk_expr, walk_iterator, walk_type},
-        resolution::resolve::Resolution,
+        hir::{DefId, DefKind, Resolution},
     },
     span::{
         Span,
@@ -19,15 +19,15 @@ use crate::{
 
 #[derive(Debug)]
 struct ScopeData {
-    bindings: IndexMap<Symbol, Resolution>,
+    bindings: IndexMap<Symbol, Resolution<NodeId>>,
 }
 struct Namespace {
-    children: Vec<(Symbol, NodeId, Resolution)>,
+    children: Vec<(Symbol, DefId, Resolution<NodeId>)>,
 }
 pub struct NameRes<'rsv, 'src> {
     resolver: &'rsv mut Resolver<'src>,
     scopes: Vec<ScopeData>,
-    namespaces: IndexMap<NodeId, Namespace>,
+    namespaces: IndexMap<DefId, Namespace>,
 }
 
 impl<'a, 'b> NameRes<'a, 'b> {
@@ -59,7 +59,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
             .last_mut()
             .expect("There should always be at least 1 scope")
     }
-    fn create_item_binding(&mut self, name: Symbol, res: Resolution, span: Span) {
+    fn create_item_binding(&mut self, name: Symbol, res: Resolution<NodeId>, span: Span) {
         match self.current_scope_mut().bindings.entry(name) {
             Entry::Occupied(_) => self
                 .resolver
@@ -74,7 +74,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
         f(self);
         self.pop_scope();
     }
-    fn get_binding_in_scope(&self, name: Symbol) -> Option<Resolution> {
+    fn get_binding_in_scope(&self, name: Symbol) -> Option<Resolution<NodeId>> {
         for scope in self.scopes.iter().rev() {
             if let Some(&kind) = scope.bindings.get(&name) {
                 return Some(kind);
@@ -82,7 +82,18 @@ impl<'a, 'b> NameRes<'a, 'b> {
         }
         None
     }
-    fn create_binding(&mut self, name: Symbol, kind: Resolution) -> Option<Resolution> {
+    fn expect_def_id(&self, id: NodeId) -> DefId {
+        self.resolver
+            .node_ids_to_defs
+            .get(&id)
+            .copied()
+            .expect("Should have a def-id")
+    }
+    fn create_binding(
+        &mut self,
+        name: Symbol,
+        kind: Resolution<NodeId>,
+    ) -> Option<Resolution<NodeId>> {
         self.current_scope_mut().bindings.insert(name, kind)
     }
     fn collect_bindings_in_patttern(pattern: &Pattern, bindings: &mut Vec<(Symbol, NodeId, Span)>) {
@@ -105,14 +116,21 @@ impl<'a, 'b> NameRes<'a, 'b> {
         repeat_error: impl Fn(Symbol) -> String,
     ) {
         let mut seen_bindings = FxHashSet::default();
-        for (name, _, span) in bindings {
+        for (name, id, span) in bindings {
             if !seen_bindings.insert(name) {
                 self.resolver.error(repeat_error(name), span);
             }
-            self.create_binding(name, Resolution::Variable);
+            self.create_binding(name, Resolution::Variable(id));
+            self.resolver
+                .resolutions
+                .insert(id, Resolution::Variable(id));
         }
     }
-    fn resolve_name_in_current_scope(&mut self, id: NodeId, name: Ident) -> Option<Resolution> {
+    fn resolve_name_in_current_scope(
+        &mut self,
+        id: NodeId,
+        name: Ident,
+    ) -> Option<Resolution<NodeId>> {
         let Some(current) = self.get_binding_in_scope(name.symbol) else {
             self.resolver.error(
                 format!("Cannot find '{}' in scope.", name.symbol.as_str()),
@@ -127,15 +145,14 @@ impl<'a, 'b> NameRes<'a, 'b> {
         &mut self,
         head: PathSegment,
         segments: impl Iterator<Item = PathSegment>,
-    ) -> Option<Resolution> {
+    ) -> Option<Resolution<NodeId>> {
         let mut current = self.resolve_name_in_current_scope(head.id, head.name)?;
         'segment: for next_seg in segments {
             match current {
-                Resolution::Variable => return None,
-                Resolution::Function
-                | Resolution::VariantCase
-                | Resolution::Builtin
-                | Resolution::Field => {
+                Resolution::Variable(_) => return None,
+                Resolution::Err => return None,
+                Resolution::Def(_, DefKind::Field | DefKind::Function | DefKind::VariantCase)
+                | Resolution::Builtin => {
                     self.resolver.error(
                         format!(
                             "'{}' has no item '{}'.",
@@ -146,7 +163,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                     );
                     return None;
                 }
-                Resolution::Type(id) => {
+                Resolution::Def(id, DefKind::Struct | DefKind::Variant) => {
                     let namespace = &self.namespaces[&id];
                     for &(name, _, kind) in &namespace.children {
                         if name == next_seg.name.symbol {
@@ -200,30 +217,47 @@ impl<'a, 'b> NameRes<'a, 'b> {
             ItemKind::Function(ref function_def) => {
                 self.create_item_binding(
                     function_def.name.symbol,
-                    Resolution::Function,
+                    Resolution::Def(self.expect_def_id(function_def.id), DefKind::Function),
                     function_def.name.span,
                 );
             }
             ItemKind::Type(ref type_def) => {
+                let def_id = self.expect_def_id(type_def.id);
                 self.create_item_binding(
                     type_def.name.symbol,
-                    Resolution::Type(type_def.id),
+                    Resolution::Def(
+                        def_id,
+                        match type_def.kind {
+                            TypeDefKind::Struct(..) => DefKind::Struct,
+                            TypeDefKind::Variant(..) => DefKind::Variant,
+                        },
+                    ),
                     type_def.name.span,
                 );
                 match &type_def.kind {
                     TypeDefKind::Struct(struct_def) => {
                         let mut children = Vec::new();
                         for field in struct_def.fields.iter() {
-                            children.push((field.name.symbol, field.id, Resolution::Field));
+                            let field_def_id = self.expect_def_id(field.id);
+                            children.push((
+                                field.name.symbol,
+                                field_def_id,
+                                Resolution::Def(field_def_id, DefKind::Field),
+                            ));
                         }
-                        self.namespaces.insert(type_def.id, Namespace { children });
+                        self.namespaces.insert(def_id, Namespace { children });
                     }
                     TypeDefKind::Variant(variant_def) => {
                         let mut children = Vec::new();
                         for case in variant_def.cases.iter() {
-                            children.push((case.name.symbol, case.id, Resolution::VariantCase));
+                            let case_id = self.expect_def_id(case.id);
+                            children.push((
+                                case.name.symbol,
+                                case_id,
+                                Resolution::Def(case_id, DefKind::VariantCase),
+                            ));
                         }
-                        self.namespaces.insert(type_def.id, Namespace { children });
+                        self.namespaces.insert(def_id, Namespace { children });
                     }
                 }
             }

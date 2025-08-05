@@ -1,20 +1,21 @@
-type Option : variant{
-    Some(int),
+/*type Option : variant{
+    Some(_),
     None
 }
 type B : struct {}
 fun main1(){
-    Option.Some;
-    Option.C;
-    let a = (1,2,43);
+    let a = ();
     let c = {
-        let d = 5;
-        d
+        let d = ();
     };
-    let c = d;
-    let v : v = 1;
+    let v  = ();
 }
 
 fun do_stuff(){
 
+}*/
+fun main(){
+    for i in ()..() {
+        
+    }
 }
