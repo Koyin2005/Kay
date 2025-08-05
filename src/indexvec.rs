@@ -84,7 +84,7 @@ macro_rules! define_id {
         #[derive(Copy,Clone,PartialEq,Eq,PartialOrd,Ord,Hash)]
         $v struct $name(u32);
 
-        impl crate::indexvec::Idx for $name{
+        impl $crate::indexvec::Idx for $name{
             fn into_index(self) -> usize{
                 self.0 as usize
             }

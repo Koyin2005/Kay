@@ -1,21 +1,12 @@
-/*type Option : variant{
-    Some(_),
-    None
-}
-type B : struct {}
-fun main1(){
-    let a = ();
-    let c = {
-        let d = ();
-    };
-    let v  = ();
-}
-
-fun do_stuff(){
-
-}*/
 fun main(){
-    for i in ()..() {
-        
-    }
+    "hello wor\eld";
+    "hello wor\rld";
+    "hello wor\tld";
+    "hello wor\0ld";
+    "hello wor\nld";
+    "hello wor\\ld";
+    "hello wor\"ld";
+    let a = 1;
+    a = 5;
+    _ = b;
 }

@@ -2,19 +2,16 @@ use fxhash::FxHashSet;
 use indexmap::{IndexMap, map::Entry};
 
 use crate::{
-    Resolver,
     frontend::{
         ast::{
             Ast, Block, Expr, ExprKind, FunctionDef, Item, ItemKind, NodeId, PathSegment, Pattern,
             PatternKind, StmtKind, Type, TypeDef, TypeDefKind,
         },
-        ast_visit::{Visitor, walk_ast, walk_block, walk_expr, walk_iterator, walk_type},
-        hir::{DefId, DefKind, Resolution},
-    },
-    span::{
-        Span,
-        symbol::{Ident, Symbol, symbols},
-    },
+        ast_visit::{walk_ast, walk_block, walk_expr, walk_iterator, walk_type, Visitor},
+        hir::{Builtin, DefId, DefKind, Resolution},
+    }, span::{
+        symbol::{symbols, Ident, Symbol}, Span
+    }, Resolver
 };
 
 #[derive(Debug)]
@@ -33,7 +30,7 @@ pub struct NameRes<'rsv, 'src> {
 impl<'a, 'b> NameRes<'a, 'b> {
     pub fn new(resolver: &'a mut Resolver<'b>) -> Self {
         let root_scope = ScopeData {
-            bindings: [(symbols::PRINTLN, Resolution::Builtin)]
+            bindings: [(symbols::PRINTLN, Resolution::Builtin(Builtin::Println))]
                 .into_iter()
                 .collect(),
         };
@@ -152,7 +149,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 Resolution::Variable(_) => return None,
                 Resolution::Err => return None,
                 Resolution::Def(_, DefKind::Field | DefKind::Function | DefKind::VariantCase)
-                | Resolution::Builtin => {
+                | Resolution::Builtin(_) => {
                     self.resolver.error(
                         format!(
                             "'{}' has no item '{}'.",

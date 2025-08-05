@@ -119,7 +119,6 @@ impl<'a> Lexer<'a> {
             "for" => TokenKind::For,
             "true" => TokenKind::Literal(Literal::True),
             "false" => TokenKind::Literal(Literal::False),
-            "print" => TokenKind::Print,
             "fun" => TokenKind::Fun,
             "let" => TokenKind::Let,
             "mut" => TokenKind::Mut,
@@ -153,9 +152,11 @@ impl<'a> Lexer<'a> {
         (TokenKind::Literal(Literal::Int(symbol)), len)
     }
     fn string(&mut self) -> (TokenKind, usize) {
-        while let Some(c) = self.peek()
-            && c != '\"'
+        while let Some(c) = self.peek() && c != '"'
         {
+            if c == '\\' && matches!(self.peek_next(),Some('"')) {
+                self.advance();
+            }
             self.advance();
         }
         let (is_complete, end_offset) = if matches!(self.peek(), Some('\"')) {

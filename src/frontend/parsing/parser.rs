@@ -370,6 +370,11 @@ impl<'source> Parser<'source> {
                     kind: ExprKind::Literal(literal),
                     span,
                 })
+            },
+            TokenKind::Wildcard => {
+                let span = self.current_token.span;
+                self.advance();
+                Ok(Expr { id: self.new_id(), kind: ExprKind::Underscore, span})
             }
             TokenKind::LeftBrace => self.parse_block_expr(),
             TokenKind::LeftParen => self.parse_grouped_expr(),
@@ -730,8 +735,8 @@ impl<'source> Parser<'source> {
         };
         Ok(Pattern {
             id: self.new_id(),
-            span: span,
-            kind: kind,
+            span,
+            kind,
         })
     }
     fn parse_pattern(&mut self) -> ParseResult<Pattern> {

@@ -58,6 +58,11 @@ pub struct Spanned<T> {
     pub node: T,
     pub span: Span,
 }
+impl<T> Spanned<T>{
+    pub fn new(node : T, span: Span) -> Self{
+        Self { node, span }
+    }
+}
 
 pub type BinaryOp = Spanned<BinaryOpKind>;
 pub type UnaryOp = Spanned<UnaryOpKind>;
@@ -141,7 +146,7 @@ pub enum ItemKind {
     Function(FunctionDef),
     Type(TypeDef),
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,Copy)]
 pub enum LiteralKind {
     Int(i64),
     Bool(bool),
@@ -196,6 +201,7 @@ pub enum ExprKind {
     Ident(Symbol),
     Path(QualifiedName),
     Grouped(Box<Expr>),
+    Underscore,
     Call(Box<Expr>, Vec<Expr>),
     Break(Option<Box<Expr>>),
     Return(Option<Box<Expr>>),

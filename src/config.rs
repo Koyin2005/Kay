@@ -28,7 +28,7 @@ impl Config {
         let Some(extension) = Path::new(file_name).extension() else {
             return Err(ConfigError::InvalidFile);
         };
-        const KAE_EXTENSION: &'static str = "k";
+        const KAE_EXTENSION: &str = "k";
         let KAE_EXTENSION = extension.to_string_lossy().as_ref() else {
             return Err(ConfigError::InvalidFile);
         };

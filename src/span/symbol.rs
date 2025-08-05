@@ -90,7 +90,7 @@ pub struct Ident {
     pub span: Span,
 }
 
-const ALL_SYMBOLS: &'static [&'static str] = &["main", "0", "iter", "println"];
+const ALL_SYMBOLS: &[&str] = &["main", "0", "iter", "println"];
 
 pub mod symbols {
     use crate::span::symbol::{ALL_SYMBOLS, Symbol};

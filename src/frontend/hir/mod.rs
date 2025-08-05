@@ -2,13 +2,23 @@ use indexmap::IndexMap;
 
 use crate::{
     define_id,
-    frontend::ast::{BinaryOp, ByRef, Mutable},
+    frontend::ast::{BinaryOp, ByRef, LiteralKind, Mutable, UnaryOp},
     span::{
-        Span,
-        symbol::{Ident, Symbol},
+        symbol::{Ident, Symbol}, Span
     },
 };
-
+#[derive(Clone, Copy,PartialEq,Debug)]
+pub enum IntType {
+    Signed,
+    Unsigned
+}
+#[derive(Clone, Copy,PartialEq,Debug)]
+pub enum PrimitiveType {
+    Int(IntType),
+    String,
+    Bool,
+    Never,
+}
 define_id! {
     #[derive(Debug)]
     pub struct HirId{}
@@ -42,9 +52,18 @@ impl DefKind {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+pub enum Builtin {
+    OptionSome,
+    OptionNone,
+    Next,
+    IntoIter,
+    Println
+}
 #[derive(Clone, Copy, Debug)]
 pub enum Resolution<VarId = HirId> {
-    Builtin,
+    Builtin(Builtin),
     Def(DefId, DefKind),
     Variable(VarId),
     Err,
@@ -52,7 +71,7 @@ pub enum Resolution<VarId = HirId> {
 impl<Id> Resolution<Id> {
     pub fn as_str(&self) -> &str {
         match self {
-            Self::Builtin => "builtin",
+            Self::Builtin(_) => "builtin",
             Self::Variable(_) => "variable",
             Self::Def(_, kind) => kind.as_str(),
             Self::Err => "{error}",
@@ -107,19 +126,36 @@ pub struct MatchArm {
     pub body: Expr,
 }
 #[derive(Debug)]
-pub struct NoLabel;
+pub struct OutsideLoop;
+#[derive(Debug)]
+pub struct ExprField{
+    pub id : HirId,
+    pub span : Span,
+    pub name : Ident,
+    pub expr : Expr
+}
+
 #[derive(Debug)]
 pub enum ExprKind {
+    Assign(Span,Box<Expr>,Box<Expr>),
+    As(Box<Expr>,Type),
+    Literal(LiteralKind),
+    Array(Vec<Expr>),
     Tuple(Vec<Expr>),
     Loop(Box<Block>),
-    Path(Resolution),
+    Path(Path),
+    Deref(Box<Expr>),
     Range(Box<Expr>, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     If(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
     Match(Box<Expr>, Vec<MatchArm>),
-    Ref(Mutable, Box<Expr>),
-    Break(Result<HirId, NoLabel>, Option<Box<Expr>>),
+    Unary(UnaryOp,Box<Expr>),
+    Break(Result<HirId, OutsideLoop>, Option<Box<Expr>>),
     Block(Box<Block>),
+    Return(Option<Box<Expr>>),
+    Field(Box<Expr>,Ident),
+    Init(Option<Type>,Vec<ExprField>),
+    Err,
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
 }
 #[derive(Debug)]
@@ -135,6 +171,9 @@ pub struct Param {
 #[derive(Debug)]
 pub enum TypeKind {
     Infer,
+    Array(Box<Expr>),
+    Ref(Box<Type>),
+    Primitive(PrimitiveType)
 }
 #[derive(Debug)]
 pub struct Type {
