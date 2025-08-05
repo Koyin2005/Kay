@@ -88,42 +88,44 @@ impl AstLower {
         }
     }
     fn lower_pattern(&mut self, pattern: &ast::Pattern) -> hir::Pattern {
-        let kind = match pattern.kind {
+        macro_rules! lower_pattern {
+            ($kind : expr) => {
+                hir::Pattern {
+                    id: self.next_hir_id(),
+                    span: pattern.span,
+                    kind: $kind,
+                }
+            };
+        }
+        match pattern.kind {
             ast::PatternKind::Grouped(ref pat) => {
-                return {
-                    let mut pat = self.lower_pattern(pat);
-                    pat.span = pattern.span;
-                    pat
-                };
+                let mut pat = self.lower_pattern(pat);
+                pat.span = pattern.span;
+                pat
             }
             ast::PatternKind::Deref(ref pat) => {
                 let pat = self.lower_pattern(pat);
-                hir::PatternKind::Deref(Box::new(pat))
+                lower_pattern!(hir::PatternKind::Deref(Box::new(pat)))
             }
             ast::PatternKind::Literal(_) => todo!("LITERAL PATTERNS"),
-            ast::PatternKind::Wildcard => hir::PatternKind::Wildcard,
+            ast::PatternKind::Wildcard => lower_pattern!(hir::PatternKind::Wildcard),
             ast::PatternKind::Ident(name, mutable, by_ref) => {
                 let pat_id = self.lower_id(pattern.id);
                 let Some(hir::Resolution::Variable(hir_id)) = self.map_res(pattern.id) else {
                     unreachable!("There should be a binding for patterns always")
                 };
-                return hir::Pattern {
+                hir::Pattern {
                     id: pat_id,
                     span: pattern.span,
                     kind: hir::PatternKind::Binding(hir_id, name, mutable, by_ref),
-                };
+                }
             }
-            ast::PatternKind::Tuple(ref elements) => hir::PatternKind::Tuple(
+            ast::PatternKind::Tuple(ref elements) => lower_pattern!(hir::PatternKind::Tuple(
                 elements
                     .iter()
                     .map(|element| self.lower_pattern(element))
                     .collect(),
-            ),
-        };
-        hir::Pattern {
-            id: self.next_hir_id(),
-            kind,
-            span: pattern.span,
+            )),
         }
     }
     fn lower_stmt(&mut self, stmt: &ast::Stmt) -> hir::Stmt {
@@ -149,11 +151,10 @@ impl AstLower {
         }
     }
     fn lower_block_expr(&mut self, block: &ast::Block) -> hir::Expr {
-        let block = self.lower_block(block);
         hir::Expr {
             id: self.next_hir_id(),
             span: block.span,
-            kind: hir::ExprKind::Block(Box::new(block)),
+            kind: hir::ExprKind::Block(Box::new(self.lower_block(block))),
         }
     }
     fn lower_block(&mut self, block: &ast::Block) -> hir::Block {
@@ -301,15 +302,12 @@ impl AstLower {
             This goes from :
                 for $pat in $expr
                     $loop_body
-
+            to:
                 {
                     let iterator = iter($expr);
                     'l : loop{
                         match next($iterator) {
-                            Option.Some(v) => {
-                                let $pat = v;
-                                $loop_body
-                            },
+                            Option.Some(v) => $loop_body,
                             Option.None => { break 'l;}
                         }
                     }
