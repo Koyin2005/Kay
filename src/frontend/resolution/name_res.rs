@@ -2,16 +2,19 @@ use fxhash::FxHashSet;
 use indexmap::{IndexMap, map::Entry};
 
 use crate::{
+    Resolver,
     frontend::{
         ast::{
-            Ast, Block, Expr, ExprKind, FunctionDef, Item, ItemKind, NodeId, PathSegment, Pattern,
-            PatternKind, StmtKind, Type, TypeDef, TypeDefKind,
+            self, Ast, Block, Expr, ExprKind, FunctionDef, Item, ItemKind, NodeId, PathSegment,
+            Pattern, PatternKind, StmtKind, Type, TypeDef, TypeDefKind,
         },
-        ast_visit::{walk_ast, walk_block, walk_expr, walk_iterator, walk_type, Visitor},
+        ast_visit::{Visitor, walk_ast, walk_block, walk_expr, walk_iterator, walk_pat, walk_type},
         hir::{Builtin, DefId, DefKind, Resolution},
-    }, span::{
-        symbol::{symbols, Ident, Symbol}, Span
-    }, Resolver
+    },
+    span::{
+        Span,
+        symbol::{Ident, Symbol, symbols},
+    },
 };
 
 #[derive(Debug)]
@@ -101,7 +104,8 @@ impl<'a, 'b> NameRes<'a, 'b> {
             PatternKind::Deref(ref pat) | PatternKind::Grouped(ref pat) => {
                 Self::collect_bindings_in_patttern(pat, bindings);
             }
-            PatternKind::Tuple(ref patterns) => patterns
+
+            PatternKind::Case(_, ref patterns) | PatternKind::Tuple(ref patterns) => patterns
                 .iter()
                 .for_each(|pat| Self::collect_bindings_in_patttern(pat, bindings)),
             PatternKind::Literal(_) | PatternKind::Wildcard => (),
@@ -315,9 +319,18 @@ impl<'a, 'b> NameRes<'a, 'b> {
             ExprKind::For(ref pattern, ref iterator, ref body) => {
                 self.in_scope(|this| {
                     walk_iterator(this, iterator);
-                    this.visit_pat(pattern);
-                    this.visit_block(body);
+                    this.resolve_pattern(pattern);
+                    this.resolve_block(body);
                 });
+            }
+            ExprKind::Match(ref scrutinee, ref arms) => {
+                self.resolve_expr(scrutinee);
+                for arm in arms {
+                    self.in_scope(|this| {
+                        this.resolve_pattern(&arm.pat);
+                        this.resolve_expr(&arm.body);
+                    });
+                }
             }
             _ => walk_expr(self, expr),
         }
@@ -328,6 +341,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
         self.apply_bindings(bindings, |name| {
             format!("Repeated binding '{}'.", name.as_str())
         });
+        self.visit_pat(pattern);
     }
     fn resolve_function_def(&mut self, function_def: &FunctionDef) {
         let mut bindings = Vec::new();
@@ -362,14 +376,17 @@ impl Visitor for NameRes<'_, '_> {
         }
     }
     fn visit_let_stmt(&mut self, pat: &Pattern, ty: Option<&Type>, expr: &Expr) {
-        self.visit_expr(expr);
-        self.visit_pat(pat);
+        self.resolve_expr(expr);
+        self.resolve_pattern(pat);
         if let Some(ty) = ty {
-            self.visit_ty(ty);
+            self.resolve_type(ty);
         }
     }
     fn visit_pat(&mut self, pat: &Pattern) {
-        self.resolve_pattern(pat);
+        if let ast::PatternKind::Case(path, _) = &pat.kind {
+            self.resolve_path(path.head, path.tail.iter().copied());
+        }
+        walk_pat(self, pat)
     }
     fn visit_block(&mut self, block: &Block) {
         self.resolve_block(block);

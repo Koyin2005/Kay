@@ -4,11 +4,16 @@ use fxhash::FxHashMap;
 use indexmap::IndexMap;
 
 use crate::{
-    errors::DiagnosticReporter, frontend::{
+    errors::DiagnosticReporter,
+    frontend::{
         ast::{self, ItemKind, NodeId},
         hir::{self, Body, DefId, Hir, HirId},
         resolution::resolve::ResolveResults,
-    }, span::{symbol::{symbols, Symbol}, Span}
+    },
+    span::{
+        Span,
+        symbol::{Symbol, symbols},
+    },
 };
 
 pub struct AstLower<'diag> {
@@ -17,7 +22,7 @@ pub struct AstLower<'diag> {
     bodies: IndexMap<HirId, hir::Body>,
     items: IndexMap<DefId, hir::Item>,
     current_loop_label: Option<HirId>,
-    diag : &'diag DiagnosticReporter<'diag>,
+    diag: &'diag DiagnosticReporter<'diag>,
     next_id: Cell<u32>,
 }
 impl<'diag> AstLower<'diag> {
@@ -83,17 +88,51 @@ impl<'diag> AstLower<'diag> {
                         lowered_ty.span = grouped_ty.span;
                         lowered_ty
                     };
-                },
+                }
                 ast::TypeKind::Never => hir::TypeKind::Primitive(hir::PrimitiveType::Never),
                 ast::TypeKind::Bool => hir::TypeKind::Primitive(hir::PrimitiveType::Bool),
-                ast::TypeKind::Uint => hir::TypeKind::Primitive(hir::PrimitiveType::Int(hir::IntType::Unsigned)),
-                ast::TypeKind::Int => hir::TypeKind::Primitive(hir::PrimitiveType::Int(hir::IntType::Signed)),
+                ast::TypeKind::Uint => {
+                    hir::TypeKind::Primitive(hir::PrimitiveType::Int(hir::IntType::Unsigned))
+                }
+                ast::TypeKind::Int => {
+                    hir::TypeKind::Primitive(hir::PrimitiveType::Int(hir::IntType::Signed))
+                }
                 ast::TypeKind::String => hir::TypeKind::Primitive(hir::PrimitiveType::String),
-                ast::TypeKind::Ref(mutable,ty) => hir::TypeKind::Ref(*mutable,Box::new(self.lower_ty(ty))),
+                ast::TypeKind::Ref(mutable, ty) => {
+                    hir::TypeKind::Ref(*mutable, Box::new(self.lower_ty(ty)))
+                }
                 ast::TypeKind::Array(ty) => hir::TypeKind::Array(Box::new(self.lower_ty(ty))),
-                ast::TypeKind::Tuple(elements) => hir::TypeKind::Tuple(elements.iter().map(|ty| self.lower_ty(ty)).collect()),
-                ast::TypeKind::Struct(..) | ast::TypeKind::Variant(..) => todo!("Handle anonymous compound types"),
-                ast::TypeKind::Named(_) => hir::TypeKind::Path(hir::Path { id: self.next_hir_id(), res: self.map_res(ty.id).unwrap_or(hir::Resolution::Err) })
+                ast::TypeKind::Tuple(elements) => {
+                    hir::TypeKind::Tuple(elements.iter().map(|ty| self.lower_ty(ty)).collect())
+                }
+                ast::TypeKind::Struct(struct_) => hir::TypeKind::Struct(
+                    struct_
+                        .fields
+                        .iter()
+                        .map(|field| hir::StructTypeField {
+                            name: field.name,
+                            ty: self.lower_ty(&field.ty),
+                        })
+                        .collect(),
+                ),
+                ast::TypeKind::Variant(variant) => hir::TypeKind::Variant(
+                    variant
+                        .cases
+                        .iter()
+                        .map(|case| hir::VariantTypeCase {
+                            name: case.name,
+                            fields: case
+                                .fields
+                                .iter()
+                                .map(|field| self.lower_ty(&field.ty))
+                                .collect(),
+                        })
+                        .collect(),
+                ),
+                ast::TypeKind::Named(_) => hir::TypeKind::Path(hir::Path {
+                    id: self.next_hir_id(),
+                    res: self.map_res(ty.id).unwrap_or(hir::Resolution::Err),
+                }),
             },
         }
     }
@@ -108,6 +147,12 @@ impl<'diag> AstLower<'diag> {
             };
         }
         match pattern.kind {
+            ast::PatternKind::Case(_, ref elements) => {
+                lower_pattern!(hir::PatternKind::Case(
+                    self.map_res(pattern.id).unwrap_or(hir::Resolution::Err),
+                    elements.iter().map(|pat| self.lower_pattern(pat)).collect()
+                ))
+            }
             ast::PatternKind::Grouped(ref pat) => {
                 let mut pat = self.lower_pattern(pat);
                 pat.span = pattern.span;
@@ -117,7 +162,9 @@ impl<'diag> AstLower<'diag> {
                 let pat = self.lower_pattern(pat);
                 lower_pattern!(hir::PatternKind::Deref(Box::new(pat)))
             }
-            ast::PatternKind::Literal(literal) => lower_pattern!(hir::PatternKind::Literal(literal)),
+            ast::PatternKind::Literal(literal) => {
+                lower_pattern!(hir::PatternKind::Literal(literal))
+            }
             ast::PatternKind::Wildcard => lower_pattern!(hir::PatternKind::Wildcard),
             ast::PatternKind::Ident(name, mutable, by_ref) => {
                 let pat_id = self.lower_id(pattern.id);
@@ -167,44 +214,44 @@ impl<'diag> AstLower<'diag> {
             kind: hir::ExprKind::Block(Box::new(self.lower_block(block))),
         }
     }
-    fn lower_literal(&mut self, span : Span , literal: ast::LiteralKind) -> ast::LiteralKind{
+    fn lower_literal(&mut self, span: Span, literal: ast::LiteralKind) -> ast::LiteralKind {
         match literal {
             ast::LiteralKind::Bool(_) | ast::LiteralKind::Int(_) => literal,
             ast::LiteralKind::String(string) => {
                 let content = string.as_str();
-                if content.contains('\\'){
+                if content.contains('\\') {
                     let mut unescaped = String::with_capacity(content.len());
                     let mut chars = content.chars().peekable();
                     while let Some(curr_char) = chars.next() {
                         let next_char = match curr_char {
-                            '\\' => {
-                                match  chars.peek().copied(){
-                                    Some(c) => {
-                                        chars.next();
-                                        match c {
-                                            'n' => '\n',
-                                            'r' => '\r',
-                                            '0' => '\0',
-                                            't' => '\t',
-                                            '\\' => '\\',
-                                            '"' => '"',
-                                            m => {
-                                                self.diag.emit_diag(format!("Invalid escape character '{m}'."),span);
-                                                unescaped.push('\\');
-                                                m
-                                            },
+                            '\\' => match chars.peek().copied() {
+                                Some(c) => {
+                                    chars.next();
+                                    match c {
+                                        'n' => '\n',
+                                        'r' => '\r',
+                                        '0' => '\0',
+                                        't' => '\t',
+                                        '\\' => '\\',
+                                        '"' => '"',
+                                        m => {
+                                            self.diag.emit_diag(
+                                                format!("Invalid escape character '{m}'."),
+                                                span,
+                                            );
+                                            unescaped.push('\\');
+                                            m
                                         }
-                                    },
-                                    None => '\\'
+                                    }
                                 }
+                                None => '\\',
                             },
-                            c => c
+                            c => c,
                         };
                         unescaped.push(next_char);
                     }
                     ast::LiteralKind::String(Symbol::intern(&unescaped))
-                }
-                else {
+                } else {
                     literal
                 }
             }
@@ -259,9 +306,7 @@ impl<'diag> AstLower<'diag> {
                     else_branch
                 ))
             }
-            ast::ExprKind::While(condition, body) => {
-                self.lower_while_expr(expr, condition, body)
-            }
+            ast::ExprKind::While(condition, body) => self.lower_while_expr(expr, condition, body),
             ast::ExprKind::For(pat, iterator, body) => {
                 self.lower_for_expr(expr, pat, iterator, body)
             }
@@ -274,109 +319,174 @@ impl<'diag> AstLower<'diag> {
                 lower_expr!(hir::ExprKind::Break(id, expr))
             }
             ast::ExprKind::Ident(_) => {
-                lower_expr!(hir::ExprKind::Path(
-                    hir::Path { id: self.next_hir_id(), res: self.map_res(expr.id).unwrap_or(hir::Resolution::Err) }
-                ))
-            },
+                lower_expr!(hir::ExprKind::Path(hir::Path {
+                    id: self.next_hir_id(),
+                    res: self.map_res(expr.id).unwrap_or(hir::Resolution::Err)
+                }))
+            }
             ast::ExprKind::Literal(literal) => {
-                lower_expr!(hir::ExprKind::Literal(self.lower_literal(expr.span, *literal)))
-            },
-            ast::ExprKind::Array(elements) => lower_expr!(hir::ExprKind::Tuple(elements.iter().map(|element| self.lower_expr(element)).collect())),
-            ast::ExprKind::Call(callee,args) => lower_expr!(hir::ExprKind::Call(Box::new(self.lower_expr(callee)), args.iter().map(|arg| self.lower_expr(arg)).collect())),
-            ast::ExprKind::Match(scrutinee,arms) => {
-                lower_expr!(hir::ExprKind::Match(Box::new(self.lower_expr(scrutinee)), arms.iter().map(|arm|{
-                    hir::MatchArm{
-                        id : self.next_hir_id(),
-                        span : arm.span,
-                        pat : self.lower_pattern(&arm.pat),
-                        body : self.lower_expr(&arm.body)
-                    }
-                }).collect()))
-            },
-            ast::ExprKind::Binary(op,left,right) => {
-                lower_expr!(hir::ExprKind::Binary(*op, Box::new(self.lower_expr(left)), Box::new(self.lower_expr(right))))
-            },
-            ast::ExprKind::Unary(op,operand) => lower_expr!(hir::ExprKind::Unary(*op, Box::new(self.lower_expr(operand)))),
-            ast::ExprKind::Return(operand) => lower_expr!(hir::ExprKind::Return(operand.as_ref().map(|operand| Box::new(self.lower_expr(operand))))),
-            ast::ExprKind::Field(sub_expr,field) => lower_expr!(hir::ExprKind::Field(Box::new(self.lower_expr(sub_expr)), *field)),
-            ast::ExprKind::Init(ty,fields) => {
-                lower_expr!(hir::ExprKind::Init(ty.as_ref().map(|ty| self.lower_ty(ty)), fields.iter().map(|field|{
-                    hir::ExprField{
-                        id : self.next_hir_id(),
-                        span : field.span,
-                        name : field.name,
-                        expr : self.lower_expr(&field.expr)
-                    }
-                }).collect()))
-            },
-            ast::ExprKind::Deref(_,expr)  => {
+                lower_expr!(hir::ExprKind::Literal(
+                    self.lower_literal(expr.span, *literal)
+                ))
+            }
+            ast::ExprKind::Array(elements) => lower_expr!(hir::ExprKind::Tuple(
+                elements
+                    .iter()
+                    .map(|element| self.lower_expr(element))
+                    .collect()
+            )),
+            ast::ExprKind::Call(callee, args) => lower_expr!(hir::ExprKind::Call(
+                Box::new(self.lower_expr(callee)),
+                args.iter().map(|arg| self.lower_expr(arg)).collect()
+            )),
+            ast::ExprKind::Match(scrutinee, arms) => {
+                lower_expr!(hir::ExprKind::Match(
+                    Box::new(self.lower_expr(scrutinee)),
+                    arms.iter()
+                        .map(|arm| {
+                            hir::MatchArm {
+                                id: self.next_hir_id(),
+                                span: arm.span,
+                                pat: self.lower_pattern(&arm.pat),
+                                body: self.lower_expr(&arm.body),
+                            }
+                        })
+                        .collect()
+                ))
+            }
+            ast::ExprKind::Binary(op, left, right) => {
+                lower_expr!(hir::ExprKind::Binary(
+                    *op,
+                    Box::new(self.lower_expr(left)),
+                    Box::new(self.lower_expr(right))
+                ))
+            }
+            ast::ExprKind::Unary(op, operand) => lower_expr!(hir::ExprKind::Unary(
+                *op,
+                Box::new(self.lower_expr(operand))
+            )),
+            ast::ExprKind::Return(operand) => lower_expr!(hir::ExprKind::Return(
+                operand
+                    .as_ref()
+                    .map(|operand| Box::new(self.lower_expr(operand)))
+            )),
+            ast::ExprKind::Field(sub_expr, field) => lower_expr!(hir::ExprKind::Field(
+                Box::new(self.lower_expr(sub_expr)),
+                *field
+            )),
+            ast::ExprKind::Init(ty, fields) => {
+                lower_expr!(hir::ExprKind::Init(
+                    ty.as_ref().map(|ty| self.lower_ty(ty)),
+                    fields
+                        .iter()
+                        .map(|field| {
+                            hir::ExprField {
+                                id: self.next_hir_id(),
+                                span: field.span,
+                                name: field.name,
+                                expr: self.lower_expr(&field.expr),
+                            }
+                        })
+                        .collect()
+                ))
+            }
+            ast::ExprKind::Deref(_, expr) => {
                 lower_expr!(hir::ExprKind::Deref(Box::new(self.lower_expr(expr))))
-            },
-            ast::ExprKind::As(expr,ty) => {
-                lower_expr!(hir::ExprKind::As(Box::new(self.lower_expr(expr)), self.lower_ty(ty)))
+            }
+            ast::ExprKind::As(expr, ty) => {
+                lower_expr!(hir::ExprKind::As(
+                    Box::new(self.lower_expr(expr)),
+                    self.lower_ty(ty)
+                ))
             }
             ast::ExprKind::Path(path) => {
                 let path_head = self.map_res(path.head.id).unwrap_or(hir::Resolution::Err);
                 match path_head {
                     hir::Resolution::Variable(id) => {
-                        let var = hir::Expr{
-                            id : self.next_hir_id(),
-                            span : path.head.span,
-                            kind : hir::ExprKind::Path(hir::Path{
-                                id : self.next_hir_id(),
-                                res : hir::Resolution::Variable(id)
-                            })};
-                        path.tail.iter().fold(var, |curr,field|{
-                            hir::Expr { id: self.next_hir_id(), span: field.span.combined(curr.span), kind: hir::ExprKind::Field(Box::new(curr), field.name) }
+                        let var = hir::Expr {
+                            id: self.next_hir_id(),
+                            span: path.head.span,
+                            kind: hir::ExprKind::Path(hir::Path {
+                                id: self.next_hir_id(),
+                                res: hir::Resolution::Variable(id),
+                            }),
+                        };
+                        path.tail.iter().fold(var, |curr, field| hir::Expr {
+                            id: self.next_hir_id(),
+                            span: field.span.combined(curr.span),
+                            kind: hir::ExprKind::Field(Box::new(curr), field.name),
                         })
+                    }
+                    res => hir::Expr {
+                        id: self.next_hir_id(),
+                        span: expr.span,
+                        kind: hir::ExprKind::Path(hir::Path {
+                            id: self.next_hir_id(),
+                            res,
+                        }),
                     },
-                    res => hir::Expr { id: self.next_hir_id(), span: expr.span, kind: hir::ExprKind::Path(hir::Path{
-                        id : self.next_hir_id(),
-                        res
-                    })}
-                }
-            },
-            ast::ExprKind::Underscore => {
-                self.diag.emit_diag(format!("Cannot use '_' in this position."), expr.span);
-                hir::Expr{
-                    id : self.next_hir_id(),
-                    span : expr.span,
-                    kind : hir::ExprKind::Err
                 }
             }
-            ast::ExprKind::Assign(lhs,rhs,span) => {
-                self.lower_assign_expr(expr,lhs,rhs,*span)
-            },
+            ast::ExprKind::Underscore => {
+                self.diag
+                    .emit_diag("Cannot use '_' in this position.", expr.span);
+                hir::Expr {
+                    id: self.next_hir_id(),
+                    span: expr.span,
+                    kind: hir::ExprKind::Err,
+                }
+            }
+            ast::ExprKind::Assign(lhs, rhs, span) => self.lower_assign_expr(expr, lhs, rhs, *span),
         }
     }
-    fn lower_assign_expr(&mut self, expr: &ast::Expr, lhs: &ast::Expr, rhs: &ast::Expr, span : Span) -> hir::Expr{
-        if let ast::ExprKind::Underscore =  lhs.kind{
-            hir::Expr{
-                id : self.next_hir_id(),
-                span : expr.span,
-                kind : hir::ExprKind::Block(Box::new(hir::Block { id: self.next_hir_id(), span: expr.span, stmts: vec![
-                    hir::Stmt{
-                        id : self.next_hir_id(),
-                        span : expr.span,
-                        kind : hir::StmtKind::Let(hir::Pattern { id: self.next_hir_id(), span: lhs.span, kind: hir::PatternKind::Wildcard }, None, Box::new(self.lower_expr(rhs)))
-                    }
-                ], result: None }))
+    fn lower_assign_expr(
+        &mut self,
+        expr: &ast::Expr,
+        lhs: &ast::Expr,
+        rhs: &ast::Expr,
+        span: Span,
+    ) -> hir::Expr {
+        if let ast::ExprKind::Underscore = lhs.kind {
+            hir::Expr {
+                id: self.next_hir_id(),
+                span: expr.span,
+                kind: hir::ExprKind::Block(Box::new(hir::Block {
+                    id: self.next_hir_id(),
+                    span: expr.span,
+                    stmts: vec![hir::Stmt {
+                        id: self.next_hir_id(),
+                        span: expr.span,
+                        kind: hir::StmtKind::Let(
+                            hir::Pattern {
+                                id: self.next_hir_id(),
+                                span: lhs.span,
+                                kind: hir::PatternKind::Wildcard,
+                            },
+                            None,
+                            Box::new(self.lower_expr(rhs)),
+                        ),
+                    }],
+                    result: None,
+                })),
             }
-        }
-        else{
-            hir::Expr{
-                id : self.next_hir_id(),
-                span : expr.span,
-                kind : hir::ExprKind::Assign(span, Box::new(self.lower_expr(lhs)), Box::new(self.lower_expr(rhs)))
+        } else {
+            hir::Expr {
+                id: self.next_hir_id(),
+                span: expr.span,
+                kind: hir::ExprKind::Assign(
+                    span,
+                    Box::new(self.lower_expr(lhs)),
+                    Box::new(self.lower_expr(rhs)),
+                ),
             }
         }
     }
     fn lower_while_expr(
         &mut self,
         expr: &ast::Expr,
-        condition : &ast::Expr,
-        body: &ast::Block
-    ) -> hir::Expr{
+        condition: &ast::Expr,
+        body: &ast::Block,
+    ) -> hir::Expr {
         /*
         Essentially this is lowered from :
             while $condition
@@ -506,7 +616,10 @@ impl<'diag> AstLower<'diag> {
                                 Box::new(hir::Expr {
                                     id: self.next_hir_id(),
                                     span: iterator.span,
-                                    kind: hir::ExprKind::Path(hir::Path { id: self.next_hir_id(), res: hir::Resolution::Builtin(hir::Builtin::IntoIter) }),
+                                    kind: hir::ExprKind::Path(hir::Path {
+                                        id: self.next_hir_id(),
+                                        res: hir::Resolution::Builtin(hir::Builtin::IntoIter),
+                                    }),
                                 }),
                                 vec![iterator],
                             ),
@@ -541,19 +654,25 @@ impl<'diag> AstLower<'diag> {
                             Box::new(hir::Expr {
                                 id: next_func_id,
                                 span: iterator.span,
-                                kind: hir::ExprKind::Path(hir::Path { id: next_func_path_id, res: hir::Resolution::Builtin(hir::Builtin::Next) }),
+                                kind: hir::ExprKind::Path(hir::Path {
+                                    id: next_func_path_id,
+                                    res: hir::Resolution::Builtin(hir::Builtin::Next),
+                                }),
                             }),
                             vec![hir::Expr {
                                 id: iter_mut_ref_id,
                                 span: iterator.span,
                                 kind: hir::ExprKind::Unary(
-                                    ast::UnaryOp::new(ast::UnaryOpKind::Ref(ast::Mutable::Yes(iterator.span)), iterator.span),
+                                    ast::UnaryOp::new(
+                                        ast::UnaryOpKind::Ref(ast::Mutable::Yes(iterator.span)),
+                                        iterator.span,
+                                    ),
                                     Box::new(hir::Expr {
                                         id: iter_expr_id,
                                         span: iterator.span,
-                                        kind: hir::ExprKind::Path(hir::Path{
-                                            id : iter_path_id,
-                                            res : hir::Resolution::Variable(iter_pat_id)
+                                        kind: hir::ExprKind::Path(hir::Path {
+                                            id: iter_path_id,
+                                            res: hir::Resolution::Variable(iter_pat_id),
                                         }),
                                     }),
                                 ),
@@ -587,7 +706,10 @@ impl<'diag> AstLower<'diag> {
                         pat: hir::Pattern {
                             id: self.next_hir_id(),
                             span: pat.span,
-                            kind: hir::PatternKind::Case(hir::Resolution::Builtin(hir::Builtin::OptionNone), vec![]),
+                            kind: hir::PatternKind::Case(
+                                hir::Resolution::Builtin(hir::Builtin::OptionNone),
+                                vec![],
+                            ),
                         },
                         //The break
                         body: hir::Expr {

@@ -36,14 +36,6 @@ fn main() {
             return;
         }
     };
-    let source = {
-        const BUILTIN_DEFS : &str = "
-            fun print(txt : ref string){}
-        ";
-        let mut source = source;
-        source.insert_str(0, BUILTIN_DEFS);
-        source
-    };
     let source_file = match SourceInfo::new(source) {
         Ok(source_info) => source_info,
         Err(_) => {
@@ -61,6 +53,6 @@ fn main() {
     let results = Resolver::new(&name_res_diagnostics).resolve(&ast);
 
     let ast_lower_diagnostics = DiagnosticReporter::new(&source_file);
-    let hir = AstLower::new(results,&ast_lower_diagnostics).lower_ast(&ast);
+    let hir = AstLower::new(results, &ast_lower_diagnostics).lower_ast(&ast);
     println!("{hir:?}");
 }

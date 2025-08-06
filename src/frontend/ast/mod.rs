@@ -58,8 +58,8 @@ pub struct Spanned<T> {
     pub node: T,
     pub span: Span,
 }
-impl<T> Spanned<T>{
-    pub fn new(node : T, span: Span) -> Self{
+impl<T> Spanned<T> {
+    pub fn new(node: T, span: Span) -> Self {
         Self { node, span }
     }
 }
@@ -146,7 +146,7 @@ pub enum ItemKind {
     Function(FunctionDef),
     Type(TypeDef),
 }
-#[derive(Clone, Debug,Copy)]
+#[derive(Clone, Debug, Copy)]
 pub enum LiteralKind {
     Int(i64),
     Bool(bool),
@@ -232,6 +232,7 @@ pub enum PatternKind {
     Grouped(Box<Pattern>),
     Literal(LiteralKind),
     Deref(Box<Pattern>),
+    Case(QualifiedName, Vec<Pattern>),
     Wildcard,
 }
 #[derive(Debug, Clone)]
@@ -292,7 +293,7 @@ pub enum TypeKind {
     Array(Box<Type>),
     Grouped(Box<Type>),
     Tuple(Vec<Type>),
-    Ref(Mutable,Box<Type>),
+    Ref(Mutable, Box<Type>),
 }
 define_id! {
     #[derive(Debug)]

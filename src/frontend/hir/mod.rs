@@ -4,15 +4,16 @@ use crate::{
     define_id,
     frontend::ast::{BinaryOp, ByRef, LiteralKind, Mutable, UnaryOp},
     span::{
-        symbol::{Ident, Symbol}, Span
+        Span,
+        symbol::{Ident, Symbol},
     },
 };
-#[derive(Clone, Copy,PartialEq,Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum IntType {
     Signed,
-    Unsigned
+    Unsigned,
 }
-#[derive(Clone, Copy,PartialEq,Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PrimitiveType {
     Int(IntType),
     String,
@@ -59,7 +60,7 @@ pub enum Builtin {
     OptionNone,
     Next,
     IntoIter,
-    Println
+    Println,
 }
 #[derive(Clone, Copy, Debug)]
 pub enum Resolution<VarId = HirId> {
@@ -129,17 +130,17 @@ pub struct MatchArm {
 #[derive(Debug)]
 pub struct OutsideLoop;
 #[derive(Debug)]
-pub struct ExprField{
-    pub id : HirId,
-    pub span : Span,
-    pub name : Ident,
-    pub expr : Expr
+pub struct ExprField {
+    pub id: HirId,
+    pub span: Span,
+    pub name: Ident,
+    pub expr: Expr,
 }
 
 #[derive(Debug)]
 pub enum ExprKind {
-    Assign(Span,Box<Expr>,Box<Expr>),
-    As(Box<Expr>,Type),
+    Assign(Span, Box<Expr>, Box<Expr>),
+    As(Box<Expr>, Type),
     Literal(LiteralKind),
     Array(Vec<Expr>),
     Tuple(Vec<Expr>),
@@ -150,12 +151,12 @@ pub enum ExprKind {
     Call(Box<Expr>, Vec<Expr>),
     If(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
     Match(Box<Expr>, Vec<MatchArm>),
-    Unary(UnaryOp,Box<Expr>),
+    Unary(UnaryOp, Box<Expr>),
     Break(Result<HirId, OutsideLoop>, Option<Box<Expr>>),
     Block(Box<Block>),
     Return(Option<Box<Expr>>),
-    Field(Box<Expr>,Ident),
-    Init(Option<Type>,Vec<ExprField>),
+    Field(Box<Expr>, Ident),
+    Init(Option<Type>, Vec<ExprField>),
     Err,
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
 }
@@ -170,13 +171,25 @@ pub struct Param {
     pub pat: Pattern,
 }
 #[derive(Debug)]
+pub struct StructTypeField {
+    pub name: Ident,
+    pub ty: Type,
+}
+#[derive(Debug)]
+pub struct VariantTypeCase {
+    pub name: Ident,
+    pub fields: Vec<Type>,
+}
+#[derive(Debug)]
 pub enum TypeKind {
     Tuple(Vec<Type>),
     Path(Path),
     Infer,
+    Variant(Vec<VariantTypeCase>),
+    Struct(Vec<StructTypeField>),
     Array(Box<Type>),
-    Ref(Mutable,Box<Type>),
-    Primitive(PrimitiveType)
+    Ref(Mutable, Box<Type>),
+    Primitive(PrimitiveType),
 }
 #[derive(Debug)]
 pub struct Type {

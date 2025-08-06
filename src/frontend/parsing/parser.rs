@@ -370,11 +370,15 @@ impl<'source> Parser<'source> {
                     kind: ExprKind::Literal(literal),
                     span,
                 })
-            },
+            }
             TokenKind::Wildcard => {
                 let span = self.current_token.span;
                 self.advance();
-                Ok(Expr { id: self.new_id(), kind: ExprKind::Underscore, span})
+                Ok(Expr {
+                    id: self.new_id(),
+                    kind: ExprKind::Underscore,
+                    span,
+                })
             }
             TokenKind::LeftBrace => self.parse_block_expr(),
             TokenKind::LeftParen => self.parse_grouped_expr(),
@@ -671,7 +675,36 @@ impl<'source> Parser<'source> {
             TokenKind::Ident(name) => {
                 let span = self.current_token.span;
                 self.advance();
-                (PatternKind::Ident(name, Mutable::No, ByRef::No), span)
+                let tail = self.parse_qual_name_tail()?;
+                if !tail.is_empty() {
+                    (
+                        PatternKind::Case(
+                            QualifiedName {
+                                span: span.combined(tail.last().expect("Not empty").span),
+                                head: PathSegment {
+                                    id: self.new_id(),
+                                    span,
+                                    name: Ident { symbol: name, span },
+                                },
+                                tail,
+                            },
+                            if self.matches_current(TokenKind::LeftParen) {
+                                let patterns = self
+                                    .parse_delimited_by(TokenKind::RightParen, |this| {
+                                        this.parse_pattern()
+                                    })?
+                                    .into();
+                                let _ = self.expect(TokenKind::RightParen, "Expected ')'.");
+                                patterns
+                            } else {
+                                Vec::new()
+                            },
+                        ),
+                        span,
+                    )
+                } else {
+                    (PatternKind::Ident(name, Mutable::No, ByRef::No), span)
+                }
             }
             TokenKind::Mut => {
                 let span = self.current_token.span;
@@ -875,14 +908,14 @@ impl<'source> Parser<'source> {
             }
             TokenKind::Ref => {
                 self.advance();
-                let mutable = if let Some(token) = self.match_current(TokenKind::Mut){
+                let mutable = if let Some(token) = self.match_current(TokenKind::Mut) {
                     Mutable::Yes(token.span)
                 } else {
                     Mutable::No
                 };
                 let ty = self.parse_type()?;
                 let span = start_span.combined(ty.span);
-                (TypeKind::Ref(mutable,Box::new(ty)), span)
+                (TypeKind::Ref(mutable, Box::new(ty)), span)
             }
             TokenKind::Wildcard => {
                 self.advance();

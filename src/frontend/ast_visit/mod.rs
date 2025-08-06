@@ -78,7 +78,7 @@ pub fn walk_item(visitor: &mut impl Visitor, item: &Item) {
 pub fn walk_pat(visitor: &mut impl Visitor, pat: &Pattern) {
     match &pat.kind {
         PatternKind::Grouped(pat) | PatternKind::Deref(pat) => visitor.visit_pat(pat),
-        PatternKind::Tuple(elements) => elements
+        PatternKind::Tuple(elements) | PatternKind::Case(_, elements) => elements
             .iter()
             .for_each(|element| visitor.visit_pat(element)),
         PatternKind::Ident(..) | PatternKind::Literal(..) | PatternKind::Wildcard => (),
@@ -97,7 +97,7 @@ pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
                 visitor.visit_ty(element);
             }
         }
-        TypeKind::Grouped(ty) | TypeKind::Ref(_,ty) => visitor.visit_ty(ty),
+        TypeKind::Grouped(ty) | TypeKind::Ref(_, ty) => visitor.visit_ty(ty),
         TypeKind::Variant(variant) => {
             for case in variant.cases.iter() {
                 for field in case.fields.iter() {
