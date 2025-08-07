@@ -53,6 +53,5 @@ fn main() {
     let results = Resolver::new(&name_res_diagnostics).resolve(&ast);
 
     let ast_lower_diagnostics = DiagnosticReporter::new(&source_file);
-    let hir = AstLower::new(results, &ast_lower_diagnostics).lower_ast(&ast);
-    println!("{hir:?}");
+    let _hir = AstLower::new(results, &ast_lower_diagnostics).lower_ast(&ast);
 }

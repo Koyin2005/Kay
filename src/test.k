@@ -1,5 +1,15 @@
+type Option : variant {
+    C,
+    D,
+    Some
+}
+
+type A : struct{
+    V : int
+}
 fun main(){
     let a = 1;
+    let b = a;
     a = 5;
     _ = b;
     let Option.Some(a) = Option.Some(12);
