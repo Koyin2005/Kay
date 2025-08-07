@@ -177,10 +177,7 @@ pub fn walk_expr(visitor: &mut impl Visitor, expr: &Expr) {
                 visitor.visit_expr(&arm.body);
             }
         }
-        ExprKind::Init(ty, fields) => {
-            if let Some(ty) = ty {
-                visitor.visit_ty(ty);
-            }
+        ExprKind::Init(_, fields) => {
             for field in fields {
                 visitor.visit_expr(&field.expr);
             }

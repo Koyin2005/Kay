@@ -144,6 +144,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
     }
     fn resolve_path(
         &mut self,
+        id: NodeId,
         head: PathSegment,
         segments: impl Iterator<Item = PathSegment>,
     ) -> Option<Resolution<NodeId>> {
@@ -181,6 +182,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 }
             }
         }
+        self.resolver.resolutions.insert(id, current);
         Some(current)
     }
     fn resolve_type_def(&mut self, type_def: &TypeDef) {
@@ -268,7 +270,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
         use crate::frontend::ast::TypeKind;
         match &ty.kind {
             TypeKind::Named(name) => {
-                self.resolve_path(name.head, name.tail.iter().copied());
+                self.resolve_path(name.id, name.head, name.tail.iter().copied());
             }
             _ => walk_type(self, ty),
         }
@@ -293,8 +295,14 @@ impl<'a, 'b> NameRes<'a, 'b> {
                     },
                 );
             }
+            ExprKind::Init(ref name, _) => {
+                if let Some(name) = name {
+                    self.resolve_path(name.id, name.head, name.tail.iter().copied());
+                }
+                walk_expr(self, expr);
+            }
             ExprKind::Path(ref name) => {
-                self.resolve_path(name.head, name.tail.iter().copied());
+                self.resolve_path(name.id, name.head, name.tail.iter().copied());
             }
             ExprKind::Block(ref block) => {
                 self.in_scope(|this| {
@@ -384,7 +392,7 @@ impl Visitor for NameRes<'_, '_> {
     }
     fn visit_pat(&mut self, pat: &Pattern) {
         if let ast::PatternKind::Case(path, _) = &pat.kind {
-            self.resolve_path(path.head, path.tail.iter().copied());
+            self.resolve_path(path.id, path.head, path.tail.iter().copied());
         }
         walk_pat(self, pat)
     }

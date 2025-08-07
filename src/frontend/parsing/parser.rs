@@ -429,8 +429,8 @@ impl<'source> Parser<'source> {
             TokenKind::Init => {
                 let start = self.current_token.span;
                 self.advance();
-                let ty = if !self.check(TokenKind::LeftBrace) {
-                    Some(self.parse_type()?)
+                let name = if !self.check(TokenKind::LeftBrace) {
+                    Some(self.parse_qual_name()?)
                 } else {
                     None
                 };
@@ -455,7 +455,7 @@ impl<'source> Parser<'source> {
                 let _ = self.expect(TokenKind::RightBrace, "Expected '}'.");
                 Ok(Expr {
                     id: self.new_id(),
-                    kind: ExprKind::Init(ty.map(Box::new), fields),
+                    kind: ExprKind::Init(name, fields),
                     span: start.combined(end_span),
                 })
             }
@@ -563,6 +563,7 @@ impl<'source> Parser<'source> {
                             let span = lhs.span.combined(field_name.span);
                             (
                                 ExprKind::Path(QualifiedName {
+                                    id: self.new_id(),
                                     span,
                                     head: PathSegment {
                                         id: lhs.id,
@@ -680,6 +681,7 @@ impl<'source> Parser<'source> {
                     (
                         PatternKind::Case(
                             QualifiedName {
+                                id: self.new_id(),
                                 span: span.combined(tail.last().expect("Not empty").span),
                                 head: PathSegment {
                                     id: self.new_id(),
@@ -856,6 +858,23 @@ impl<'source> Parser<'source> {
             cases,
         })
     }
+    fn parse_qual_name(&mut self) -> ParseResult<QualifiedName> {
+        let head = self.expect_ident("Expected a valid name.")?;
+        let tail = self.parse_qual_name_tail()?;
+        Ok(QualifiedName {
+            id: self.new_id(),
+            head: PathSegment {
+                id: self.new_id(),
+                span: head.span,
+                name: head,
+            },
+            span: tail
+                .last()
+                .map(|last| head.span.combined(last.span))
+                .unwrap_or(head.span),
+            tail,
+        })
+    }
     fn parse_qual_name_tail(&mut self) -> ParseResult<Vec<PathSegment>> {
         let mut names = Vec::new();
         while let TokenKind::Dot = self.current_token.kind {
@@ -955,6 +974,7 @@ impl<'source> Parser<'source> {
                 };
                 (
                     TypeKind::Named(Box::new(QualifiedName {
+                        id: self.new_id(),
                         span,
                         head: PathSegment {
                             id: self.new_id(),

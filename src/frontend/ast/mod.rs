@@ -183,6 +183,7 @@ pub struct PathSegment {
     pub span: Span,
     pub name: Ident,
 }
+
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Tuple(Vec<Expr>),
@@ -194,7 +195,7 @@ pub enum ExprKind {
     Unary(UnaryOp, Box<Expr>),
     Deref(Span, Box<Expr>),
     Literal(LiteralKind),
-    Init(Option<Box<Type>>, Vec<ExprField>),
+    Init(Option<QualifiedName>, Vec<ExprField>),
     Array(Vec<Expr>),
     While(Box<Expr>, Box<Block>),
     For(Box<Pattern>, Box<IteratorExpr>, Box<Block>),
@@ -274,6 +275,7 @@ pub struct Type {
 }
 #[derive(Clone, Debug)]
 pub struct QualifiedName {
+    pub id: NodeId,
     pub span: Span,
     pub head: PathSegment,
     pub tail: Vec<PathSegment>,

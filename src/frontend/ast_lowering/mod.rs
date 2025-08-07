@@ -76,6 +76,12 @@ impl<'diag> AstLower<'diag> {
             output: return_ty.map(|ty| self.lower_ty(ty)),
         }
     }
+    fn lower_path(&self, name: &ast::QualifiedName) -> hir::Path {
+        hir::Path {
+            id: self.next_hir_id(),
+            res: self.map_res(name.id).unwrap_or(hir::Resolution::Err),
+        }
+    }
     fn lower_ty(&self, ty: &ast::Type) -> hir::Type {
         hir::Type {
             id: self.next_hir_id(),
@@ -129,10 +135,7 @@ impl<'diag> AstLower<'diag> {
                         })
                         .collect(),
                 ),
-                ast::TypeKind::Named(_) => hir::TypeKind::Path(hir::Path {
-                    id: self.next_hir_id(),
-                    res: self.map_res(ty.id).unwrap_or(hir::Resolution::Err),
-                }),
+                ast::TypeKind::Named(name) => hir::TypeKind::Path(self.lower_path(name)),
             },
         }
     }
@@ -147,9 +150,9 @@ impl<'diag> AstLower<'diag> {
             };
         }
         match pattern.kind {
-            ast::PatternKind::Case(_, ref elements) => {
+            ast::PatternKind::Case(ref name, ref elements) => {
                 lower_pattern!(hir::PatternKind::Case(
-                    self.map_res(pattern.id).unwrap_or(hir::Resolution::Err),
+                    self.map_res(name.id).unwrap_or(hir::Resolution::Err),
                     elements.iter().map(|pat| self.lower_pattern(pat)).collect()
                 ))
             }
@@ -374,9 +377,9 @@ impl<'diag> AstLower<'diag> {
                 Box::new(self.lower_expr(sub_expr)),
                 *field
             )),
-            ast::ExprKind::Init(ty, fields) => {
+            ast::ExprKind::Init(name, fields) => {
                 lower_expr!(hir::ExprKind::Init(
-                    ty.as_ref().map(|ty| self.lower_ty(ty)),
+                    name.as_ref().map(|name| self.lower_path(name)),
                     fields
                         .iter()
                         .map(|field| {

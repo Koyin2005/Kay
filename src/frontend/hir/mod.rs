@@ -156,7 +156,7 @@ pub enum ExprKind {
     Block(Box<Block>),
     Return(Option<Box<Expr>>),
     Field(Box<Expr>, Ident),
-    Init(Option<Type>, Vec<ExprField>),
+    Init(Option<Path>, Vec<ExprField>),
     Err,
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
 }
