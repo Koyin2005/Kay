@@ -38,6 +38,7 @@ pub enum TokenKind {
     While,
     Do,
     For,
+    Then,
     Fun,
     Break,
     Return,

@@ -99,7 +99,7 @@ pub mod symbols {
         let mut i = 0;
         while i < ALL_SYMBOLS.len() {
             let curr = ALL_SYMBOLS[i];
-            if curr.eq_ignore_ascii_case(txt){
+            if curr.eq_ignore_ascii_case(txt) {
                 return i as u32;
             }
             i += 1;

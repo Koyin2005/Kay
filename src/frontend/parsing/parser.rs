@@ -16,7 +16,11 @@ use crate::{
     indexvec::Idx,
     span::{Span, symbol::Ident},
 };
-
+#[derive(Clone, Copy)]
+enum BlockKind {
+    Else(),
+    Normal(),
+}
 /// Multiple variant may have 1 element if it ends with a coma
 enum ElementsParsed<T> {
     Multiple(Vec<T>, Option<Span>),
@@ -182,21 +186,34 @@ impl<'source> Parser<'source> {
             },
         })
     }
-    fn parse_block(&mut self) -> ParseResult<Block> {
+    fn parse_block_with_end(&mut self) -> ParseResult<Block> {
+        let mut block = self.parse_block_body([TokenKind::End])?;
+        let curr_span = self.current_token.span;
+        if self.expect(TokenKind::End, "Expected 'end' at end of block.").is_ok() {
+            block.span = block.span.combined(curr_span);
+        }
+        Ok(block)
+    }
+    fn parse_block_body<const N: usize>(&mut self, endings: [TokenKind; N]) -> ParseResult<Block> {
         let id = self.new_id();
         let mut stmts = Vec::new();
         let start_span = self.current_token.span;
-        let _ = self.expect(TokenKind::LeftBrace, "Expected '{' at start of 'block'.");
-        while !self.is_at_eof() && !self.check(TokenKind::RightBrace) {
-            stmts.push(self.parse_stmt(true)?);
+        while !self.is_at_eof() && !endings.iter().any(|&end| self.check(end)) {
+            stmts.push(
+                self.parse_stmt(Some(
+                    endings
+                        .contains(&TokenKind::Else)
+                        .then(BlockKind::Else)
+                        .unwrap_or(BlockKind::Normal()),
+                ))?,
+            );
         }
         let end_span = self.current_token.span;
         let span = start_span.combined(end_span);
-        let _ = self.expect(TokenKind::RightBrace, "Expected '}'.");
         Ok(Block { id, stmts, span })
     }
     fn parse_block_expr(&mut self) -> ParseResult<Expr> {
-        let block = self.parse_block()?;
+        let block = self.parse_block_with_end()?;
         Ok(Expr {
             id: self.new_id(),
             span: block.span,
@@ -207,7 +224,13 @@ impl<'source> Parser<'source> {
         let start = self.current_token.span;
         self.advance();
         let condition = self.parse_expr(0)?;
-        let (then_body, has_else) = { (self.parse_block()?, self.check(TokenKind::Else)) };
+        let _ = self.expect(TokenKind::Then, "Expected 'then' after 'if' condition.");
+        let (then_body, has_else) = {
+            (
+                self.parse_block_body([TokenKind::Else, TokenKind::End])?,
+                self.check(TokenKind::Else),
+            )
+        };
         let (end, else_branch) = if has_else {
             let start_span = self.current_token.span;
             self.advance();
@@ -219,6 +242,7 @@ impl<'source> Parser<'source> {
                 (block.span, Some(block))
             }
         } else {
+            let _ = self.expect(TokenKind::End, "Expected 'end' for 'if'.");
             (then_body.span, None)
         };
         Ok(Expr {
@@ -250,7 +274,8 @@ impl<'source> Parser<'source> {
                 kind: IteratorExprKind::Expr(Box::new(expr)),
             }
         };
-        let block = self.parse_block()?;
+        let _ = self.expect(TokenKind::Do, "Expected 'do' after 'for' iterator.");
+        let block = self.parse_block_with_end()?;
         let span = start.combined(block.span);
         Ok(Expr {
             id: self.new_id(),
@@ -258,11 +283,112 @@ impl<'source> Parser<'source> {
             span,
         })
     }
+    fn parse_init_expr_fields(&mut self) -> ParseResult<(Vec<ExprField>,Span)>{
+        let start = self.current_token.span;
+        self.advance();
+
+        let fields: Vec<_> = self
+            .parse_delimited_by(TokenKind::RightBrace, |this| {
+                let start_span = this.current_token.span;
+                let name = this.expect_ident("Expected field name");
+                let _ = this.expect(TokenKind::Equals, "Expected '=' after field name.");
+                let expr = this.parse_expr(0)?;
+                Ok(ExprField {
+                    id: this.new_id(),
+                    span: start_span.combined(expr.span),
+                    name: name?,
+                    expr,
+                })
+            })?
+            .into();
+
+        let end_span = self.current_token.span;
+        let _ = self.expect(TokenKind::RightBrace, "Expected '}'.");
+        Ok((fields,start.combined(end_span)))
+    }
+    fn parse_field_expr(&mut self, lhs: Expr) -> ParseResult<Expr>{
+        self.advance();
+        let (field_name, is_int) =
+            if let TokenKind::Literal(Literal::Int(field)) = self.current_token.kind {
+                let span = self.current_token.span;
+                self.advance();
+                (
+                    Ident {
+                        symbol: field,
+                        span,
+                    },
+                    true,
+                )
+            } else {
+                (self.expect_ident("Expect a valid field name")?, false)
+            };
+
+        let (kind, span) = match lhs.kind {
+            ExprKind::Ident(name) if !is_int => {
+                let span = lhs.span.combined(field_name.span);
+                (
+                    ExprKind::Path(QualifiedName {
+                        id: self.new_id(),
+                        span,
+                        head: PathSegment {
+                            id: lhs.id,
+                            span: lhs.span,
+                            name: Ident {
+                                symbol: name,
+                                span: lhs.span,
+                            },
+                        },
+                        tail: vec![PathSegment {
+                            id: self.new_id(),
+                            span: field_name.span,
+                            name: field_name,
+                        }],
+                    }),
+                    span,
+                )
+            }
+            ExprKind::Path(mut path) if !is_int => {
+                path.tail.push(PathSegment {
+                    id: self.new_id(),
+                    span: field_name.span,
+                    name: field_name,
+                });
+                (ExprKind::Path(path), lhs.span.combined(field_name.span))
+            }
+            _ => {
+                let span = lhs.span.combined(field_name.span);
+                (ExprKind::Field(Box::new(lhs), field_name), span)
+            }
+        };
+        Ok(Expr {
+            id: self.new_id(),
+            span,
+            kind,
+        })
+    }
+    fn parse_init_expr(&mut self, lhs: Option<Expr>) -> ParseResult<Expr>{
+        let start = self.current_token.span;
+        let name = lhs.and_then(|expr|{
+            if let ExprKind::Path(name) = expr.kind{
+                Some(name)
+            }
+            else{
+                None
+            }
+        });
+        let (fields,end_span) = self.parse_init_expr_fields()?;
+        Ok(Expr {
+            id: self.new_id(),
+            kind: ExprKind::Init(name, fields),
+            span: start.combined(end_span),
+        })
+    }
     fn parse_while_expr(&mut self) -> ParseResult<Expr> {
         let start = self.current_token.span;
         self.advance();
         let condition = self.parse_expr(0)?;
-        let block = self.parse_block()?;
+        let _ = self.expect(TokenKind::Do, "Expected 'do' after 'while' condition.");
+        let block = self.parse_block_with_end()?;
         let end = block.span;
         Ok(Expr {
             id: self.new_id(),
@@ -380,7 +506,11 @@ impl<'source> Parser<'source> {
                     span,
                 })
             }
-            TokenKind::LeftBrace => self.parse_block_expr(),
+            TokenKind::Do => {
+                self.advance();
+                self.parse_block_expr()
+            },
+            TokenKind::LeftBrace => self.parse_init_expr(None),
             TokenKind::LeftParen => self.parse_grouped_expr(),
             TokenKind::If => self.parse_if_expr(),
             TokenKind::While => self.parse_while_expr(),
@@ -542,64 +672,7 @@ impl<'source> Parser<'source> {
             lhs = match self.current_token.kind {
                 TokenKind::LeftParen => self.parse_call(lhs)?,
                 TokenKind::Dot => {
-                    self.advance();
-                    let (field_name, is_int) =
-                        if let TokenKind::Literal(Literal::Int(field)) = self.current_token.kind {
-                            let span = self.current_token.span;
-                            self.advance();
-                            (
-                                Ident {
-                                    symbol: field,
-                                    span,
-                                },
-                                true,
-                            )
-                        } else {
-                            (self.expect_ident("Expect a valid field name")?, false)
-                        };
-
-                    let (kind, span) = match lhs.kind {
-                        ExprKind::Ident(name) if !is_int => {
-                            let span = lhs.span.combined(field_name.span);
-                            (
-                                ExprKind::Path(QualifiedName {
-                                    id: self.new_id(),
-                                    span,
-                                    head: PathSegment {
-                                        id: lhs.id,
-                                        span: lhs.span,
-                                        name: Ident {
-                                            symbol: name,
-                                            span: lhs.span,
-                                        },
-                                    },
-                                    tail: vec![PathSegment {
-                                        id: self.new_id(),
-                                        span: field_name.span,
-                                        name: field_name,
-                                    }],
-                                }),
-                                span,
-                            )
-                        }
-                        ExprKind::Path(mut path) if !is_int => {
-                            path.tail.push(PathSegment {
-                                id: self.new_id(),
-                                span: field_name.span,
-                                name: field_name,
-                            });
-                            (ExprKind::Path(path), lhs.span.combined(field_name.span))
-                        }
-                        _ => {
-                            let span = lhs.span.combined(field_name.span);
-                            (ExprKind::Field(Box::new(lhs), field_name), span)
-                        }
-                    };
-                    Expr {
-                        id: self.new_id(),
-                        span,
-                        kind,
-                    }
+                    self.parse_field_expr(lhs)?
                 }
                 TokenKind::As => {
                     self.advance();
@@ -618,7 +691,10 @@ impl<'source> Parser<'source> {
                         span: lhs.span.combined(caret_span),
                         kind: ExprKind::Deref(caret_span, Box::new(lhs)),
                     }
-                }
+                },
+                TokenKind::LeftBrace => {
+                    self.parse_init_expr(Some(lhs))?
+                },
                 _ => break Ok(lhs),
             };
         }
@@ -634,7 +710,7 @@ impl<'source> Parser<'source> {
             ExprKind::If(..) | ExprKind::Block(..) | ExprKind::While(..) | ExprKind::For(..)
         )
     }
-    fn parse_expr_stmt(&mut self, in_block: bool) -> ParseResult<Stmt> {
+    fn parse_expr_stmt(&mut self, in_block: Option<BlockKind>) -> ParseResult<Stmt> {
         let expr = self.parse_expr(0)?;
         let (span, kind) = if let Some(semi_token) = self.match_current(TokenKind::Semicolon) {
             (
@@ -642,7 +718,11 @@ impl<'source> Parser<'source> {
                 StmtKind::ExprWithSemi(Box::new(expr)),
             )
         } else {
-            if self.expr_needs_semi(&expr.kind) && !(self.check(TokenKind::RightBrace) && in_block)
+            if self.expr_needs_semi(&expr.kind)
+                && (in_block.is_none_or(|kind| match kind {
+                    BlockKind::Else() => !self.check(TokenKind::Else) && !self.check(TokenKind::End),
+                    BlockKind::Normal() => !self.check(TokenKind::End),
+                }))
             {
                 self.error_at("Expected a ';'.", expr.span);
             }
@@ -1082,7 +1162,7 @@ impl<'source> Parser<'source> {
             .then(|| self.parse_type())
             .transpose()?;
 
-        let body = self.parse_block()?;
+        let body = self.parse_block_with_end()?;
 
         let end = self.current_token.span;
         let span = start.combined(end);
@@ -1155,7 +1235,7 @@ impl<'source> Parser<'source> {
             _ => return None,
         }))
     }
-    fn parse_stmt(&mut self, in_block: bool) -> ParseResult<Stmt> {
+    fn parse_stmt(&mut self, in_block: Option<BlockKind>) -> ParseResult<Stmt> {
         if let Some(item) = self.try_parse_item() {
             item.map(|item| Stmt {
                 id: self.new_id(),
@@ -1169,7 +1249,7 @@ impl<'source> Parser<'source> {
             }
         }
     }
-    fn synchronize(&mut self) {
+    fn synchronize(&mut self, for_items_only: bool) {
         while !self.is_at_eof() {
             if matches!(
                 self.current_token.kind,
@@ -1179,15 +1259,13 @@ impl<'source> Parser<'source> {
                 break;
             }
             self.advance();
-            if matches!(
-                self.current_token.kind,
-                TokenKind::Type
-                    | TokenKind::Fun
-                    | TokenKind::Let
-                    | TokenKind::LeftBrace
-                    | TokenKind::For
-                    | TokenKind::While
-            ) {
+            if matches!(self.current_token.kind, TokenKind::Type | TokenKind::Fun)
+                || (!for_items_only
+                    && matches!(
+                        self.current_token.kind,
+                        TokenKind::While | TokenKind::For | TokenKind::Do | TokenKind::If | TokenKind::Let
+                    ))
+            {
                 break;
             }
         }
@@ -1201,11 +1279,11 @@ impl<'source> Parser<'source> {
             self.panic_mode.set(false);
             let Some(item) = self.try_parse_item() else {
                 self.error_at_current("Expected a valid item.");
-                self.synchronize();
+                self.synchronize(true);
                 return Some(Err(ParseError));
             };
             let Ok(item) = item else {
-                self.synchronize();
+                self.synchronize(false);
                 return Some(Err(ParseError));
             };
             Some(Ok(item))

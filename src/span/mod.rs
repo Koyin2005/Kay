@@ -210,7 +210,7 @@ impl SourceInfo {
     pub fn source(&self) -> &str {
         &self.source
     }
-    pub fn source_lines(&self) -> Lines {
+    pub fn source_lines(&self) -> Lines<'_> {
         self.source.lines()
     }
     pub fn line_info(&self) -> &[LineInfo] {
