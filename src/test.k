@@ -20,6 +20,5 @@ fun main()
     _ = b;
     let a = if true then println("Hey whatsup hello.") end;
     let Option.Some(a) = Option.Some(12);
-    let a = A.V{ a = 1, b = 2, c = 34};
-    let b = {a = 2, b = 45 , c = 12};
+    let a = A.V { a = 1, b = 2, c = 34};
 end
