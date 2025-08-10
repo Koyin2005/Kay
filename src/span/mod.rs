@@ -75,6 +75,10 @@ pub struct Span {
     len_or_marker: u16,
 }
 impl Span {
+    pub const EMPTY: Self = Self {
+        index_or_offset: 0,
+        len_or_marker: 0,
+    };
     pub fn new(start_offset: u32, len: u32) -> Self {
         let (index_or_offset, len_or_marker) = if len >= u16::MAX as u32 {
             (
@@ -121,13 +125,21 @@ impl Span {
         }
     }
 
-    pub fn with_higher(self, other_offset: u32) -> Self {
+    pub fn with_low(self, low: u32) -> Self {
         let info = self.info();
-        if other_offset > info.end_offset {
-            Self::new(info.start_offset, other_offset - info.start_offset)
-        } else {
-            self
-        }
+        Self::new(low, info.end_offset - low)
+    }
+    pub fn with_high(self, high: u32) -> Self {
+        let info = self.info();
+        Self::new(info.start_offset, high - info.start_offset)
+    }
+    pub fn start(self) -> Self {
+        let info = self.info();
+        Self::new(info.start_offset, 0)
+    }
+    pub fn end(self) -> Self {
+        let info = self.info();
+        Self::new(info.end_offset, 0)
     }
 }
 

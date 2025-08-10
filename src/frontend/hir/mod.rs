@@ -34,7 +34,12 @@ impl DefId {
         Self::new(self.0 as usize + amount)
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub enum Definition {
+    Builtin(Builtin),
+    Def(DefId, DefKind),
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DefKind {
     Struct,
     Field,
@@ -54,8 +59,9 @@ impl DefKind {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Builtin {
+    Option,
     OptionSome,
     OptionNone,
     Next,

@@ -512,7 +512,7 @@ impl<'diag> AstLower<'diag> {
         let body = self.lower_block_expr(body);
 
         self.current_loop_label = old_loop_label;
-        let span = Span::new(expr.span.info().end_offset - 1, 1);
+        let span = expr.span.end();
         let break_expr = hir::Expr {
             id: self.next_hir_id(),
             span,

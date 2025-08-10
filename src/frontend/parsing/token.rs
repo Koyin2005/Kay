@@ -32,7 +32,6 @@ pub enum TokenKind {
 
     As,
     End,
-    Init,
     Else,
     If,
     While,
@@ -47,6 +46,7 @@ pub enum TokenKind {
     Match,
     And,
     Struct,
+    With,
     Ref,
     Or,
     In,
@@ -89,7 +89,7 @@ impl Token {
     pub fn empty() -> Self {
         Self {
             kind: TokenKind::Bang,
-            span: Span::new(0, 0),
+            span: Span::EMPTY,
         }
     }
     pub fn is_empty(&self) -> bool {

@@ -89,8 +89,13 @@ pub struct Ident {
     pub symbol: Symbol,
     pub span: Span,
 }
+impl Ident{
+    pub fn from_symbol(symbol: Symbol, span : Span) -> Self{
+        Self { symbol, span}
+    }
+}
 
-const ALL_SYMBOLS: &[&str] = &["main", "0", "iter", "println"];
+const ALL_SYMBOLS: &[&str] = &["iter", "println", "Some", "None", "Option"];
 
 pub mod symbols {
     use crate::span::symbol::{ALL_SYMBOLS, Symbol};
@@ -106,6 +111,9 @@ pub mod symbols {
         }
         panic!("Found an unknown symbol.")
     }
+    pub const SOME: Symbol = Symbol::new(find_symbol_index("Some"));
+    pub const NONE: Symbol = Symbol::new(find_symbol_index("None"));
+    pub const OPTION: Symbol = Symbol::new(find_symbol_index("Option"));
     pub const ITER: Symbol = Symbol::new(find_symbol_index("iter"));
     pub const PRINTLN: Symbol = Symbol::new(find_symbol_index("println"));
 }

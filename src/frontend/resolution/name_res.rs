@@ -9,7 +9,7 @@ use crate::{
             Pattern, PatternKind, StmtKind, Type, TypeDef, TypeDefKind,
         },
         ast_visit::{Visitor, walk_ast, walk_block, walk_expr, walk_iterator, walk_pat, walk_type},
-        hir::{Builtin, DefId, DefKind, Resolution},
+        hir::{Builtin, DefId, DefKind, Definition, Resolution},
     },
     span::{
         Span,
@@ -22,25 +22,37 @@ struct ScopeData {
     bindings: IndexMap<Symbol, Resolution<NodeId>>,
 }
 struct Namespace {
-    children: Vec<(Symbol, DefId, Resolution<NodeId>)>,
+    children: Vec<(Symbol, Definition)>,
 }
 pub struct NameRes<'rsv, 'src> {
     resolver: &'rsv mut Resolver<'src>,
     scopes: Vec<ScopeData>,
-    namespaces: IndexMap<DefId, Namespace>,
+    namespaces: IndexMap<Definition, Namespace>,
 }
 
 impl<'a, 'b> NameRes<'a, 'b> {
     pub fn new(resolver: &'a mut Resolver<'b>) -> Self {
         let root_scope = ScopeData {
-            bindings: [(symbols::PRINTLN, Resolution::Builtin(Builtin::Println))]
-                .into_iter()
-                .collect(),
+            bindings: [
+                (symbols::PRINTLN, Resolution::Builtin(Builtin::Println)),
+                (symbols::OPTION, Resolution::Builtin(Builtin::Option)),
+            ]
+            .into_iter()
+            .collect(),
         };
+        let namespaces = [(
+            Definition::Builtin(Builtin::Option),
+            Namespace {
+                children: vec![
+                    (symbols::SOME, Definition::Builtin(Builtin::OptionSome)),
+                    (symbols::NONE, Definition::Builtin(Builtin::OptionNone)),
+                ],
+            },
+        )];
         Self {
             resolver,
             scopes: [root_scope].into_iter().collect(),
-            namespaces: IndexMap::new(),
+            namespaces: namespaces.into_iter().collect(),
         }
     }
     fn push_scope(&mut self) {
@@ -75,12 +87,11 @@ impl<'a, 'b> NameRes<'a, 'b> {
         self.pop_scope();
     }
     fn get_binding_in_scope(&self, name: Symbol) -> Option<Resolution<NodeId>> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(&kind) = scope.bindings.get(&name) {
-                return Some(kind);
-            }
-        }
-        None
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.bindings.get(&name))
+            .copied()
     }
     fn expect_def_id(&self, id: NodeId) -> DefId {
         self.resolver
@@ -149,12 +160,11 @@ impl<'a, 'b> NameRes<'a, 'b> {
         segments: impl Iterator<Item = PathSegment>,
     ) -> Option<Resolution<NodeId>> {
         let mut current = self.resolve_name_in_current_scope(head.id, head.name)?;
-        'segment: for next_seg in segments {
-            match current {
+        for next_seg in segments {
+            let definition = match current {
                 Resolution::Variable(_) => return None,
                 Resolution::Err => return None,
-                Resolution::Def(_, DefKind::Field | DefKind::Function | DefKind::VariantCase)
-                | Resolution::Builtin(_) => {
+                Resolution::Def(_, DefKind::Field | DefKind::Function | DefKind::VariantCase) => {
                     self.resolver.error(
                         format!(
                             "'{}' has no item '{}'.",
@@ -165,22 +175,36 @@ impl<'a, 'b> NameRes<'a, 'b> {
                     );
                     return None;
                 }
-                Resolution::Def(id, DefKind::Struct | DefKind::Variant) => {
-                    let namespace = &self.namespaces[&id];
-                    for &(name, _, kind) in &namespace.children {
-                        if name == next_seg.name.symbol {
-                            current = kind;
-                            self.resolver.resolutions.insert(next_seg.id, current);
-                            continue 'segment;
-                        }
-                    }
-                    self.resolver.error(
-                        format!("'type' has no item '{}'.", next_seg.name.symbol.as_str()),
-                        next_seg.span,
-                    );
-                    return None;
+                Resolution::Builtin(builtin) => Definition::Builtin(builtin),
+                Resolution::Def(id, kind @ (DefKind::Struct | DefKind::Variant)) => {
+                    Definition::Def(id, kind)
                 }
-            }
+            };
+            let Some(namespace) = self.namespaces.get(&definition) else {
+                self.resolver.error(
+                    format!(
+                        "'{}' has no item '{}'.",
+                        current.as_str(),
+                        next_seg.name.symbol.as_str()
+                    ),
+                    next_seg.name.span,
+                );
+                return None;
+            };
+            let Some(next) = namespace.children.iter().find_map(|&(name, def)| {
+                (name == next_seg.name.symbol).then(|| match def {
+                    Definition::Builtin(builtin) => Resolution::Builtin(builtin),
+                    Definition::Def(id, kind) => Resolution::Def(id, kind),
+                })
+            }) else {
+                self.resolver.error(
+                    format!("'type' has no item '{}'.", next_seg.name.symbol.as_str()),
+                    next_seg.span,
+                );
+                return None;
+            };
+            current = next;
+            self.resolver.resolutions.insert(next_seg.id, current);
         }
         self.resolver.resolutions.insert(id, current);
         Some(current)
@@ -244,11 +268,13 @@ impl<'a, 'b> NameRes<'a, 'b> {
                             let field_def_id = self.expect_def_id(field.id);
                             children.push((
                                 field.name.symbol,
-                                field_def_id,
-                                Resolution::Def(field_def_id, DefKind::Field),
+                                Definition::Def(field_def_id, DefKind::Field),
                             ));
                         }
-                        self.namespaces.insert(def_id, Namespace { children });
+                        self.namespaces.insert(
+                            Definition::Def(def_id, DefKind::Struct),
+                            Namespace { children },
+                        );
                     }
                     TypeDefKind::Variant(variant_def) => {
                         let mut children = Vec::new();
@@ -256,11 +282,13 @@ impl<'a, 'b> NameRes<'a, 'b> {
                             let case_id = self.expect_def_id(case.id);
                             children.push((
                                 case.name.symbol,
-                                case_id,
-                                Resolution::Def(case_id, DefKind::VariantCase),
+                                Definition::Def(case_id, DefKind::VariantCase),
                             ));
                         }
-                        self.namespaces.insert(def_id, Namespace { children });
+                        self.namespaces.insert(
+                            Definition::Def(def_id, DefKind::Variant),
+                            Namespace { children },
+                        );
                     }
                 }
             }
