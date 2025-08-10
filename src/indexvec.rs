@@ -2,8 +2,7 @@ use std::{
     marker::PhantomData,
     ops::{Index, IndexMut},
 };
-
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Hash, Default)]
 ///A vector where each element has an associated index
 ///(Where all indexes have a type).
 pub struct IndexVec<I, V>(Vec<V>, PhantomData<I>);

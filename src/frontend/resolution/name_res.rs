@@ -192,7 +192,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 return None;
             };
             let Some(next) = namespace.children.iter().find_map(|&(name, def)| {
-                (name == next_seg.name.symbol).then(|| match def {
+                (name == next_seg.name.symbol).then_some(match def {
                     Definition::Builtin(builtin) => Resolution::Builtin(builtin),
                     Definition::Def(id, kind) => Resolution::Def(id, kind),
                 })

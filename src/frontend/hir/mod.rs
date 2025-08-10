@@ -8,12 +8,12 @@ use crate::{
         symbol::{Ident, Symbol},
     },
 };
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Hash, Eq)]
 pub enum IntType {
     Signed,
     Unsigned,
 }
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Hash, Eq)]
 pub enum PrimitiveType {
     Int(IntType),
     String,
@@ -217,6 +217,7 @@ pub struct FunctionSig {
 pub struct FunctionDef {
     pub id: DefId,
     pub sig: FunctionSig,
+    pub body_id: HirId,
     pub span: Span,
 }
 #[derive(Debug)]

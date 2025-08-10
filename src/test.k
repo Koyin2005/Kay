@@ -1,6 +1,9 @@
 type A : variant{
     V
 }
+fun hello_world(a : int) 
+
+end
 fun main() 
     for i in 0..10 do 
         println(i);

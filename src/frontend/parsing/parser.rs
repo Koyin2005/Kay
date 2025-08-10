@@ -673,7 +673,11 @@ impl<'source> Parser<'source> {
     fn expr_needs_semi(&self, expr: &ExprKind) -> bool {
         !matches!(
             expr,
-            ExprKind::If(..) | ExprKind::Block(..) | ExprKind::While(..) | ExprKind::For(..) | ExprKind::Match(..)
+            ExprKind::If(..)
+                | ExprKind::Block(..)
+                | ExprKind::While(..)
+                | ExprKind::For(..)
+                | ExprKind::Match(..)
         )
     }
     fn parse_expr_stmt(&mut self, in_block: Option<BlockKind>) -> ParseResult<Stmt> {
@@ -699,23 +703,25 @@ impl<'source> Parser<'source> {
         let id = self.new_id();
         Ok(Stmt { id, kind, span })
     }
-    fn parse_case_pattern_fields(&mut self, start : Span) -> ParseResult<(Vec<Pattern>,Span)>{
-        Ok(if let Some(prev) = self.match_current(TokenKind::LeftParen) {
-            let start = prev.span;
-            let patterns: Vec<_> = self
-                .parse_delimited_by(TokenKind::RightParen, |this| this.parse_pattern())?
-                .into();
-            let last_paren = self.current_token.span;
-            let end_span = self
-                .expect(TokenKind::RightParen, "Expected ')'.")
-                .is_ok()
-                .then_some(last_paren)
-                .and_then(|_| patterns.last().map(|pat| pat.span))
-                .unwrap_or(start);
-            (patterns, end_span)
-        } else {
-            (Vec::new(), start)
-        })
+    fn parse_case_pattern_fields(&mut self, start: Span) -> ParseResult<(Vec<Pattern>, Span)> {
+        Ok(
+            if let Some(prev) = self.match_current(TokenKind::LeftParen) {
+                let start = prev.span;
+                let patterns: Vec<_> = self
+                    .parse_delimited_by(TokenKind::RightParen, |this| this.parse_pattern())?
+                    .into();
+                let last_paren = self.current_token.span;
+                let end_span = self
+                    .expect(TokenKind::RightParen, "Expected ')'.")
+                    .is_ok()
+                    .then_some(last_paren)
+                    .and_then(|_| patterns.last().map(|pat| pat.span))
+                    .unwrap_or(start);
+                (patterns, end_span)
+            } else {
+                (Vec::new(), start)
+            },
+        )
     }
     fn parse_prefix_pattern(&mut self) -> ParseResult<Pattern> {
         let (kind, span) = match self.current_token.kind {
@@ -744,13 +750,29 @@ impl<'source> Parser<'source> {
                 self.advance();
 
                 let tail = self.parse_qual_name_tail()?;
-                if tail.is_empty(){
+                if tail.is_empty() {
                     (PatternKind::Ident(name, Mutable::No, ByRef::No), span)
-                }
-                else{
-                    let (fields,end) = self.parse_case_pattern_fields(span)?;
-                    (PatternKind::Case(QualifiedName { id: self.new_id(), span: tail.last().map(|last| span.combined(last.span)).unwrap_or(span), 
-                        head: PathSegment { id: self.new_id(), span, name: Ident::from_symbol(name, span)}, tail }, fields), span.combined(end))
+                } else {
+                    let (fields, end) = self.parse_case_pattern_fields(span)?;
+                    (
+                        PatternKind::Case(
+                            QualifiedName {
+                                id: self.new_id(),
+                                span: tail
+                                    .last()
+                                    .map(|last| span.combined(last.span))
+                                    .unwrap_or(span),
+                                head: PathSegment {
+                                    id: self.new_id(),
+                                    span,
+                                    name: Ident::from_symbol(name, span),
+                                },
+                                tail,
+                            },
+                            fields,
+                        ),
+                        span.combined(end),
+                    )
                 }
             }
             TokenKind::Mut => {

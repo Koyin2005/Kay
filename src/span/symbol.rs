@@ -89,9 +89,9 @@ pub struct Ident {
     pub symbol: Symbol,
     pub span: Span,
 }
-impl Ident{
-    pub fn from_symbol(symbol: Symbol, span : Span) -> Self{
-        Self { symbol, span}
+impl Ident {
+    pub fn from_symbol(symbol: Symbol, span: Span) -> Self {
+        Self { symbol, span }
     }
 }
 

@@ -1,5 +1,5 @@
 use pl5::{
-    AstLower, Lexer, Parser, Resolver, SourceInfo,
+    AstLower, ItemCollect, Lexer, Parser, Resolver, SourceInfo, TypeCheck,
     config::{Config, ConfigError},
     errors::DiagnosticReporter,
 };
@@ -53,5 +53,16 @@ fn main() {
     let results = Resolver::new(&name_res_diagnostics).resolve(&ast);
 
     let ast_lower_diagnostics = DiagnosticReporter::new(&source_file);
-    let _hir = AstLower::new(results, &ast_lower_diagnostics).lower_ast(&ast);
+    let hir = AstLower::new(results, &ast_lower_diagnostics).lower_ast(&ast);
+
+    let global_diagnostics = DiagnosticReporter::new(&source_file);
+    let context = ItemCollect::new(&global_diagnostics).collect(&hir);
+    let context_ref = &context;
+    for (_, item) in hir.items.iter() {
+        let Some(typeck) = TypeCheck::new(context_ref, item.id) else {
+            continue;
+        };
+        typeck.check();
+    }
+    global_diagnostics.emit();
 }

@@ -832,6 +832,7 @@ impl<'diag> AstLower<'diag> {
                             function_def.params.iter().map(|param| &param.ty),
                             function_def.return_type.as_ref(),
                         ),
+                        body_id,
                         span,
                     }),
                 )

@@ -2,6 +2,8 @@ pub mod ast;
 pub mod ast_lowering;
 mod ast_visit;
 pub mod hir;
+pub mod item_collect;
 pub mod parsing;
 pub mod resolution;
+pub(super) mod ty_lower;
 pub mod typecheck;
