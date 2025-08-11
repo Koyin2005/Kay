@@ -4,19 +4,23 @@ use crate::{
         hir::{self, DefId, Hir},
         ty_lower::TypeLower,
     },
+    span::symbol::Ident,
     types::Type,
 };
 
 pub type CtxtRef<'ctxt> = &'ctxt GlobalContext<'ctxt>;
 pub struct GlobalContext<'hir> {
     hir: &'hir Hir,
-    diag: &'hir DiagnosticReporter<'hir>,
+    diag: &'hir DiagnosticReporter,
 }
 impl<'hir> GlobalContext<'hir> {
-    pub(crate) fn new(hir: &'hir Hir, diag: &'hir DiagnosticReporter<'hir>) -> Self {
+    pub(crate) fn new(hir: &'hir Hir, diag: &'hir DiagnosticReporter) -> Self {
         Self { hir, diag }
     }
-    pub fn diag(&self) -> &'hir DiagnosticReporter<'hir> {
+    pub fn diag<'a>(&'a self) -> &'a DiagnosticReporter
+    where
+        'a: 'hir,
+    {
         self.diag
     }
     pub fn expect_item(&self, id: DefId) -> &hir::Item {
@@ -30,6 +34,12 @@ impl<'hir> GlobalContext<'hir> {
                 (params.collect(), return_ty)
             }
             hir::ItemKind::TypeDef(_) => (Vec::new(), Type::new_unit()),
+        }
+    }
+    pub fn ident(&self, id: DefId) -> Ident {
+        match &self.expect_item(id).kind {
+            hir::ItemKind::Function(function) => function.name,
+            hir::ItemKind::TypeDef(ty) => ty.name,
         }
     }
     pub fn type_of(&'hir self, id: DefId) -> Type {

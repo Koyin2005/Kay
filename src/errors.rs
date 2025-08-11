@@ -1,15 +1,15 @@
 use std::{borrow::Cow, cell::RefCell};
 
-use crate::{SourceInfo, span::Span};
+use crate::span::{SourceRef, Span};
 
-pub struct DiagnosticReporter<'a>(RefCell<DiagnosticReporterInner<'a>>);
-struct DiagnosticReporterInner<'a> {
-    source_info: &'a SourceInfo,
+pub struct DiagnosticReporter(RefCell<DiagnosticReporterInner>);
+struct DiagnosticReporterInner {
+    source_info: SourceRef,
     all_diagnostics: Vec<Diagnostic>,
 }
 
-impl<'a> DiagnosticReporter<'a> {
-    pub fn new(source_info: &'a SourceInfo) -> Self {
+impl DiagnosticReporter {
+    pub fn new(source_info: SourceRef) -> Self {
         Self(RefCell::new(DiagnosticReporterInner {
             source_info,
             all_diagnostics: Vec::new(),

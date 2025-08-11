@@ -1,20 +1,19 @@
 use std::{iter::Peekable, str::CharIndices};
 
 use crate::{
-    SourceInfo,
     frontend::parsing::token::{Literal, StringComplete, Token, TokenKind},
-    span::{Span, symbol::Symbol},
+    span::{SourceRef, Span, symbol::Symbol},
 };
 
 pub struct Lexer<'source> {
-    source: &'source SourceInfo,
+    source: &'source SourceRef,
     curr_offset: u32,
     start_offset: u32,
     chars: Peekable<CharIndices<'source>>,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a SourceInfo) -> Self {
+    pub fn new(source: &'a SourceRef) -> Self {
         Self {
             source,
             chars: source.source().char_indices().peekable(),

@@ -36,7 +36,7 @@ impl<T> From<ElementsParsed<T>> for Vec<T> {
     }
 }
 pub struct Parser<'source> {
-    diag_reporter: DiagnosticReporter<'source>,
+    diag_reporter: DiagnosticReporter,
     lexer: Lexer<'source>,
     current_token: Token,
     next_id: NodeId,
@@ -46,7 +46,7 @@ pub struct ParseError;
 
 type ParseResult<T> = Result<T, ParseError>;
 impl<'source> Parser<'source> {
-    pub fn new(lexer: Lexer<'source>, diag_reporter: DiagnosticReporter<'source>) -> Self {
+    pub fn new(lexer: Lexer<'source>, diag_reporter: DiagnosticReporter) -> Self {
         Self {
             current_token: Token::empty(),
             lexer,

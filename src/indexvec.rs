@@ -42,6 +42,13 @@ impl<I: Idx, V: std::fmt::Debug> std::fmt::Debug for IndexVec<I, V> {
         self.0.fmt(f)
     }
 }
+impl<'a, I: Idx, V> IntoIterator for &'a IndexVec<I, V> {
+    type Item = &'a V;
+    type IntoIter = std::slice::Iter<'a, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
 impl<I: Idx, V> IntoIterator for IndexVec<I, V> {
     type Item = V;
     type IntoIter = std::vec::IntoIter<V>;

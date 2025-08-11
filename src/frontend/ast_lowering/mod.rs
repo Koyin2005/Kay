@@ -22,11 +22,11 @@ pub struct AstLower<'diag> {
     bodies: IndexMap<HirId, hir::Body>,
     items: IndexMap<DefId, hir::Item>,
     current_loop_label: Option<HirId>,
-    diag: &'diag DiagnosticReporter<'diag>,
+    diag: &'diag DiagnosticReporter,
     next_id: Cell<u32>,
 }
 impl<'diag> AstLower<'diag> {
-    pub fn new(resolution_results: ResolveResults, diag: &'diag DiagnosticReporter<'diag>) -> Self {
+    pub fn new(resolution_results: ResolveResults, diag: &'diag DiagnosticReporter) -> Self {
         Self {
             diag,
             resolution_results,
@@ -807,7 +807,15 @@ impl<'diag> AstLower<'diag> {
                         })
                     }
                 };
-                (id, hir::ItemKind::TypeDef(hir::TypeDef { id, span, kind }))
+                (
+                    id,
+                    hir::ItemKind::TypeDef(hir::TypeDef {
+                        id,
+                        span,
+                        kind,
+                        name: type_def.name,
+                    }),
+                )
             }
             ItemKind::Function(function_def) => {
                 let id = self.expect_def_id(function_def.id);
@@ -828,6 +836,7 @@ impl<'diag> AstLower<'diag> {
                     id,
                     hir::ItemKind::Function(hir::FunctionDef {
                         id,
+                        name: function_def.name,
                         sig: self.lower_function_sig(
                             function_def.params.iter().map(|param| &param.ty),
                             function_def.return_type.as_ref(),

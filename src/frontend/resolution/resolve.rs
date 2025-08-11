@@ -28,11 +28,11 @@ impl ResolveResults {
 pub struct Resolver<'source> {
     pub(super) node_ids_to_defs: FxHashMap<NodeId, DefId>,
     pub(super) resolutions: FxHashMap<NodeId, Resolution<NodeId>>,
-    diag: &'source DiagnosticReporter<'source>,
+    diag: &'source DiagnosticReporter,
 }
 
 impl<'source> Resolver<'source> {
-    pub fn new(diag: &'source DiagnosticReporter<'source>) -> Self {
+    pub fn new(diag: &'source DiagnosticReporter) -> Self {
         Self {
             diag,
             resolutions: FxHashMap::default(),

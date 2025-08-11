@@ -1,5 +1,6 @@
 use crate::{define_id, frontend::hir, indexvec::IndexVec, span::symbol::Symbol};
 
+pub mod format;
 define_id!(
     #[derive(Debug)]
     pub struct FieldIndex {}
@@ -28,6 +29,9 @@ impl GenericArgs {
     pub const fn empty() -> Self {
         Self { args: Vec::new() }
     }
+    pub const fn is_empty(&self) -> bool {
+        self.args.is_empty()
+    }
 }
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub enum Type {
@@ -37,9 +41,28 @@ pub enum Type {
     Variant(IndexVec<VariantIndex, VariantFields>),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
+    Ref(Box<Type>),
     Err,
 }
 impl Type {
+    pub fn is_error(&self) -> bool {
+        matches!(self, Type::Err)
+    }
+    pub fn new_ref_str() -> Self {
+        Self::new_ref(Self::new_primative(hir::PrimitiveType::String))
+    }
+    pub fn new_ref(ty: Type) -> Self {
+        Self::Ref(Box::new(ty))
+    }
+    pub const fn new_str() -> Self {
+        Self::Tuple(Vec::new())
+    }
+    pub const fn new_int(signed: hir::IntType) -> Self {
+        Self::new_primative(hir::PrimitiveType::Int(signed))
+    }
+    pub const fn new_bool() -> Self {
+        Self::new_primative(hir::PrimitiveType::Bool)
+    }
     pub const fn new_unit() -> Self {
         Self::Tuple(Vec::new())
     }
@@ -72,5 +95,25 @@ impl Type {
     }
     pub fn new_tuple_from_iter(iter: impl Iterator<Item = Type>) -> Self {
         Self::Tuple(iter.collect())
+    }
+
+    pub fn is_sized(&self) -> bool {
+        match self {
+            Self::Primitive(prim) => match prim {
+                hir::PrimitiveType::Bool
+                | hir::PrimitiveType::Never
+                | hir::PrimitiveType::Int(..) => true,
+                hir::PrimitiveType::String => false,
+            },
+            Self::Function(..) => true,
+            Self::Ref(_) => true,
+            Self::Nominal(_, _) => todo!("HANDLE NOMINAL TYPE SIZENESS"),
+            Self::Err => true,
+            Self::Tuple(elements) => elements.iter().all(|ty| ty.is_sized()),
+            Self::Variant(variants) => variants
+                .iter()
+                .all(|variant| variant.fields.iter().all(|field| field.is_sized())),
+            Self::Struct(fields) => fields.iter().all(|field| field.ty.is_sized()),
+        }
     }
 }

@@ -1,5 +1,6 @@
 use std::{
     fmt::Debug,
+    rc::Rc,
     str::Lines,
     sync::{LazyLock, Mutex},
 };
@@ -171,6 +172,7 @@ impl SpanInterner {
     }
 }
 
+pub type SourceRef = Rc<SourceInfo>;
 pub struct SourceTooLarge;
 pub struct SourceInfo {
     source: Box<str>,

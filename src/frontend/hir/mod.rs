@@ -216,6 +216,7 @@ pub struct FunctionSig {
 #[derive(Debug)]
 pub struct FunctionDef {
     pub id: DefId,
+    pub name: Ident,
     pub sig: FunctionSig,
     pub body_id: HirId,
     pub span: Span,
@@ -258,6 +259,7 @@ pub enum TypeDefKind {
 pub struct TypeDef {
     pub id: DefId,
     pub span: Span,
+    pub name: Ident,
     pub kind: TypeDefKind,
 }
 #[derive(Debug)]

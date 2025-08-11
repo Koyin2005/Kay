@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use pl5::{
     AstLower, ItemCollect, Lexer, Parser, Resolver, SourceInfo, TypeCheck,
     config::{Config, ConfigError},
@@ -43,19 +45,20 @@ fn main() {
             return;
         }
     };
-    let lexer = Lexer::new(&source_file);
-    let parse_diagnostics = DiagnosticReporter::new(&source_file);
+    let source_ref = Rc::new(source_file);
+    let lexer = Lexer::new(&source_ref);
+    let parse_diagnostics = DiagnosticReporter::new(source_ref.clone());
     let parser = Parser::new(lexer, parse_diagnostics);
     let Ok(ast) = parser.parse() else {
         return;
     };
-    let name_res_diagnostics = DiagnosticReporter::new(&source_file);
+    let name_res_diagnostics = DiagnosticReporter::new(source_ref.clone());
     let results = Resolver::new(&name_res_diagnostics).resolve(&ast);
 
-    let ast_lower_diagnostics = DiagnosticReporter::new(&source_file);
+    let ast_lower_diagnostics = DiagnosticReporter::new(source_ref.clone());
     let hir = AstLower::new(results, &ast_lower_diagnostics).lower_ast(&ast);
 
-    let global_diagnostics = DiagnosticReporter::new(&source_file);
+    let global_diagnostics = DiagnosticReporter::new(source_ref.clone());
     let context = ItemCollect::new(&global_diagnostics).collect(&hir);
     let context_ref = &context;
     for (_, item) in hir.items.iter() {
