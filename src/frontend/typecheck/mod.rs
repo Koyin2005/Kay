@@ -1,13 +1,15 @@
 use crate::{
     context::CtxtRef,
-    errors::DiagnosticReporter,
+    errors::{DiagnosticReporter, IntoDiagnosticMessage},
     frontend::{
         ast::LiteralKind,
-        hir::{Block, Body, DefId, Expr, ExprKind, IntType, Pattern, PrimitiveType, Stmt, StmtKind},
+        hir::{
+            Block, Body, DefId, Expr, ExprKind, IntType, Pattern, PrimitiveType, Stmt, StmtKind,
+        },
         ty_lower::TypeLower,
     },
-    span::symbol::Ident,
-    types::{format::TypeFormat, Type},
+    span::{Span, symbol::Ident},
+    types::{Type, format::TypeFormat},
 };
 #[derive(Clone, Copy)]
 enum Expected<'a> {
@@ -23,6 +25,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
     pub fn new(context: CtxtRef<'ctxt>, id: DefId) -> Option<Self> {
         let body = context.get_body_for(id)?;
         Some(Self { context, id, body })
+    }
+    fn err(&self, msg: impl IntoDiagnosticMessage, span: Span) -> Type {
+        self.diag().emit_diag(msg, span);
+        Type::Err
     }
     fn diag<'a>(&'a self) -> &'a DiagnosticReporter
     where
@@ -47,30 +53,31 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
     }
     fn check_field(&self, receiver: &Expr, field: Ident) -> Type {
-        let receiver = self.check_expr(receiver, Expected::None);
-        match receiver {
-            Type::Struct(fields) => {
-                if let Some(ty) = fields.iter().find_map(|receiver_field| {
-                    (receiver_field.name == field.symbol).then(|| receiver_field.ty.clone())
-                }) {
-                    ty
-                } else {
-                    todo!("NO FIELD")
-                }
-            }
+        let receiver_ty = self.check_expr(receiver, Expected::None);
+        let Some(field_ty) = (match &receiver_ty {
+            Type::Struct(fields) => fields.iter().find_map(|receiver_field| {
+                (receiver_field.name == field.symbol).then(|| receiver_field.ty.clone())
+            }),
             Type::Tuple(fields) => {
                 if let Ok(index) = field.symbol.as_str().parse::<usize>() {
-                    fields
-                        .get(index)
-                        .cloned()
-                        .unwrap_or_else(|| todo!("NO TUPLE FIELD"))
+                    fields.get(index).cloned()
                 } else {
-                    todo!("DEFO NOT TUPLE FIELD")
+                    None
                 }
             }
             Type::Nominal(..) => todo!("HANDLE NOMINAL TYPES"),
-            _ => todo!("BAD TYPE"),
-        }
+            _ => None,
+        }) else {
+            return self.err(
+                format!(
+                    "type '{}' has no field '{}'.",
+                    TypeFormat::new(self.context).format_type(&receiver_ty),
+                    field.symbol.as_str()
+                ),
+                field.span,
+            );
+        };
+        field_ty
     }
     fn check_tuple(&self, fields: &[Expr], expected_ty: Expected) -> Type {
         let field_tys = if let Expected::Type(Type::Tuple(fields)) = expected_ty {
@@ -87,28 +94,27 @@ impl<'ctxt> TypeCheck<'ctxt> {
         });
         Type::new_tuple_from_iter(field_tys)
     }
-    fn check_stmt(&self, stmt: &Stmt){
-        match &stmt.kind{
+    fn check_stmt(&self, stmt: &Stmt) {
+        match &stmt.kind {
             StmtKind::Expr(expr) => {
                 self.check_expr(expr, Expected::Type(&Type::new_unit()));
-            },
+            }
             StmtKind::ExprWithSemi(expr) => {
                 self.check_expr(expr, Expected::None);
-            },
+            }
             StmtKind::Item(_) => {
                 //Don't check items here
-            },
-            StmtKind::Let(..) => todo!("CHECK LETS")
+            }
+            StmtKind::Let(..) => todo!("CHECK LETS"),
         }
     }
-    fn check_block(&self, block: &Block, expected_ty: Expected) -> Type{
-        for stmt in block.stmts.iter(){
+    fn check_block(&self, block: &Block, expected_ty: Expected) -> Type {
+        for stmt in block.stmts.iter() {
             self.check_stmt(stmt);
         }
-        if let Some(ref expr) = block.result{
+        if let Some(ref expr) = block.result {
             self.check_expr(expr, expected_ty)
-        }
-        else{
+        } else {
             Type::new_unit()
         }
     }
@@ -131,17 +137,15 @@ impl<'ctxt> TypeCheck<'ctxt> {
             && &ty != expect_ty
         {
             let format = TypeFormat::new(self.context);
-            self.diag().emit_diag(
+            self.err(
                 format!(
                     "Expected '{}' got '{}'.",
                     format.format_type(expect_ty),
                     format.format_type(&ty)
                 ),
                 expr.span,
-            );
-            Type::Err
-        }
-        else{
+            )
+        } else {
             ty
         }
     }
