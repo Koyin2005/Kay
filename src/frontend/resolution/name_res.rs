@@ -393,7 +393,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
         if let Some(return_ty) = &function_def.return_type {
             self.resolve_type(return_ty);
         }
-        self.resolve_block(&function_def.body);
+        self.resolve_expr(&function_def.body);
     }
 }
 

@@ -1,4 +1,11 @@
-use crate::{define_id, frontend::hir, indexvec::IndexVec, span::symbol::Symbol};
+use crate::{
+    context::CtxtRef,
+    define_id,
+    frontend::{ast, hir},
+    indexvec::IndexVec,
+    span::symbol::{self, Symbol},
+    types::format::TypeFormat,
+};
 
 pub mod format;
 define_id!(
@@ -7,8 +14,21 @@ define_id!(
 );
 define_id!(
     #[derive(Debug)]
-    pub struct VariantIndex {}
+    pub struct VariantCaseIndex {}
 );
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IsMutable {
+    Yes,
+    No,
+}
+impl From<ast::Mutable> for IsMutable {
+    fn from(value: ast::Mutable) -> Self {
+        match value {
+            ast::Mutable::Yes(_) => IsMutable::Yes,
+            ast::Mutable::No => IsMutable::No,
+        }
+    }
+}
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct FieldType {
     pub name: Symbol,
@@ -36,23 +56,52 @@ impl GenericArgs {
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub enum Type {
     Primitive(hir::PrimitiveType),
-    Nominal(hir::DefId, GenericArgs),
+    Nominal(hir::Definition, GenericArgs),
     Struct(IndexVec<FieldIndex, FieldType>),
-    Variant(IndexVec<VariantIndex, VariantFields>),
+    Variant(IndexVec<VariantCaseIndex, VariantFields>),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
-    Ref(Box<Type>),
+    Ref(Box<Type>, IsMutable),
+    Generic(symbol::Symbol, u32),
+    Infer(u32),
     Err,
 }
 impl Type {
+    pub fn format(&self, ctxt: CtxtRef) -> String {
+        TypeFormat::new(ctxt).format_type(self)
+    }
+    pub fn has_error(&self) -> bool {
+        match self {
+            Self::Generic(_, _) => false,
+            Self::Infer(_) => false,
+            Self::Err => true,
+            Self::Function(params, return_ty) => {
+                return_ty.has_error() && params.iter().any(|ty| ty.has_error())
+            }
+            Self::Primitive(..) => false,
+            Self::Ref(ty, _) => ty.has_error(),
+            Self::Tuple(fields) => fields.iter().any(|ty| ty.has_error()),
+            Self::Variant(variants) => variants
+                .iter()
+                .any(|variant| variant.fields.iter().any(|ty| ty.has_error())),
+            Self::Struct(fields) => fields.iter().any(|field| field.ty.has_error()),
+            Self::Nominal(_, args) => args.args.iter().any(|arg| arg.0.has_error()),
+        }
+    }
     pub fn is_error(&self) -> bool {
         matches!(self, Type::Err)
     }
     pub fn new_ref_str() -> Self {
-        Self::new_ref(Self::new_primative(hir::PrimitiveType::String))
+        Self::new_ref_immutable(Self::new_primative(hir::PrimitiveType::String))
     }
-    pub fn new_ref(ty: Type) -> Self {
-        Self::Ref(Box::new(ty))
+    pub fn new_ref(ty: Type, mutable: IsMutable) -> Self {
+        Self::Ref(Box::new(ty), mutable)
+    }
+    pub fn new_ref_immutable(ty: Type) -> Self {
+        Self::Ref(Box::new(ty), IsMutable::No)
+    }
+    pub fn new_ref_mut(ty: Type) -> Self {
+        Self::Ref(Box::new(ty), IsMutable::Yes)
     }
     pub const fn new_str() -> Self {
         Self::Tuple(Vec::new())
@@ -66,20 +115,26 @@ impl Type {
     pub const fn new_unit() -> Self {
         Self::Tuple(Vec::new())
     }
-    pub fn new_function(params: impl Iterator<Item = Type>, return_type: Type) -> Self {
-        Self::Function(params.collect(), Box::new(return_type))
+    pub fn new_function(params: impl IntoIterator<Item = Type>, return_type: Type) -> Self {
+        Self::Function(params.into_iter().collect(), Box::new(return_type))
+    }
+    pub const fn new_never() -> Self {
+        Self::Primitive(hir::PrimitiveType::Never)
     }
     pub const fn new_primative(primative: hir::PrimitiveType) -> Self {
         Self::Primitive(primative)
     }
-    pub fn new_nominal(id: hir::DefId) -> Self {
+    pub fn new_nominal(id: hir::Definition) -> Self {
         Self::Nominal(id, GenericArgs::empty())
     }
-    pub fn new_nominal_with_args(id: hir::DefId, args: impl Iterator<Item = GenericArg>) -> Self {
+    pub fn new_nominal_with_args(
+        id: hir::Definition,
+        args: impl IntoIterator<Item = GenericArg>,
+    ) -> Self {
         Self::Nominal(
             id,
             GenericArgs {
-                args: args.collect(),
+                args: args.into_iter().collect(),
             },
         )
     }
@@ -93,27 +148,7 @@ impl Type {
             cases.map(|(name, fields)| VariantFields { name, fields }),
         ))
     }
-    pub fn new_tuple_from_iter(iter: impl Iterator<Item = Type>) -> Self {
-        Self::Tuple(iter.collect())
-    }
-
-    pub fn is_sized(&self) -> bool {
-        match self {
-            Self::Primitive(prim) => match prim {
-                hir::PrimitiveType::Bool
-                | hir::PrimitiveType::Never
-                | hir::PrimitiveType::Int(..) => true,
-                hir::PrimitiveType::String => false,
-            },
-            Self::Function(..) => true,
-            Self::Ref(_) => true,
-            Self::Nominal(_, _) => todo!("HANDLE NOMINAL TYPE SIZENESS"),
-            Self::Err => true,
-            Self::Tuple(elements) => elements.iter().all(|ty| ty.is_sized()),
-            Self::Variant(variants) => variants
-                .iter()
-                .all(|variant| variant.fields.iter().all(|field| field.is_sized())),
-            Self::Struct(fields) => fields.iter().all(|field| field.ty.is_sized()),
-        }
+    pub fn new_tuple_from_iter(iter: impl IntoIterator<Item = Type>) -> Self {
+        Self::Tuple(iter.into_iter().collect())
     }
 }

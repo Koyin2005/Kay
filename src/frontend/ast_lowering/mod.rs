@@ -10,10 +10,7 @@ use crate::{
         hir::{self, Body, DefId, Hir, HirId},
         resolution::resolve::ResolveResults,
     },
-    span::{
-        Span,
-        symbol::{Symbol, symbols},
-    },
+    span::{Span, symbol::Symbol},
 };
 
 pub struct AstLower<'diag> {
@@ -544,16 +541,19 @@ impl<'diag> AstLower<'diag> {
         hir::Expr {
             id: loop_id,
             span: expr.span,
-            kind: hir::ExprKind::Loop(Box::new(hir::Block {
-                id: loop_block_id,
-                span: expr.span,
-                stmts: vec![hir::Stmt {
-                    id: if_stmt_id,
+            kind: hir::ExprKind::Loop(
+                Box::new(hir::Block {
+                    id: loop_block_id,
                     span: expr.span,
-                    kind: hir::StmtKind::Expr(if_expr),
-                }],
-                result: None,
-            })),
+                    stmts: vec![hir::Stmt {
+                        id: if_stmt_id,
+                        span: expr.span,
+                        kind: hir::StmtKind::Expr(if_expr),
+                    }],
+                    result: None,
+                }),
+                hir::LoopSource::While,
+            ),
         }
     }
     fn lower_for_expr(
@@ -563,202 +563,22 @@ impl<'diag> AstLower<'diag> {
         iterator: &ast::IteratorExpr,
         body: &ast::Block,
     ) -> hir::Expr {
-        /*
-            This goes from :
-                for $pat in $expr
-                    $loop_body
-            to:
-                {
-                    let iter = into_iter($expr);
-                    'l : loop{
-                        match next(ref mut iter) {
-                            Option.Some(v) => $loop_body,
-                            Option.None => { break 'l;}
-                        }
-                    }
-                }
-        */
-        let outer_block_expr_id = self.next_hir_id();
-        let outer_block_id = self.next_hir_id();
-        let (let_stmt, iter_pat_id) = {
-            let let_stmt_id = self.next_hir_id();
-            let iter_pat_id = self.next_hir_id();
-            let iterator = match &iterator.kind {
-                ast::IteratorExprKind::Range(start, end) => hir::Expr {
-                    id: self.next_hir_id(),
-                    span: start.span.combined(end.span),
-                    kind: hir::ExprKind::Range(
-                        Box::new(self.lower_expr(start)),
-                        Box::new(self.lower_expr(end)),
-                    ),
-                },
-                ast::IteratorExprKind::Expr(expr) => self.lower_expr(expr),
-            };
-            (
-                // let iterator = iter($expr);
-                hir::Stmt {
-                    id: let_stmt_id,
-                    span: iterator.span,
-                    kind: hir::StmtKind::Let(
-                        hir::Pattern {
-                            id: iter_pat_id,
-                            span: iterator.span,
-                            kind: hir::PatternKind::Binding(
-                                iter_pat_id,
-                                symbols::ITER,
-                                ast::Mutable::Yes(iterator.span),
-                                ast::ByRef::No,
-                            ),
-                        },
-                        None,
-                        // into_iter($expr)
-                        Box::new(hir::Expr {
-                            id: self.next_hir_id(),
-                            span: iterator.span,
-                            kind: hir::ExprKind::Call(
-                                Box::new(hir::Expr {
-                                    id: self.next_hir_id(),
-                                    span: iterator.span,
-                                    kind: hir::ExprKind::Path(hir::Path {
-                                        id: self.next_hir_id(),
-                                        res: hir::Resolution::Builtin(hir::Builtin::IntoIter),
-                                    }),
-                                }),
-                                vec![iterator],
-                            ),
-                        }),
-                    ),
-                },
-                iter_pat_id,
-            )
-        };
-        let loop_stmt = {
-            let loop_stmt_id = self.next_hir_id();
-            let loop_id = self.next_hir_id();
-            let loop_block_id = self.next_hir_id();
-            let old_loop_label = self.current_loop_label.replace(loop_id);
-
-            let match_stmt = {
-                let match_stmt_id = self.next_hir_id();
-                let match_expr_id = self.next_hir_id();
-
-                let next_call = {
-                    let next_call_id = self.next_hir_id();
-                    let next_func_id = self.next_hir_id();
-                    let next_func_path_id = self.next_hir_id();
-                    let iter_mut_ref_id = self.next_hir_id();
-                    let iter_expr_id = self.next_hir_id();
-                    let iter_path_id = self.next_hir_id();
-                    //next(ref mut iter)
-                    hir::Expr {
-                        id: next_call_id,
-                        span: iterator.span,
-                        kind: hir::ExprKind::Call(
-                            Box::new(hir::Expr {
-                                id: next_func_id,
-                                span: iterator.span,
-                                kind: hir::ExprKind::Path(hir::Path {
-                                    id: next_func_path_id,
-                                    res: hir::Resolution::Builtin(hir::Builtin::Next),
-                                }),
-                            }),
-                            vec![hir::Expr {
-                                id: iter_mut_ref_id,
-                                span: iterator.span,
-                                kind: hir::ExprKind::Unary(
-                                    ast::UnaryOp::new(
-                                        ast::UnaryOpKind::Ref(ast::Mutable::Yes(iterator.span)),
-                                        iterator.span,
-                                    ),
-                                    Box::new(hir::Expr {
-                                        id: iter_expr_id,
-                                        span: iterator.span,
-                                        kind: hir::ExprKind::Path(hir::Path {
-                                            id: iter_path_id,
-                                            res: hir::Resolution::Variable(iter_pat_id),
-                                        }),
-                                    }),
-                                ),
-                            }],
-                        ),
-                    }
-                };
-
-                let some_arm = {
-                    hir::MatchArm {
-                        id: self.next_hir_id(),
-                        span: body.span,
-                        pat: hir::Pattern {
-                            id: self.next_hir_id(),
-                            span: pat.span,
-                            kind: hir::PatternKind::Case(
-                                hir::Resolution::Builtin(hir::Builtin::OptionSome),
-                                vec![self.lower_pattern(pat)],
-                            ),
-                        },
-                        //The actual body
-                        body: self.lower_block_expr(body),
-                    }
-                };
-
-                let none_arm = {
-                    //None => break,
-                    hir::MatchArm {
-                        id: self.next_hir_id(),
-                        span: body.span,
-                        pat: hir::Pattern {
-                            id: self.next_hir_id(),
-                            span: pat.span,
-                            kind: hir::PatternKind::Case(
-                                hir::Resolution::Builtin(hir::Builtin::OptionNone),
-                                vec![],
-                            ),
-                        },
-                        //The break
-                        body: hir::Expr {
-                            id: self.next_hir_id(),
-                            span: body.span,
-                            kind: hir::ExprKind::Break(Ok(loop_id), None),
-                        },
-                    }
-                };
-                hir::Stmt {
-                    id: match_stmt_id,
-                    span: body.span,
-                    kind: hir::StmtKind::Expr(hir::Expr {
-                        id: match_expr_id,
-                        span: body.span,
-                        kind: hir::ExprKind::Match(Box::new(next_call), vec![some_arm, none_arm]),
-                    }),
-                }
-            };
-            let stmts = vec![match_stmt];
-
-            self.current_loop_label = old_loop_label;
-            hir::Stmt {
-                id: loop_stmt_id,
-                span: body.span,
-                kind: hir::StmtKind::Expr(hir::Expr {
-                    id: loop_id,
-                    span: body.span,
-                    kind: hir::ExprKind::Loop(Box::new(hir::Block {
-                        id: loop_block_id,
-                        span: body.span,
-                        stmts,
-                        result: None,
-                    })),
-                }),
+        let pat = self.lower_pattern(pat);
+        let iterator = match &iterator.kind {
+            ast::IteratorExprKind::Expr(expr) => {
+                hir::Iterator::Expr(Box::new(self.lower_expr(expr)))
             }
+            ast::IteratorExprKind::Range(start, end) => hir::Iterator::Ranged(
+                iterator.span,
+                Box::new(self.lower_expr(start)),
+                Box::new(self.lower_expr(end)),
+            ),
         };
+        let body = self.lower_block(body);
         hir::Expr {
-            id: outer_block_expr_id,
+            id: self.next_hir_id(),
             span: expr.span,
-            kind: hir::ExprKind::Block(Box::new(hir::Block {
-                id: outer_block_id,
-                span: expr.span,
-                stmts: vec![let_stmt, loop_stmt],
-                result: None,
-            })),
+            kind: hir::ExprKind::For(Box::new(pat), Box::new(iterator), Box::new(body)),
         }
     }
     fn lower_item(&mut self, item: &ast::Item) -> (DefId, hir::Item) {
@@ -789,6 +609,7 @@ impl<'diag> AstLower<'diag> {
                             .iter()
                             .map(|case| hir::VariantCase {
                                 id: self.expect_def_id(case.id),
+                                name: case.name,
                                 span: case.span,
                                 fields: case
                                     .fields
@@ -819,18 +640,16 @@ impl<'diag> AstLower<'diag> {
             }
             ItemKind::Function(function_def) => {
                 let id = self.expect_def_id(function_def.id);
-                let value = self.lower_block_expr(&function_def.body);
+                let params = function_def
+                    .params
+                    .iter()
+                    .map(|param| hir::Param {
+                        pat: self.lower_pattern(&param.pattern),
+                    })
+                    .collect();
+                let value = self.lower_expr(&function_def.body);
                 let body_id = value.id;
-                let body = Body {
-                    params: function_def
-                        .params
-                        .iter()
-                        .map(|param| hir::Param {
-                            pat: self.lower_pattern(&param.pattern),
-                        })
-                        .collect(),
-                    value,
-                };
+                let body = Body { params, value };
                 self.bodies.insert(body_id, body);
                 (
                     id,
@@ -860,6 +679,7 @@ impl<'diag> AstLower<'diag> {
         Hir {
             items: self.items,
             bodies: self.bodies,
+            def_info: self.resolution_results.get_def_info(),
         }
     }
 }

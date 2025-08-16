@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 use crate::{
     define_id,
     frontend::ast::{BinaryOp, ByRef, LiteralKind, Mutable, UnaryOp},
+    indexvec::IndexVec,
     span::{
         Span,
         symbol::{Ident, Symbol},
@@ -64,9 +65,26 @@ pub enum Builtin {
     Option,
     OptionSome,
     OptionNone,
-    Next,
-    IntoIter,
     Println,
+}
+impl Builtin {
+    pub fn as_symbol(&self) -> Symbol {
+        Symbol::intern(self.as_str())
+    }
+    pub const fn is_variant(self) -> bool {
+        matches!(self, Self::OptionSome | Self::OptionNone)
+    }
+    pub const fn is_type(self) -> bool {
+        matches!(self, Self::Option)
+    }
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Option => "Option",
+            Self::Println => "println",
+            Self::OptionNone => "None",
+            Self::OptionSome => "Some",
+        }
+    }
 }
 #[derive(Clone, Copy, Debug)]
 pub enum Resolution<VarId = HirId> {
@@ -142,7 +160,11 @@ pub struct ExprField {
     pub name: Ident,
     pub expr: Expr,
 }
-
+#[derive(Debug)]
+pub enum Iterator {
+    Ranged(Span, Box<Expr>, Box<Expr>),
+    Expr(Box<Expr>),
+}
 #[derive(Debug)]
 pub enum ExprKind {
     Assign(Span, Box<Expr>, Box<Expr>),
@@ -150,10 +172,10 @@ pub enum ExprKind {
     Literal(LiteralKind),
     Array(Vec<Expr>),
     Tuple(Vec<Expr>),
-    Loop(Box<Block>),
+    Loop(Box<Block>, LoopSource),
+    For(Box<Pattern>, Box<Iterator>, Box<Block>),
     Path(Path),
     Deref(Box<Expr>),
-    Range(Box<Expr>, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     If(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
     Match(Box<Expr>, Vec<MatchArm>),
@@ -230,6 +252,7 @@ pub struct VariantField {
 #[derive(Debug)]
 pub struct VariantCase {
     pub id: DefId,
+    pub name: Ident,
     pub span: Span,
     pub fields: Vec<VariantField>,
 }
@@ -276,4 +299,15 @@ pub struct Item {
 pub struct Hir {
     pub items: IndexMap<DefId, Item>,
     pub bodies: IndexMap<HirId, Body>,
+    pub def_info: IndexVec<DefId, DefInfo>,
+}
+#[derive(Debug)]
+pub struct DefInfo {
+    pub parent: Option<DefId>,
+    pub kind: DefKind,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoopSource {
+    While,
+    Explicit,
 }

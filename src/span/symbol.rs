@@ -114,6 +114,5 @@ pub mod symbols {
     pub const SOME: Symbol = Symbol::new(find_symbol_index("Some"));
     pub const NONE: Symbol = Symbol::new(find_symbol_index("None"));
     pub const OPTION: Symbol = Symbol::new(find_symbol_index("Option"));
-    pub const ITER: Symbol = Symbol::new(find_symbol_index("iter"));
     pub const PRINTLN: Symbol = Symbol::new(find_symbol_index("println"));
 }

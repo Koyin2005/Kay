@@ -18,7 +18,7 @@ pub struct FunctionDef {
     pub name: Ident,
     pub params: Vec<Param>,
     pub return_type: Option<Type>,
-    pub body: Block,
+    pub body: Box<Expr>,
 }
 #[derive(Clone, Debug)]
 pub struct Block {

@@ -57,7 +57,7 @@ pub fn walk_item(visitor: &mut impl Visitor, item: &Item) {
             if let Some(return_ty) = function.return_type.as_ref() {
                 visitor.visit_ty(return_ty);
             }
-            visitor.visit_block(&function.body);
+            visitor.visit_expr(&function.body);
         }
         ItemKind::Type(ty) => match &ty.kind {
             TypeDefKind::Struct(struct_def) => {

@@ -1128,16 +1128,15 @@ impl<'source> Parser<'source> {
             .then(|| self.parse_type())
             .transpose()?;
 
-        let body = self.parse_block_with_end()?;
-
-        let end = self.current_token.span;
-        let span = start.combined(end);
+        let _ = self.expect(TokenKind::Equals, "Expected '=' before function body.");
+        let body = self.parse_expr(0)?;
+        let span = start.combined(body.span);
         Ok(FunctionDef {
             id: self.new_id(),
             span,
             name: function_name,
             params,
-            body,
+            body: Box::new(body),
             return_type,
         })
     }

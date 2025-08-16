@@ -31,7 +31,9 @@ impl<I: Idx, V> IndexVec<I, V> {
     pub fn iter_enumerated(&self) -> impl Iterator<Item = (I, &V)> {
         self.indices().zip(self.0.iter())
     }
-
+    pub fn as_slice(&self) -> &[V] {
+        &self.0
+    }
     pub fn into_iter_enumerated(self) -> impl Iterator<Item = (I, V)> {
         (0..self.0.len()).map(I::new_from_index).zip(self.0)
     }
@@ -72,7 +74,6 @@ impl<I: Idx, V> IndexMut<I> for IndexVec<I, V> {
         &mut self.0[index.into_index()]
     }
 }
-
 ///A numerical index that can be used with an index vec.
 pub trait Idx {
     fn into_index(self) -> usize;

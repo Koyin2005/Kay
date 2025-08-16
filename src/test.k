@@ -1,6 +1,13 @@
 type A : variant{
     V
 }
-fun hello_world() -> uint
-    1 as uint
+fun is_even(x : uint) -> bool = match x with
+    0 => true,
+    n => is_even(n - 1) == true
 end
+
+
+fun print_1_through_50() = 
+    for i in 0 as uint..500 as uint do
+        println(i );
+    end

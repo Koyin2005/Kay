@@ -1,7 +1,7 @@
 use crate::{
     context::CtxtRef,
     frontend::hir::{IntType, PrimitiveType},
-    types::Type,
+    types::{IsMutable, Type},
 };
 
 pub struct TypeFormat<'a> {
@@ -19,10 +19,10 @@ impl<'a> TypeFormat<'a> {
         let mut first = true;
         let mut output = String::new();
         for elem in tys {
-            output.push_str(&f(elem));
             if !first {
                 output.push(',');
             }
+            output.push_str(&f(elem));
             first = false;
         }
         output
@@ -32,17 +32,27 @@ impl<'a> TypeFormat<'a> {
     }
     pub fn format_type(&self, ty: &Type) -> String {
         match ty {
+            Type::Generic(name, _) => name.as_str().to_string(),
+            Type::Infer(_) => "_".to_string(),
             Type::Err => "{error}".to_string(),
-            Type::Ref(ty) => format!("ref {}", self.format_type(ty)),
+            Type::Ref(ty, is_mutable) => format!(
+                "ref{} {}",
+                if let IsMutable::Yes = is_mutable {
+                    " mut"
+                } else {
+                    ""
+                },
+                self.format_type(ty)
+            ),
             Type::Function(params, return_type) => format!(
                 "fun ({}) -> {}",
                 self.format_types(params),
                 self.format_type(return_type)
             ),
             Type::Tuple(args) => format!("({})", self.format_types(args)),
-            Type::Nominal(id, args) => format!(
+            &Type::Nominal(def, ref args) => format!(
                 "{}{}",
-                self.context.ident(*id).symbol.as_str(),
+                self.context.symbol(def).as_str(),
                 if args.is_empty() {
                     ""
                 } else {
