@@ -318,19 +318,16 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn check_path(&self, path: &hir::Path, _expected_ty: Expected, span: Span) -> Type {
         match path.res {
-            hir::Resolution::Builtin(builtin) => {
-                if builtin.is_type() || builtin.is_variant() {
+            hir::Resolution::Builtin(builtin) => match builtin {
+                Builtin::Println => self.err(
+                    format!("Cannot use '{}' without parameters.", builtin.as_str()),
+                    span,
+                ),
+                Builtin::Option => {
                     self.err(format!("Cannot use '{}' as value.", builtin.as_str()), span)
-                } else {
-                    match builtin {
-                        Builtin::Println => self.err(
-                            format!("Cannot use '{}' without parameters.", builtin.as_str()),
-                            span,
-                        ),
-                        _ => self.context.type_of_builtin(builtin),
-                    }
                 }
-            }
+                _ => self.context.type_of_builtin(builtin),
+            },
             hir::Resolution::Variable(id) => self.locals.borrow()[&id].ty.clone(),
             hir::Resolution::Err => Type::Err,
             hir::Resolution::Def(id, _) => self.context.type_of(id),
