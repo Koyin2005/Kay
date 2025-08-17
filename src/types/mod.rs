@@ -29,19 +29,19 @@ impl From<ast::Mutable> for IsMutable {
         }
     }
 }
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct FieldType {
     pub name: Symbol,
     pub ty: Type,
 }
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct GenericArg(pub Type);
-#[derive(Clone, Hash, PartialEq, Eq)]
-pub struct VariantFields {
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct VariantCase {
     pub name: Symbol,
     pub fields: Vec<Type>,
 }
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct GenericArgs {
     pub args: Vec<GenericArg>,
 }
@@ -52,41 +52,65 @@ impl GenericArgs {
     pub const fn is_empty(&self) -> bool {
         self.args.is_empty()
     }
+    pub const fn len(&self) -> usize {
+        self.args.len()
+    }
+    pub fn iter(&self) -> impl Iterator<Item = &GenericArg> {
+        self.args.iter()
+    }
 }
-#[derive(Clone, Hash, PartialEq, Eq)]
+impl IntoIterator for GenericArgs {
+    type IntoIter = std::vec::IntoIter<GenericArg>;
+    type Item = GenericArg;
+    fn into_iter(self) -> Self::IntoIter {
+        self.args.into_iter()
+    }
+}
+impl FromIterator<GenericArg> for GenericArgs {
+    fn from_iter<T: IntoIterator<Item = GenericArg>>(iter: T) -> Self {
+        Self {
+            args: Vec::from_iter(iter),
+        }
+    }
+}
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum Type {
     Primitive(hir::PrimitiveType),
     Nominal(hir::Definition, GenericArgs),
     Struct(IndexVec<FieldIndex, FieldType>),
-    Variant(IndexVec<VariantCaseIndex, VariantFields>),
+    Variant(IndexVec<VariantCaseIndex, VariantCase>),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
     Ref(Box<Type>, IsMutable),
     Generic(symbol::Symbol, u32),
-    Infer(u32),
+    Array(Box<Type>),
     Err,
 }
 impl Type {
+    pub fn new_array(element: Self) -> Self {
+        Self::Array(Box::new(element))
+    }
     pub fn format(&self, ctxt: CtxtRef) -> String {
         TypeFormat::new(ctxt).format_type(self)
     }
     pub fn has_error(&self) -> bool {
-        match self {
-            Self::Generic(_, _) => false,
-            Self::Infer(_) => false,
-            Self::Err => true,
-            Self::Function(params, return_ty) => {
-                return_ty.has_error() && params.iter().any(|ty| ty.has_error())
-            }
-            Self::Primitive(..) => false,
-            Self::Ref(ty, _) => ty.has_error(),
-            Self::Tuple(fields) => fields.iter().any(|ty| ty.has_error()),
-            Self::Variant(variants) => variants
-                .iter()
-                .any(|variant| variant.fields.iter().any(|ty| ty.has_error())),
-            Self::Struct(fields) => fields.iter().any(|field| field.ty.has_error()),
-            Self::Nominal(_, args) => args.args.iter().any(|arg| arg.0.has_error()),
+        struct HasError {
+            found: bool,
         }
+        impl TypeVisitor for HasError {
+            fn visit_ty(&mut self, ty: &Type) {
+                if self.found {
+                    return;
+                }
+                if let Type::Err = ty {
+                    self.found = true;
+                }
+                walk_ty(self, ty);
+            }
+        }
+        let mut has_error = HasError { found: false };
+        has_error.visit_ty(self);
+        has_error.found
     }
     pub fn is_error(&self) -> bool {
         matches!(self, Type::Err)
@@ -138,17 +162,142 @@ impl Type {
             },
         )
     }
-    pub fn new_struct(fields: impl Iterator<Item = (Symbol, Type)>) -> Self {
+    pub fn new_struct(fields: impl IntoIterator<Item = (Symbol, Type)>) -> Self {
         Self::Struct(IndexVec::from_iter(
-            fields.map(|(name, ty)| FieldType { name, ty }),
+            fields.into_iter().map(|(name, ty)| FieldType { name, ty }),
         ))
     }
-    pub fn new_variants(cases: impl Iterator<Item = (Symbol, Vec<Type>)>) -> Self {
+    pub fn new_variants(cases: impl IntoIterator<Item = (Symbol, Vec<Type>)>) -> Self {
         Self::Variant(IndexVec::from_iter(
-            cases.map(|(name, fields)| VariantFields { name, fields }),
+            cases
+                .into_iter()
+                .map(|(name, fields)| VariantCase { name, fields }),
         ))
     }
     pub fn new_tuple_from_iter(iter: impl IntoIterator<Item = Type>) -> Self {
         Self::Tuple(iter.into_iter().collect())
+    }
+}
+
+pub trait TypeVisitor {
+    fn visit_ty(&mut self, ty: &Type);
+}
+pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
+    match ty {
+        Type::Array(ty) => v.visit_ty(ty),
+        Type::Tuple(fields) => fields.iter().for_each(|ty| v.visit_ty(ty)),
+        Type::Struct(fields) => fields.iter().for_each(|field| v.visit_ty(&field.ty)),
+        Type::Variant(cases) => cases
+            .iter()
+            .for_each(|case| case.fields.iter().for_each(|field| v.visit_ty(field))),
+        Type::Function(params, return_ty) => params
+            .iter()
+            .chain(std::iter::once(&**return_ty))
+            .for_each(|ty| v.visit_ty(ty)),
+        Type::Nominal(_, args) => args.iter().for_each(|GenericArg(ty)| v.visit_ty(ty)),
+        Type::Ref(ty, _) => v.visit_ty(ty),
+        Type::Generic(..) => (),
+        Type::Err | Type::Primitive(_) => (),
+    }
+}
+
+pub fn super_map_ty<M: TypeMapper>(mapper: &M, ty: &Type) -> Result<Type, M::Error> {
+    Ok(match ty {
+        Type::Array(ty) => Type::new_array(mapper.map_ty(ty)?),
+        &Type::Ref(ref ty, mutable) => Type::new_ref(mapper.map_ty(ty)?, mutable),
+        Type::Function(params, return_ty) => Type::new_function(
+            params
+                .iter()
+                .map(|ty| mapper.map_ty(ty))
+                .collect::<Result<Vec<_>, _>>()?,
+            mapper.map_ty(return_ty)?,
+        ),
+        Type::Primitive(prim) => Type::new_primative(*prim),
+        Type::Tuple(fields) => Type::new_tuple_from_iter(
+            fields
+                .iter()
+                .map(|ty| mapper.map_ty(ty))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        Type::Generic(name, index) => Type::Generic(*name, *index),
+        Type::Variant(cases) => Type::new_variants(
+            cases
+                .iter()
+                .map(|case| {
+                    Ok((
+                        case.name,
+                        case.fields
+                            .iter()
+                            .map(|field| mapper.map_ty(field))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        Type::Struct(fields) => Type::new_struct(
+            fields
+                .iter()
+                .map(|field| Ok((field.name, mapper.map_ty(&field.ty)?)))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        Type::Nominal(def, args) => Type::Nominal(*def, mapper.map_generic_args(args)?),
+        Type::Err => Type::Err,
+    })
+}
+pub trait TypeMapper: Sized {
+    type Error;
+    fn map_generic_args(&self, args: &GenericArgs) -> Result<GenericArgs, Self::Error> {
+        args.iter()
+            .map(|arg| Ok(GenericArg(self.map_ty(&arg.0)?)))
+            .collect::<Result<_, _>>()
+    }
+    fn map_ty(&self, ty: &Type) -> Result<Type, Self::Error>;
+}
+impl<T: TypeMapper> TypeMapper for &T {
+    type Error = T::Error;
+    fn map_ty(&self, ty: &Type) -> Result<Type, <T as TypeMapper>::Error> {
+        (*self).map_ty(ty)
+    }
+}
+pub enum InfallibleMap {}
+pub struct TypeScheme {
+    ty: Type,
+    arg_count: u32,
+}
+impl TypeScheme {
+    pub fn new(ty: Type, param_count: u32) -> Self {
+        Self {
+            ty,
+            arg_count: param_count,
+        }
+    }
+    pub fn skip_instantiate(self) -> Type {
+        self.ty
+    }
+    ///Replaces all generic parameters using generic arguments
+    pub fn instantiate(self, args: GenericArgs) -> Type {
+        assert_eq!(args.len() as u32, self.arg_count);
+        if self.arg_count == 0 {
+            return self.ty;
+        }
+        struct InstanceArgs {
+            args: Vec<Type>,
+        }
+
+        impl TypeMapper for InstanceArgs {
+            type Error = InfallibleMap;
+            fn map_ty(&self, ty: &Type) -> Result<Type, InfallibleMap> {
+                if let &Type::Generic(_, index) = ty {
+                    Ok(self.args[index as usize].clone())
+                } else {
+                    super_map_ty(self, ty)
+                }
+            }
+        }
+        let Ok(result) = InstanceArgs {
+            args: args.args.into_iter().map(|GenericArg(ty)| ty).collect(),
+        }
+        .map_ty(&self.ty);
+        result
     }
 }

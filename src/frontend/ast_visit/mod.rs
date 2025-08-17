@@ -67,7 +67,7 @@ pub fn walk_item(visitor: &mut impl Visitor, item: &Item) {
             }
             TypeDefKind::Variant(variant_def) => {
                 for case in variant_def.cases.iter() {
-                    for field in case.fields.iter() {
+                    for field in case.fields.iter().flatten() {
                         visitor.visit_ty(&field.ty);
                     }
                 }
@@ -92,6 +92,12 @@ pub fn walk_block(visitor: &mut impl Visitor, block: &Block) {
 pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
     match &ty.kind {
         TypeKind::Array(element) => visitor.visit_ty(element),
+        TypeKind::Fun(params, return_ty) => params
+            .iter()
+            .chain(return_ty.as_ref().map(|ty| &**ty))
+            .for_each(|ty| {
+                visitor.visit_ty(ty);
+            }),
         TypeKind::Tuple(elements) => {
             for element in elements {
                 visitor.visit_ty(element);
@@ -100,7 +106,7 @@ pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
         TypeKind::Grouped(ty) | TypeKind::Ref(_, ty) => visitor.visit_ty(ty),
         TypeKind::Variant(variant) => {
             for case in variant.cases.iter() {
-                for field in case.fields.iter() {
+                for field in case.fields.iter().flatten() {
                     visitor.visit_ty(&field.ty);
                 }
             }
@@ -115,8 +121,7 @@ pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
         | TypeKind::Bool
         | TypeKind::String
         | TypeKind::Never
-        | TypeKind::Named(_)
-        | TypeKind::Underscore => (),
+        | TypeKind::Named(_) => (),
     }
 }
 pub fn walk_iterator(visitor: &mut impl Visitor, iterator: &IteratorExpr) {

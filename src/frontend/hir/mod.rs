@@ -35,10 +35,20 @@ impl DefId {
         Self::new(self.0 as usize + amount)
     }
 }
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+impl From<DefId> for Definition {
+    fn from(value: DefId) -> Self {
+        Self::Def(value)
+    }
+}
+impl From<Builtin> for Definition {
+    fn from(value: Builtin) -> Self {
+        Self::Builtin(value)
+    }
+}
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum Definition {
     Builtin(Builtin),
-    Def(DefId, DefKind),
+    Def(DefId),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DefKind {
@@ -63,11 +73,20 @@ impl DefKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Builtin {
     Option,
+    OptionSomeField,
     OptionSome,
     OptionNone,
     Println,
 }
 impl Builtin {
+    pub fn expect_parent(&self) -> Builtin {
+        match self {
+            Self::OptionSomeField => Self::OptionSome,
+            Self::OptionNone | Self::OptionSome => Self::Option,
+            Self::Option => Self::Option,
+            Self::Println => Self::Println,
+        }
+    }
     pub fn as_symbol(&self) -> Symbol {
         Symbol::intern(self.as_str())
     }
@@ -83,6 +102,7 @@ impl Builtin {
             Self::Println => "println",
             Self::OptionNone => "None",
             Self::OptionSome => "Some",
+            Self::OptionSomeField => "0",
         }
     }
 }
@@ -112,7 +132,6 @@ pub struct Path {
 pub enum PatternKind {
     Literal(LiteralKind),
     Tuple(Vec<Pattern>),
-    Ref(Box<Pattern>),
     Deref(Box<Pattern>),
     Case(Resolution, Vec<Pattern>),
     Binding(HirId, Symbol, Mutable, ByRef),
@@ -206,18 +225,18 @@ pub struct StructTypeField {
 #[derive(Debug)]
 pub struct VariantTypeCase {
     pub name: Ident,
-    pub fields: Vec<Type>,
+    pub fields: Option<Vec<Type>>,
 }
 #[derive(Debug)]
 pub enum TypeKind {
     Tuple(Vec<Type>),
     Path(Path),
-    Infer,
     Variant(Vec<VariantTypeCase>),
     Struct(Vec<StructTypeField>),
     Array(Box<Type>),
     Ref(Mutable, Box<Type>),
     Primitive(PrimitiveType),
+    Fun(Vec<Type>, Option<Box<Type>>),
 }
 #[derive(Debug)]
 pub struct Type {
@@ -254,7 +273,7 @@ pub struct VariantCase {
     pub id: DefId,
     pub name: Ident,
     pub span: Span,
-    pub fields: Vec<VariantField>,
+    pub fields: Option<Vec<VariantField>>,
 }
 #[derive(Debug)]
 pub struct VariantDef {

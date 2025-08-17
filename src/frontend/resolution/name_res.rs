@@ -176,9 +176,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                     return None;
                 }
                 Resolution::Builtin(builtin) => Definition::Builtin(builtin),
-                Resolution::Def(id, kind @ (DefKind::Struct | DefKind::Variant)) => {
-                    Definition::Def(id, kind)
-                }
+                Resolution::Def(id, DefKind::Struct | DefKind::Variant) => Definition::Def(id),
             };
             let Some(namespace) = self.namespaces.get(&definition) else {
                 self.resolver.error(
@@ -194,7 +192,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
             let Some(next) = namespace.children.iter().find_map(|&(name, def)| {
                 (name == next_seg.name.symbol).then_some(match def {
                     Definition::Builtin(builtin) => Resolution::Builtin(builtin),
-                    Definition::Def(id, kind) => Resolution::Def(id, kind),
+                    Definition::Def(id) => Resolution::Def(id, self.resolver.info[id].kind),
                 })
             }) else {
                 self.resolver.error(
@@ -232,7 +230,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                             case.span,
                         );
                     }
-                    for field in case.fields.iter() {
+                    for field in case.fields.iter().flatten() {
                         self.visit_ty(&field.ty);
                     }
                 }
@@ -266,29 +264,19 @@ impl<'a, 'b> NameRes<'a, 'b> {
                         let mut children = Vec::new();
                         for field in struct_def.fields.iter() {
                             let field_def_id = self.expect_def_id(field.id);
-                            children.push((
-                                field.name.symbol,
-                                Definition::Def(field_def_id, DefKind::Field),
-                            ));
+                            children.push((field.name.symbol, Definition::Def(field_def_id)));
                         }
-                        self.namespaces.insert(
-                            Definition::Def(def_id, DefKind::Struct),
-                            Namespace { children },
-                        );
+                        self.namespaces
+                            .insert(Definition::Def(def_id), Namespace { children });
                     }
                     TypeDefKind::Variant(variant_def) => {
                         let mut children = Vec::new();
                         for case in variant_def.cases.iter() {
                             let case_id = self.expect_def_id(case.id);
-                            children.push((
-                                case.name.symbol,
-                                Definition::Def(case_id, DefKind::VariantCase),
-                            ));
+                            children.push((case.name.symbol, Definition::Def(case_id)));
                         }
-                        self.namespaces.insert(
-                            Definition::Def(def_id, DefKind::Variant),
-                            Namespace { children },
-                        );
+                        self.namespaces
+                            .insert(Definition::Def(def_id), Namespace { children });
                     }
                 }
             }

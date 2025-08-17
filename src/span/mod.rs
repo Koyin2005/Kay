@@ -1,5 +1,6 @@
 use std::{
     fmt::Debug,
+    hash::Hash,
     rc::Rc,
     str::Lines,
     sync::{LazyLock, Mutex},
@@ -70,10 +71,15 @@ impl LineInfo {
 
 static SPAN_INTERNER: LazyLock<Mutex<SpanInterner>> =
     LazyLock::new(|| Mutex::new(SpanInterner::new()));
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq)]
 pub struct Span {
     index_or_offset: u32,
     len_or_marker: u16,
+}
+impl PartialEq for Span {
+    fn eq(&self, other: &Self) -> bool {
+        self.info() == other.info()
+    }
 }
 impl Span {
     pub const EMPTY: Self = Self {
@@ -153,7 +159,11 @@ impl Debug for Span {
             .finish()
     }
 }
-
+impl Hash for Span {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.info().hash(state);
+    }
+}
 struct SpanInterner {
     seen: IndexSet<SpanInfo>,
 }

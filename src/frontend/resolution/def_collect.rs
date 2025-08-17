@@ -57,7 +57,7 @@ impl Visitor for DefCollector<'_, '_> {
                                 DefKind::VariantCase,
                                 Some(type_id),
                             );
-                            for field in variant_case.fields.iter() {
+                            for field in variant_case.fields.iter().flatten() {
                                 self.create_id(field.id, DefKind::Field, Some(case_id));
                             }
                         }

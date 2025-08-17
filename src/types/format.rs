@@ -33,7 +33,7 @@ impl<'a> TypeFormat<'a> {
     pub fn format_type(&self, ty: &Type) -> String {
         match ty {
             Type::Generic(name, _) => name.as_str().to_string(),
-            Type::Infer(_) => "_".to_string(),
+            Type::Array(element) => format!("[{}]", self.format_type(element)),
             Type::Err => "{error}".to_string(),
             Type::Ref(ty, is_mutable) => format!(
                 "ref{} {}",

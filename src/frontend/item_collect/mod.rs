@@ -25,7 +25,8 @@ impl<'a> ItemCollect<'a> {
                     }
                     TypeDefKind::Variant(variant_def) => {
                         for case in variant_def.cases.iter() {
-                            for field in case.fields.iter() {
+                            nodes.insert(case.id, NodeInfo::VariantCase(case));
+                            for field in case.fields.iter().flatten() {
                                 nodes.insert(field.id, NodeInfo::VariantField(field));
                             }
                         }

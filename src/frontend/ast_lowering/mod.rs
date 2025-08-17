@@ -84,7 +84,6 @@ impl<'diag> AstLower<'diag> {
             id: self.next_hir_id(),
             span: ty.span,
             kind: match &ty.kind {
-                ast::TypeKind::Underscore => hir::TypeKind::Infer,
                 ast::TypeKind::Grouped(grouped_ty) => {
                     return {
                         let mut lowered_ty = self.lower_ty(grouped_ty);
@@ -124,15 +123,20 @@ impl<'diag> AstLower<'diag> {
                         .iter()
                         .map(|case| hir::VariantTypeCase {
                             name: case.name,
-                            fields: case
-                                .fields
-                                .iter()
-                                .map(|field| self.lower_ty(&field.ty))
-                                .collect(),
+                            fields: case.fields.as_ref().map(|fields| {
+                                fields
+                                    .iter()
+                                    .map(|field| self.lower_ty(&field.ty))
+                                    .collect()
+                            }),
                         })
                         .collect(),
                 ),
                 ast::TypeKind::Named(name) => hir::TypeKind::Path(self.lower_path(name)),
+                ast::TypeKind::Fun(params, return_ty) => hir::TypeKind::Fun(
+                    params.iter().map(|ty| self.lower_ty(ty)).collect(),
+                    return_ty.as_ref().map(|ty| Box::new(self.lower_ty(ty))),
+                ),
             },
         }
     }
@@ -329,7 +333,7 @@ impl<'diag> AstLower<'diag> {
                     self.lower_literal(expr.span, *literal)
                 ))
             }
-            ast::ExprKind::Array(elements) => lower_expr!(hir::ExprKind::Tuple(
+            ast::ExprKind::Array(elements) => lower_expr!(hir::ExprKind::Array(
                 elements
                     .iter()
                     .map(|element| self.lower_expr(element))
@@ -417,12 +421,12 @@ impl<'diag> AstLower<'diag> {
                             kind: hir::ExprKind::Field(Box::new(curr), field.name),
                         })
                     }
-                    res => hir::Expr {
+                    _ => hir::Expr {
                         id: self.next_hir_id(),
                         span: expr.span,
                         kind: hir::ExprKind::Path(hir::Path {
                             id: self.next_hir_id(),
-                            res,
+                            res: self.map_res(path.id).unwrap_or(hir::Resolution::Err),
                         }),
                     },
                 }
@@ -611,15 +615,16 @@ impl<'diag> AstLower<'diag> {
                                 id: self.expect_def_id(case.id),
                                 name: case.name,
                                 span: case.span,
-                                fields: case
-                                    .fields
-                                    .iter()
-                                    .map(|field| hir::VariantField {
-                                        id: self.expect_def_id(field.id),
-                                        span: field.ty.span,
-                                        ty: self.lower_ty(&field.ty),
-                                    })
-                                    .collect(),
+                                fields: case.fields.as_ref().map(|fields| {
+                                    fields
+                                        .iter()
+                                        .map(|field| hir::VariantField {
+                                            id: self.expect_def_id(field.id),
+                                            span: field.ty.span,
+                                            ty: self.lower_ty(&field.ty),
+                                        })
+                                        .collect()
+                                }),
                             })
                             .collect();
                         hir::TypeDefKind::Variant(hir::VariantDef {

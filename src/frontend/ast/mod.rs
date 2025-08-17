@@ -246,7 +246,7 @@ pub struct VariantCase {
     pub id: NodeId,
     pub name: Ident,
     pub span: Span,
-    pub fields: Vec<VariantField>,
+    pub fields: Option<Vec<VariantField>>,
 }
 #[derive(Debug, Clone)]
 pub struct Variant {
@@ -289,13 +289,13 @@ pub enum TypeKind {
     Uint,
     Never,
     String,
-    Underscore,
     Variant(Box<Variant>),
     Struct(Box<Struct>),
     Array(Box<Type>),
     Grouped(Box<Type>),
     Tuple(Vec<Type>),
     Ref(Mutable, Box<Type>),
+    Fun(Vec<Type>, Option<Box<Type>>),
 }
 define_id! {
     #[derive(Debug)]

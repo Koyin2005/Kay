@@ -6,32 +6,38 @@ use crate::{
     },
     indexvec::IndexVec,
     span::symbol::{Ident, Symbol},
-    types::{FieldIndex, GenericArg, Type, VariantCaseIndex},
+    types::{FieldIndex, GenericArg, Type, TypeScheme, VariantCaseIndex},
 };
 use indexmap::IndexMap;
 use typed_arena::Arena;
+
 pub struct FieldDef {
-    pub id: DefId,
+    pub id: Definition,
     pub name: Symbol,
 }
 pub struct TypeDefCase {
     pub fields: IndexVec<FieldIndex, FieldDef>,
 }
 pub enum TypeDefKind {
-    Variant(IndexVec<VariantCaseIndex, (DefId, TypeDefCase)>),
+    Variant(IndexVec<VariantCaseIndex, (Definition, TypeDefCase)>),
     Struct(TypeDefCase),
 }
 pub struct TypeDef {
-    pub id: DefId,
     pub kind: TypeDefKind,
 }
 impl TypeDef {
-    pub fn case_with_id(&self, id: DefId) -> Option<&TypeDefCase> {
+    pub fn as_struct(&self) -> Option<&TypeDefCase> {
+        match &self.kind {
+            TypeDefKind::Struct(struct_case) => Some(struct_case),
+            _ => None,
+        }
+    }
+    pub fn case_with_def(&self, def: Definition) -> Option<&TypeDefCase> {
         match &self.kind {
             TypeDefKind::Variant(cases) => {
                 cases.iter().find_map(
-                    |(case_id, variant)| {
-                        if id == *case_id { Some(variant) } else { None }
+                    |(case, variant)| {
+                        if def == *case { Some(variant) } else { None }
                     },
                 )
             }
@@ -78,7 +84,7 @@ impl<'hir> GlobalContext<'hir> {
     pub fn signature_of(&'hir self, id: DefId) -> (Vec<Type>, Type) {
         match &self.expect_item(id).kind {
             hir::ItemKind::Function(function) => {
-                let lower = TypeLower::new(self, true);
+                let lower = TypeLower::new(self);
                 let (params, return_ty) = lower.lower_function_sig(&function.sig);
                 (params.collect(), return_ty)
             }
@@ -88,7 +94,7 @@ impl<'hir> GlobalContext<'hir> {
     pub fn symbol(&self, def: Definition) -> Symbol {
         match def {
             Definition::Builtin(builtin) => builtin.as_symbol(),
-            Definition::Def(id, _) => self.ident(id).symbol,
+            Definition::Def(id) => self.ident(id).symbol,
         }
     }
     pub fn ident(&self, id: DefId) -> Ident {
@@ -103,83 +109,166 @@ impl<'hir> GlobalContext<'hir> {
     pub fn get_parent(&self, id: DefId) -> Option<DefId> {
         self.hir.def_info[id].parent
     }
-    pub fn type_def(&self, id: DefId) -> &TypeDef {
-        let hir::ItemKind::TypeDef(type_def) = &self.expect_item(id).kind else {
-            panic!("Expected type def for {:?}.", id)
-        };
-        self.type_def_arena.alloc(TypeDef {
-            id,
-            kind: match &type_def.kind {
-                hir::TypeDefKind::Struct(struct_def) => TypeDefKind::Struct(TypeDefCase {
-                    fields: struct_def
-                        .fields
-                        .iter()
-                        .map(|field| FieldDef {
-                            id: field.id,
-                            name: field.name.symbol,
-                        })
-                        .collect(),
-                }),
-                hir::TypeDefKind::Variant(variant_def) => TypeDefKind::Variant(
-                    variant_def
-                        .cases
-                        .iter()
-                        .map(|case| {
-                            (
-                                case.id,
-                                TypeDefCase {
-                                    fields: case
-                                        .fields
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(i, field)| FieldDef {
-                                            id: field.id,
-                                            name: Symbol::intern(&i.to_string()),
-                                        })
-                                        .collect(),
-                                },
-                            )
-                        })
-                        .collect(),
-                ),
+    pub fn generic_arg_count(&self, def: Definition) -> u32 {
+        match def {
+            Definition::Builtin(builtin) => match builtin {
+                Builtin::Option
+                | Builtin::OptionNone
+                | Builtin::OptionSome
+                | Builtin::OptionSomeField => 1,
+                Builtin::Println => 0,
             },
-        })
+            //Todo get this to handle generic user defined types
+            Definition::Def(_) => 0,
+        }
+    }
+    pub fn type_def(&self, def: Definition) -> &TypeDef {
+        let type_def = match def {
+            Definition::Builtin(builtin) => match builtin {
+                Builtin::Option => TypeDef {
+                    kind: TypeDefKind::Variant(
+                        [
+                            (
+                                Definition::Builtin(Builtin::OptionSome),
+                                TypeDefCase {
+                                    fields: [FieldDef {
+                                        id: Definition::Builtin(Builtin::OptionSomeField),
+                                        name: Symbol::intern("0"),
+                                    }]
+                                    .into_iter()
+                                    .collect(),
+                                },
+                            ),
+                            (
+                                Definition::Builtin(Builtin::OptionNone),
+                                TypeDefCase {
+                                    fields: IndexVec::new(),
+                                },
+                            ),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                },
+                _ => panic!("Invalid for type_def {}.", builtin.as_str()),
+            },
+            Definition::Def(id) => {
+                let hir::ItemKind::TypeDef(type_def) = &self.expect_item(id).kind else {
+                    panic!("Expected type def for {:?}.", id)
+                };
+                TypeDef {
+                    kind: match &type_def.kind {
+                        hir::TypeDefKind::Struct(struct_def) => TypeDefKind::Struct(TypeDefCase {
+                            fields: struct_def
+                                .fields
+                                .iter()
+                                .map(|field| FieldDef {
+                                    id: Definition::Def(field.id),
+                                    name: field.name.symbol,
+                                })
+                                .collect(),
+                        }),
+                        hir::TypeDefKind::Variant(variant_def) => TypeDefKind::Variant(
+                            variant_def
+                                .cases
+                                .iter()
+                                .map(|case| {
+                                    (
+                                        Definition::Def(case.id),
+                                        TypeDefCase {
+                                            fields: case
+                                                .fields
+                                                .iter()
+                                                .flatten()
+                                                .enumerate()
+                                                .map(|(i, field)| FieldDef {
+                                                    id: Definition::Def(field.id),
+                                                    name: Symbol::intern(&i.to_string()),
+                                                })
+                                                .collect(),
+                                        },
+                                    )
+                                })
+                                .collect(),
+                        ),
+                    },
+                }
+            }
+        };
+        self.type_def_arena.alloc(type_def)
     }
     pub fn expect_parent(&self, id: DefId) -> DefId {
         self.get_parent(id)
             .unwrap_or_else(|| panic!("Expected a parent for {:?}.", id))
     }
-    pub fn type_of_builtin(&self, builtin: Builtin) -> Type {
+    pub fn expect_parent_of_def(&self, def: Definition) -> Definition {
+        match def {
+            Definition::Builtin(builtin) => Definition::Builtin(builtin.expect_parent()),
+            Definition::Def(id) => Definition::Def(
+                self.get_parent(id)
+                    .unwrap_or_else(|| panic!("Expected a parent for {:?}.", id)),
+            ),
+        }
+    }
+    pub fn type_of_builtin(&self, builtin: Builtin) -> TypeScheme {
+        let t_param = || Type::Generic(Symbol::intern("T"), 0);
         let option_ty = || {
             Type::new_nominal_with_args(
                 Definition::Builtin(Builtin::Option),
-                [GenericArg(Type::Generic(Symbol::intern("T"), 0))],
+                [GenericArg(t_param())],
             )
         };
         match builtin {
-            Builtin::Println => Type::Err,
-            Builtin::Option => option_ty(),
-            Builtin::OptionNone => Type::new_function([], option_ty()),
-            Builtin::OptionSome => {
-                Type::new_function([Type::Generic(Symbol::intern("T"), 0)], option_ty())
-            }
+            Builtin::Println => TypeScheme::new(Type::Err, 0),
+            Builtin::Option => TypeScheme::new(option_ty(), 1),
+            Builtin::OptionNone => TypeScheme::new(option_ty(), 1),
+            Builtin::OptionSome => TypeScheme::new(Type::new_function([t_param()], option_ty()), 1),
+            Builtin::OptionSomeField => TypeScheme::new(t_param(), 1),
         }
     }
-    pub fn type_of(&self, id: DefId) -> Type {
-        match self.nodes[&id] {
-            NodeInfo::Field(field) => TypeLower::new(self, false).lower(&field.ty),
-            NodeInfo::VariantField(field) => TypeLower::new(self, false).lower(&field.ty),
-            NodeInfo::VariantCase(_) => self.type_of(self.expect_parent(id)),
-            NodeInfo::Item(item) => match &item.kind {
-                hir::ItemKind::Function(function) => {
-                    let lowerer = TypeLower::new(self, false);
-                    let (params, return_ty) = lowerer.lower_function_sig(&function.sig);
-                    Type::new_function(params, return_ty)
-                }
-                hir::ItemKind::TypeDef(..) => Type::new_nominal(Definition::Def(id, self.kind(id))),
+    pub fn expect_node(&self, id: DefId) -> &NodeInfo<'_> {
+        &self.nodes[&id]
+    }
+    pub fn expect_variant_case_node(&self, id: DefId) -> &hir::VariantCase {
+        let NodeInfo::VariantCase(case) = self.expect_node(id) else {
+            panic!("Expected a variant case")
+        };
+        case
+    }
+    pub fn type_of(&self, def: Definition) -> TypeScheme {
+        let ty_lower = TypeLower::new(self);
+        TypeScheme::new(
+            match def {
+                Definition::Builtin(builtin) => return self.type_of_builtin(builtin),
+                Definition::Def(id) => match self.nodes[&id] {
+                    NodeInfo::Field(field) => ty_lower.lower(&field.ty),
+                    NodeInfo::VariantField(field) => ty_lower.lower(&field.ty),
+                    NodeInfo::VariantCase(case) => {
+                        let variant_ty = self
+                            .type_of(self.expect_parent_of_def(case.id.into()))
+                            .skip_instantiate();
+                        if let Some(ref fields) = case.fields {
+                            Type::new_function(
+                                fields.iter().map(|field| ty_lower.lower(&field.ty)),
+                                variant_ty,
+                            )
+                        } else {
+                            variant_ty
+                        }
+                    }
+                    NodeInfo::Item(item) => match &item.kind {
+                        hir::ItemKind::Function(function) => {
+                            let (params, return_ty) = ty_lower.lower_function_sig(&function.sig);
+                            Type::new_function(params, return_ty)
+                        }
+                        hir::ItemKind::TypeDef(..) => Type::new_nominal(Definition::Def(id)),
+                    },
+                },
             },
-        }
+            0,
+        )
     }
+
     pub fn expect_body_for(&self, id: DefId) -> &hir::Body {
         self.get_body_for(id)
             .expect("There should be a body for this item")
