@@ -6,18 +6,18 @@ type Color =
     | Orange
     | Pink
 
+type NeverNotEvenOnce;
+
 
 type B = {
     a : int,
     b : int
 }
     
-fun a_and_b() -> B = B{ a = 1, b = 123}
+fun how_many() -> NeverNotEvenOnce =
+    match 1 with end as NeverNotEvenOnce
 
-fun a_or_b(a : |A | B) -> bool = do
-    let _ =match a with end;
-    true
-end
+fun favorite_color() -> Color = Color.Red
 
 fun is_even(x : uint) -> bool = match x with
     0 => true,

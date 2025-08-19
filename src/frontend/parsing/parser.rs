@@ -96,6 +96,13 @@ impl<'source> Parser<'source> {
         }
         Ok(())
     }
+    fn expect_at(&mut self, kind: TokenKind, msg: impl IntoDiagnosticMessage, span: Span) -> ParseResult<()> {
+        if !self.matches_current(kind) {
+            self.error_at(msg,span);
+            return Err(ParseError);
+        }
+        Ok(())
+    }
     fn advance(&mut self) {
         self.current_token = loop {
             let next_token = self.lexer.next_token();
@@ -1154,23 +1161,29 @@ impl<'source> Parser<'source> {
         let start_span = self.current_token.span;
         self.advance();
         let name = self.expect_ident("Expect a valid type name.")?;
-        let _ = self.expect(TokenKind::Equals, "Expected an '=' after type name.");
-        let (end_span, kind) = match self.current_token.kind {
-            TokenKind::LeftBrace => {
-                let struct_def = self.parse_struct_def()?;
-                (struct_def.span, TypeDefKind::Struct(Box::new(struct_def)))
+        let (end_span,kind) = if self.matches_current(TokenKind::Equals){
+            match self.current_token.kind {
+                TokenKind::LeftBrace => {
+                    let struct_def = self.parse_struct_def()?;
+                    (struct_def.span, TypeDefKind::Struct(Box::new(struct_def)))
+                }
+                TokenKind::Pipe => {
+                    let variant_def = self.parse_variant_def()?;
+                    (
+                        variant_def.span,
+                        TypeDefKind::Variant(Box::new(variant_def)),
+                    )
+                },
+                _ => {
+                    self.error_at_current("Expected valid type definition");
+                    return Err(ParseError);
+                }
             }
-            TokenKind::Pipe => {
-                let variant_def = self.parse_variant_def()?;
-                (
-                    variant_def.span,
-                    TypeDefKind::Variant(Box::new(variant_def)),
-                )
-            }
-            _ => {
-                self.error_at_current("Expected valid type definition");
-                return Err(ParseError);
-            }
+
+        }
+        else {
+            let _ = self.expect_at(TokenKind::Semicolon, "Expected a '=' or ';' after type name.",name.span);
+            (name.span,TypeDefKind::Variant(Box::new(Variant { id: self.new_id(), span: name.span, cases: Vec::new() })))
         };
         let end_span = if let Some(prev_token) = self.match_current(TokenKind::Semicolon) {
             prev_token.span
