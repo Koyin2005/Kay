@@ -20,7 +20,10 @@ pub enum TokenKind {
     Colon,
     Bang,
     Coma,
+    ///^
     Caret,
+    ///|
+    Pipe,
 
     Arrow,
     ThickArrow,
@@ -84,7 +87,6 @@ pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
 }
-
 impl Token {
     pub fn empty() -> Self {
         Self {

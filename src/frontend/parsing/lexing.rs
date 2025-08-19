@@ -218,6 +218,7 @@ impl<'a> Lexer<'a> {
             '^' => single_token!(TokenKind::Caret),
             '{' => single_token!(TokenKind::LeftBrace),
             '}' => single_token!(TokenKind::RightBrace),
+            '|' => single_token!(TokenKind::Pipe),
             '=' => match self.peek() {
                 Some('=') => {
                     self.advance();

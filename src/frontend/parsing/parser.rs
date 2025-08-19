@@ -870,7 +870,6 @@ impl<'source> Parser<'source> {
     }
     fn parse_struct_def(&mut self) -> ParseResult<Struct> {
         let start_span = self.current_token.span;
-        self.advance();
         let _ = self.expect(TokenKind::LeftBrace, "Expected '{'.");
         let fields: Vec<_> = self
             .parse_delimited_by(TokenKind::RightBrace, |this| {
@@ -893,47 +892,34 @@ impl<'source> Parser<'source> {
             fields,
         })
     }
+    fn parse_variant_case(&mut self) -> ParseResult<VariantCase>{
+        let name = self.expect_ident("Expected a variant name")?;
+        let (fields,end) = if self.check(TokenKind::LeftParen){
+            let fields = self.parse_delimited_by(TokenKind::RightParen, |this|{
+                let field = this.parse_type()?;
+                Ok(VariantField{ id: this.new_id(), ty:field})
+            })?.into();
+            let end = self.current_token.span;
+            let _ = self.expect(TokenKind::RightParen, "Expected ')' at the end of variant case.");
+            (Some(fields),end)
+        }
+        else{
+            (None,name.span)
+        };
+        Ok(VariantCase { id: self.new_id(), name, span: name.span.combined(end), fields })
+    }
     fn parse_variant_def(&mut self) -> ParseResult<Variant> {
         let start_span = self.current_token.span;
-        self.advance();
-        let _ = self.expect(TokenKind::LeftBrace, "Expected '{'.");
-        let cases: Vec<_> = self
-            .parse_delimited_by(TokenKind::RightBrace, |this| {
-                let start_span = this.current_token.span;
-                let id = this.new_id();
-                let name = this.expect_ident("Expected variant name.")?;
-                let (span, fields) = if this.matches_current(TokenKind::LeftParen) {
-                    let params: Vec<_> = this
-                        .parse_delimited_by(TokenKind::RightParen, |this| {
-                            let ty = this.parse_type()?;
-                            Ok(VariantField {
-                                id: this.new_id(),
-                                ty,
-                            })
-                        })?
-                        .into();
-                    let end_span = this.current_token.span;
-                    let _ =
-                        this.expect(TokenKind::RightParen, "Expected ')' after variant fields.");
-                    (start_span.combined(end_span), Some(params))
-                } else {
-                    (this.current_token.span, None)
-                };
-                Ok(VariantCase {
-                    id,
-                    name,
-                    span,
-                    fields,
-                })
-            })?
-            .into();
-        let end_span = self.current_token.span;
-        let _ = self.expect(TokenKind::RightBrace, "Expected '}' after variant cases.");
-        Ok(Variant {
-            id: self.new_id(),
-            span: start_span.combined(end_span),
-            cases,
-        })
+        let mut cases = Vec::new();
+        let mut end_span = start_span;
+        while let Some(_) = self.match_current(TokenKind::Pipe) {
+            let case = self.parse_variant_case()?;
+            if !self.check(TokenKind::Pipe){
+                end_span = case.span;
+            }
+            cases.push(case);
+        }
+        Ok(Variant { id: self.new_id(), span: start_span.combined(end_span), cases })
     }
     fn parse_qual_name(&mut self) -> ParseResult<QualifiedName> {
         let head = self.expect_ident("Expected a valid name.")?;
@@ -1023,15 +1009,15 @@ impl<'source> Parser<'source> {
                 );
                 (TypeKind::Array(Box::new(ty)), start_span.combined(end_span))
             }
-            TokenKind::Variant => {
+            TokenKind::Pipe => {
                 let variant = self.parse_variant_def()?;
                 let span = variant.span;
                 (TypeKind::Variant(Box::new(variant)), span)
             }
-            TokenKind::Struct => {
-                let struct_ = self.parse_struct_def()?;
-                let span = struct_.span;
-                (TypeKind::Struct(Box::new(struct_)), span)
+            TokenKind::LeftBrace => {
+                let struct_def = self.parse_struct_def()?;
+                let span = struct_def.span;
+                (TypeKind::Struct(Box::new(struct_def)), span)
             }
             TokenKind::Ident(_) => {
                 let name = self.parse_qual_name()?;
@@ -1168,13 +1154,13 @@ impl<'source> Parser<'source> {
         let start_span = self.current_token.span;
         self.advance();
         let name = self.expect_ident("Expect a valid type name.")?;
-        let _ = self.expect(TokenKind::Colon, "Expected an ':' after type name.");
+        let _ = self.expect(TokenKind::Equals, "Expected an '=' after type name.");
         let (end_span, kind) = match self.current_token.kind {
-            TokenKind::Struct => {
+            TokenKind::LeftBrace => {
                 let struct_def = self.parse_struct_def()?;
                 (struct_def.span, TypeDefKind::Struct(Box::new(struct_def)))
             }
-            TokenKind::Variant => {
+            TokenKind::Pipe => {
                 let variant_def = self.parse_variant_def()?;
                 (
                     variant_def.span,
