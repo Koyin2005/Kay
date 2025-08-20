@@ -1,15 +1,27 @@
-use std::path::Path;
-
+use std::path::{Path, PathBuf};
+pub const KAE_EXTENSION: &str = "k";
 pub enum ConfigError {
     ExpectedArgs { expected: usize, got: usize },
     InvalidFile,
 }
+pub enum PathKind {
+    Folder,
+    Source,
+}
 pub struct Config {
-    path: String,
+    path: PathBuf,
+    is_source_file: bool,
 }
 impl Config {
+    pub fn path_kind(&self) -> PathKind {
+        if self.is_source_file {
+            PathKind::Source
+        } else {
+            PathKind::Folder
+        }
+    }
     pub fn path_str(&self) -> &str {
-        &self.path
+        self.path.as_path().to_str().expect("Should be valid utf8")
     }
     pub fn file_name(&self) -> String {
         Path::new(self.path_str())
@@ -25,15 +37,21 @@ impl Config {
                 got: args.len() - 1,
             });
         };
-        let Some(extension) = Path::new(file_name).extension() else {
-            return Err(ConfigError::InvalidFile);
-        };
-        const KAE_EXTENSION: &str = "k";
-        let KAE_EXTENSION = extension.to_string_lossy().as_ref() else {
-            return Err(ConfigError::InvalidFile);
+        let path = Path::new(file_name);
+        let is_source_file = if path.is_dir() {
+            false
+        } else {
+            let Some(extension) = path.extension() else {
+                return Err(ConfigError::InvalidFile);
+            };
+            let KAE_EXTENSION = extension.to_string_lossy().as_ref() else {
+                return Err(ConfigError::InvalidFile);
+            };
+            true
         };
         Ok(Self {
-            path: file_name.into(),
+            path: path.into(),
+            is_source_file,
         })
     }
 }

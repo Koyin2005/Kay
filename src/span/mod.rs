@@ -184,6 +184,7 @@ impl SpanInterner {
 
 pub type SourceRef = Rc<SourceInfo>;
 pub struct SourceTooLarge;
+#[derive(Clone)]
 pub struct SourceInfo {
     source: Box<str>,
     lines: Box<[LineInfo]>,
@@ -272,5 +273,23 @@ impl SourceInfo {
             };
         };
         line.location_within(offset, &self.source)
+    }
+}
+
+pub struct SourceFiles {
+    info: Box<[Rc<SourceInfo>]>,
+}
+impl SourceFiles {
+    pub fn new(sources: impl IntoIterator<Item = String>) -> Result<Self, SourceTooLarge> {
+        sources
+            .into_iter()
+            .map(|source| SourceInfo::new(source))
+            .collect::<Result<Box<[_]>, _>>()
+            .map(|info| Self {
+                info: info.into_iter().map(Rc::new).collect(),
+            })
+    }
+    pub fn get_source_files(&self) -> &[Rc<SourceInfo>] {
+        &self.info
     }
 }

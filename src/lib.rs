@@ -11,4 +11,5 @@ pub use frontend::{
     ast_lowering::AstLower, item_collect::ItemCollect, resolution::resolve::Resolver,
     typecheck::TypeCheck,
 };
+pub use span::SourceFiles;
 pub use span::SourceInfo;
