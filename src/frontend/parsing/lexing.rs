@@ -109,6 +109,7 @@ impl<'a> Lexer<'a> {
         }
         let len = (self.curr_offset - self.start_offset) as usize;
         let kind = match self.current_symbol_str() {
+            "loop" => TokenKind::Loop,
             "with" => TokenKind::With,
             "then" => TokenKind::Then,
             "if" => TokenKind::If,
