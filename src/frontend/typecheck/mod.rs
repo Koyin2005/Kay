@@ -148,14 +148,18 @@ impl<'ctxt> TypeCheck<'ctxt> {
             }
             _ => None,
         }) else {
-            return self.err(
-                format!(
-                    "type '{}' has no field '{}'.",
-                    self.format_ty(&receiver_ty),
-                    field.symbol.as_str()
-                ),
-                field.span,
-            );
+            return if receiver_ty.has_error() {
+                Type::Err
+            } else {
+                self.err(
+                    format!(
+                        "type '{}' has no field '{}'.",
+                        self.format_ty(&receiver_ty),
+                        field.symbol.as_str()
+                    ),
+                    field.span,
+                )
+            };
         };
         field_ty
     }
@@ -353,7 +357,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 Type::Err
             }
         } else {
-            if self.try_coerce(&then_branch, &Type::new_unit()).is_err()  && !then_branch.has_error(){
+            if self.try_coerce(&then_branch, &Type::new_unit()).is_err() && !then_branch.has_error()
+            {
                 self.err(
                     format!(
                         "'if' of type '{}' missing else branch.",
@@ -503,7 +508,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     .as_struct()
                     .map(|case_def| (case_def, def, args))
             })
-        } else if let Expected::HasType(&Type::Nominal(def, ref args)) = expected_ty {
+        } else if let Some(&Type::Nominal(def, ref args)) = expected_ty.as_option_ty() {
             self.context
                 .type_def(def)
                 .as_struct()
@@ -578,15 +583,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                             callee.span,
                         );
                     }
-                    (
-                        &Vec::new(),
-                        None,
-                        match expected_ty {
-                            Expected::HasType(ty) => Some(ty),
-                            _ => None,
-                        },
-                        None,
-                    )
+                    (&Vec::new(), None, expected_ty.as_option_ty(), None)
                 }
             },
             Callee::Builtin(BuiltinFunction::Println) => {
@@ -604,7 +601,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         let mut infer_ctxt = generic_params.map(|param_count| {
             let mut infer_ctxt = TypeInfer::new(param_count);
             if let Some(return_ty) = return_ty
-                && let Expected::HasType(other) = expected_ty
+                && let Some(other) = expected_ty.as_option_ty()
             {
                 infer_ctxt.unify(return_ty, other);
             }
@@ -612,15 +609,16 @@ impl<'ctxt> TypeCheck<'ctxt> {
         });
         for (i, arg) in args.iter().enumerate() {
             let param_ty = param_types.get(i);
-            let normalized_param = if let Some(ty) = param_ty {
-                infer_ctxt
-                    .as_ref()
-                    .and_then(|infer_ctxt| infer_ctxt.normalize(ty))
+            let normalized_param = if let Some((ty, ctxt)) = infer_ctxt
+                .as_ref()
+                .and_then(|infer_ctxt| param_ty.map(|param_ty| (param_ty, infer_ctxt)))
+            {
+                ctxt.normalize(ty)
             } else {
                 None
             };
             let expected = match normalized_param {
-                Some(ref ty) => Expected::HasType(ty),
+                Some(ref ty) => Expected::CoercesTo(ty),
                 None => Expected::None,
             };
             let arg_ty = self.check_expr(arg, expected);
@@ -631,14 +629,16 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 infer_ctxt.unify(&arg_ty, param_ty);
             }
         }
+        let return_ty = {
+            infer_ctxt
+                .as_ref()
+                .and_then(|ctxt| return_ty.as_ref().map(|ty| (ty, ctxt)))
+                .and_then(|(ty, ctxt)| ctxt.normalize(ty))
+                .or(return_ty.cloned())
+                .unwrap_or(Type::Err)
+        };
 
-        let return_ty = return_ty
-            .cloned()
-            .and_then(|ty| infer_ctxt.as_mut().and_then(|infer| infer.normalize(&ty)))
-            .unwrap_or(Type::Err);
-        if let Some(infer_ctxt) = infer_ctxt
-            && !infer_ctxt.completed()
-        {
+        if infer_ctxt.is_some_and(TypeInfer::completed) {
             self.err("Cannot infer args of generic function.", span);
         }
         return_ty
