@@ -9,8 +9,8 @@ use crate::{
         ast::{BinaryOp, BinaryOpKind, ByRef, LiteralKind, Mutable, UnaryOp, UnaryOpKind},
         hir::{
             self, Block, Body, Builtin, DefId, DefKind, Definition, Expr, ExprField, ExprKind,
-            HirId, IntType, LoopSource, MatchArm, Path, Pattern, PatternKind, PrimitiveType,
-            Resolution, Stmt, StmtKind,
+            HirId, IntType, LoopSource, MatchArm, OutsideLoop, Path, Pattern, PatternKind,
+            PrimitiveType, Resolution, Stmt, StmtKind,
         },
         ty_infer::TypeInfer,
         ty_lower::TypeLower,
@@ -21,6 +21,7 @@ use crate::{
     },
     types::{GenericArgs, IsMutable, Type},
 };
+struct CoerceError;
 #[derive(Clone, Copy)]
 enum Expected<'a> {
     HasType(&'a Type),
@@ -167,7 +168,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         let field_tys = fields.iter().enumerate().map(|(i, field)| {
             let expected_ty = field_tys
                 .get(i)
-                .map(Expected::HasType)
+                .map(Expected::CoercesTo)
                 .unwrap_or_else(|| Expected::None);
             self.check_expr(field, expected_ty)
         });
@@ -299,16 +300,25 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn check_array(&self, span: Span, elements: &[Expr], expected_ty: Expected) -> Type {
         let expected_element_ty = match expected_ty {
-            Expected::HasType(Type::Array(ty)) => Expected::HasType(ty),
+            Expected::HasType(Type::Array(ty)) => Expected::CoercesTo(ty),
             _ => Expected::None,
         };
         let mut element_ty = expected_element_ty.as_option_ty().cloned();
         for element in elements {
             let ty = self.check_expr(element, expected_element_ty);
-            if element_ty.is_none() {
+            if let Some(ref mut element_ty) = element_ty{
+                if let Some(common_ty) = self.coercion_lub(&ty, element_ty){
+                    *element_ty = common_ty;
+                }
+                else{
+                    self.err(format!("Expected '{}' got '{}'.",self.format_ty(element_ty),self.format_ty(&ty)), element.span);
+                }
+            }
+            else{
                 element_ty = Some(ty);
             }
         }
+
         Type::new_array(element_ty.unwrap_or_else(|| self.err("Cannot infer type of array", span)))
     }
     fn check_if(
@@ -323,7 +333,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
         let then_branch = self.check_expr(then_branch, expected_ty);
         if let Some(else_branch) = else_branch {
             let else_branch = self.check_expr(else_branch, expected_ty);
-            if else_branch != then_branch {
+            if let Some(ty) = self.coercion_lub(&then_branch, &else_branch){
+                ty
+            }
+            else{
                 self.err(
                     format!(
                         "Incompatible types for 'if' '{}' and '{}'.",
@@ -332,10 +345,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     ),
                     span,
                 )
-            } else {
-                then_branch
             }
-        } else if then_branch != Type::new_never() && then_branch != Type::new_unit() {
+        } else if self.try_coerce(&then_branch, &Type::new_unit()).is_err() {
             self.err(
                 format!(
                     "'if' of type '{}' missing else branch.",
@@ -394,16 +405,16 @@ impl<'ctxt> TypeCheck<'ctxt> {
             &mut *self.loop_expectation.borrow_mut(),
             if loop_source != LoopSource::Explicit {
                 Some(Type::new_unit())
-            } else if let Expected::HasType(ty) = expected_ty {
+            } else if let Some(ty) = expected_ty.as_option_ty() {
                 Some(ty.clone())
             } else {
                 None
             },
         );
         let _ = self.check_block(body, Expected::None);
-        *self.loop_expectation.borrow_mut() = old_ty;
+        let current_ty = std::mem::replace(&mut *self.loop_expectation.borrow_mut(), old_ty);
         if let LoopSource::Explicit = loop_source {
-            Type::new_never()
+            current_ty.unwrap_or_else(Type::new_never)
         } else {
             Type::new_unit()
         }
@@ -460,7 +471,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         if !self.is_valid_assign_target(lhs) {
             self.err("Invalid assingment target.", lhs.span);
         }
-        let _ = self.check_expr(rhs, Expected::HasType(&lhs_ty));
+        let _ = self.check_expr(rhs, Expected::CoercesTo(&lhs_ty));
         Type::new_unit()
     }
     fn check_init(
@@ -633,7 +644,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             .as_ref()
             .expect("There should be a return type when we type check");
         if let Some(expr) = returned_expr {
-            self.check_expr(expr, Expected::HasType(return_ty));
+            self.check_expr(expr, Expected::CoercesTo(return_ty));
         }
         Type::new_never()
     }
@@ -670,7 +681,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             }
         };
         let _ = self.check_pattern(pat, Some(item_ty.as_ref().unwrap_or(&Type::Err)));
-        let block_ty = self.check_block(body, Expected::HasType(&Type::new_unit()));
+        let block_ty = self.check_block(body, Expected::CoercesTo(&Type::new_unit()));
         if !block_ty.has_error() && block_ty != Type::new_unit() {
             self.err(
                 format!(
@@ -682,11 +693,28 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
         Type::new_unit()
     }
-    fn coerce(&self, ty: &Type, target: &Type, span: Span) -> Type {
-        match (ty, target) {
+    ///Computes a type that both a and b can be coerced to.
+    fn coercion_lub(&self, a: &Type, b: &Type) -> Option<Type>{
+        if a == b{ return Some(a.clone());}
+        match (a,b) {
+            (Type::Primitive(PrimitiveType::Never),ty) | (ty,Type::Primitive(PrimitiveType::Never)) => {
+                Some(ty.clone())
+            },
+            _ => None
+        }
+    }
+    fn try_coerce(&self, ty: &Type, target: &Type) -> Result<Type, CoerceError> {
+        Ok(match (ty, target) {
             (ty, target) if ty == target => ty.clone(),
             (Type::Primitive(PrimitiveType::Never), target) => target.clone(),
-            (ty, target) if !ty.has_error() && !target.has_error() => self.err(
+            (ty, target) if !ty.has_error() && !target.has_error() => return Err(CoerceError),
+            _ => Type::Err,
+        })
+    }
+    fn coerce(&self, ty: &Type, target: &Type, span: Span) -> Type {
+        match self.try_coerce(ty, target) {
+            Ok(ty) => ty,
+            Err(_) => self.err(
                 format!(
                     "Expected '{}' got '{}'.",
                     self.format_ty(target),
@@ -694,7 +722,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 ),
                 span,
             ),
-            _ => Type::Err,
         }
     }
     fn expect_ty(&self, ty: &Type, expected_ty: &Type, span: Span) -> Type {
@@ -744,15 +771,22 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
         combined_ty.unwrap_or(Type::new_never())
     }
-    fn check_break(&self, operand: Option<&Expr>) -> Type {
+    fn check_break(&self, span: Span, loop_target: Result<HirId, OutsideLoop>, operand: Option<&Expr>) -> Type {
         let expected = self.loop_expectation.borrow().as_ref().map(|ty| ty.clone());
-
         let expected = match expected {
-            Some(ref ty) => Expected::HasType(ty),
+            Some(ref ty) => Expected::CoercesTo(ty),
             None => Expected::None,
         };
         if let Some(operand) = operand {
-            self.check_expr(operand, expected);
+            let operand_ty = self.check_expr(operand, expected);
+            if let Ok(_) = loop_target
+                && self.loop_expectation.borrow().is_none()
+            {
+                *self.loop_expectation.borrow_mut() = Some(operand_ty);
+            }
+        }
+        if loop_target.is_err(){
+            self.err(format!("Cannot use break outside of a loop."),span);
         }
         Type::new_never()
     }
@@ -840,7 +874,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             }
             ExprKind::Deref(expr) => self.check_deref(expr),
             ExprKind::Call(callee, args) => self.check_call(expr.span, callee, args, expected_ty),
-            ExprKind::Break(_loop_target, expr) => self.check_break(expr.as_deref()),
+            ExprKind::Break(loop_target, operand) => self.check_break(expr.span,*loop_target, operand.as_deref()),
             ExprKind::Match(scrutinee, arms) => self.check_match(scrutinee, arms, expected_ty),
             ExprKind::For(pat, iter, body) => self.check_for(pat, iter, body),
             ExprKind::Err => Type::Err,

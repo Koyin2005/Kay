@@ -14,11 +14,18 @@ type B = {
     b : int
 }
 
-fun forever() = do
-    let a : () = loop
-        break 1
-    end;
-end
+type ResultForever = 
+    | Ok(never)
+    | Err(int)
+
+fun random() -> int = 42
+fun forever() -> ResultForever = ResultForever.Ok(loop
+    if random() == 17 then
+        return ResultForever.Err(0)
+    end
+end)
+
+
     
 fun how_many(x : NeverNotEvenOnce) -> int = match x with end
 fun favorite_color() -> Color = Color.Red
@@ -36,12 +43,11 @@ fun make_B(a: int, b : int) -> B = B{ a = a, b = b}
 fun get_a(b : B) -> int = b.a
 
 fun main() = do 
-    let a  = make_B(5,12);
-    let c = get_a(a);
-    let  mut c = 5;
-    let a = ref c;
-    match a with
-      1^ => println(1 + 5),
+    let a = if true then 
+    
     end
-
+    match forever() with
+        ResultForever.Ok(_) => (),
+        ResultForever.Err(error_code) => println("Error code ",error_code)
+    end
 end

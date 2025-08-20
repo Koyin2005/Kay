@@ -197,7 +197,7 @@ pub fn walk_expr(visitor: &mut impl Visitor, expr: &Expr) {
             if let Some(expr) = expr {
                 visitor.visit_expr(expr);
             }
-        },
+        }
         ExprKind::Loop(body) => visitor.visit_block(body),
     }
 }

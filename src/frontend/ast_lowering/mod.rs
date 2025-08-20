@@ -293,15 +293,13 @@ impl<'diag> AstLower<'diag> {
         match &expr.kind {
             ast::ExprKind::Loop(loop_block) => {
                 let hir_id = self.next_hir_id();
-                let block = self.with_loop_label(hir_id, |this|{
-                    this.lower_block(loop_block)
-                }) ;
-                hir::Expr{
-                    id : hir_id,
+                let block = self.with_loop_label(hir_id, |this| this.lower_block(loop_block));
+                hir::Expr {
+                    id: hir_id,
                     span: expr.span,
-                    kind : hir::ExprKind::Loop(Box::new(block), hir::LoopSource::Explicit)
-                } 
-            },
+                    kind: hir::ExprKind::Loop(Box::new(block), hir::LoopSource::Explicit),
+                }
+            }
             ast::ExprKind::Grouped(expr) => self.lower_expr(expr),
             ast::ExprKind::Tuple(elements) => lower_expr! {
                 hir::ExprKind::Tuple(elements.iter().map(|element| self.lower_expr(element)).collect())
@@ -496,7 +494,7 @@ impl<'diag> AstLower<'diag> {
             }
         }
     }
-    fn with_loop_label<T>(&mut self, label: HirId, f: impl FnOnce(&mut Self) -> T) -> T{
+    fn with_loop_label<T>(&mut self, label: HirId, f: impl FnOnce(&mut Self) -> T) -> T {
         let old_label = self.current_loop_label.replace(label);
         let value = f(self);
         self.current_loop_label = old_label;
@@ -525,11 +523,10 @@ impl<'diag> AstLower<'diag> {
         let loop_block_id = self.next_hir_id();
         let if_stmt_id = self.next_hir_id();
         let if_expr_id = self.next_hir_id();
-        let (condition,body) = self.with_loop_label(loop_id, |this|{
-
-        let condition = this.lower_expr(condition);
-        let body = this.lower_block_expr(body);
-            (condition,body)
+        let (condition, body) = self.with_loop_label(loop_id, |this| {
+            let condition = this.lower_expr(condition);
+            let body = this.lower_block_expr(body);
+            (condition, body)
         });
         let span = expr.span.end();
         let break_expr = hir::Expr {

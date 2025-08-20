@@ -524,12 +524,16 @@ impl<'source> Parser<'source> {
             span: start_span.combined(end_span),
         })
     }
-    fn parse_loop(&mut self) -> ParseResult<Expr>{
+    fn parse_loop(&mut self) -> ParseResult<Expr> {
         let start_span = self.current_token.span;
         self.advance();
         let block = self.parse_block_with_end(start_span)?;
         let span = block.span;
-        Ok(Expr { id: self.new_id(), kind: ExprKind::Loop(block), span })
+        Ok(Expr {
+            id: self.new_id(),
+            kind: ExprKind::Loop(block),
+            span,
+        })
     }
     fn parse_expr_prefix(&mut self) -> ParseResult<Expr> {
         match self.current_token.kind {
@@ -598,10 +602,8 @@ impl<'source> Parser<'source> {
                     kind: ExprKind::Return(expr.map(Box::new)),
                     span,
                 })
-            },
-            TokenKind::Loop => {
-                self.parse_loop()
             }
+            TokenKind::Loop => self.parse_loop(),
             _ => {
                 let Some(op) = self.unary_op() else {
                     self.error_at_current("Expected an expression.");
@@ -919,7 +921,7 @@ impl<'source> Parser<'source> {
             })?
             .into();
         let end_span = self.current_token.span;
-        let _ = self.expect(TokenKind::RightBrace, "Expected '}' after variant cases.");
+        let _ = self.expect(TokenKind::RightBrace, "Expected '}' after struct fields.");
         Ok(Struct {
             id: self.new_id(),
             span: start_span.combined(end_span),
@@ -928,7 +930,7 @@ impl<'source> Parser<'source> {
     }
     fn parse_variant_case(&mut self) -> ParseResult<VariantCase> {
         let name = self.expect_ident("Expected a variant name")?;
-        let (fields, end) = if self.check(TokenKind::LeftParen) {
+        let (fields, end) = if self.matches_current(TokenKind::LeftParen) {
             let fields = self
                 .parse_delimited_by(TokenKind::RightParen, |this| {
                     let field = this.parse_type()?;

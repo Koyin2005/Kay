@@ -170,7 +170,7 @@ pub struct MatchArm {
     pub pat: Pattern,
     pub body: Expr,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct OutsideLoop;
 #[derive(Debug)]
 pub struct ExprField {
