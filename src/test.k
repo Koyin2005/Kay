@@ -14,9 +14,7 @@ type B = {
     b : int
 }
     
-fun how_many() -> NeverNotEvenOnce =
-    match 1 with end as NeverNotEvenOnce
-
+fun how_many(x : NeverNotEvenOnce) -> int = match x with end
 fun favorite_color() -> Color = Color.Red
 
 fun is_even(x : uint) -> bool = match x with

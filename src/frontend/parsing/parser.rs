@@ -96,9 +96,14 @@ impl<'source> Parser<'source> {
         }
         Ok(())
     }
-    fn expect_at(&mut self, kind: TokenKind, msg: impl IntoDiagnosticMessage, span: Span) -> ParseResult<()> {
+    fn expect_at(
+        &mut self,
+        kind: TokenKind,
+        msg: impl IntoDiagnosticMessage,
+        span: Span,
+    ) -> ParseResult<()> {
         if !self.matches_current(kind) {
-            self.error_at(msg,span);
+            self.error_at(msg, span);
             return Err(ParseError);
         }
         Ok(())
@@ -387,10 +392,21 @@ impl<'source> Parser<'source> {
             .and_then(|expr| {
                 if let ExprKind::Path(name) = expr.kind {
                     Some(Ok(name))
-                } else if let ExprKind::Ident(name) = expr.kind{
-                    Some(Ok(QualifiedName { id: expr.id, span: expr.span, head: PathSegment { id: self.new_id(), span: expr.span, name: Ident { symbol: name, span: expr.span } }, tail: Vec::new()}))
-                }                 
-                else if let ExprKind::Underscore = expr.kind {
+                } else if let ExprKind::Ident(name) = expr.kind {
+                    Some(Ok(QualifiedName {
+                        id: expr.id,
+                        span: expr.span,
+                        head: PathSegment {
+                            id: self.new_id(),
+                            span: expr.span,
+                            name: Ident {
+                                symbol: name,
+                                span: expr.span,
+                            },
+                        },
+                        tail: Vec::new(),
+                    }))
+                } else if let ExprKind::Underscore = expr.kind {
                     None
                 } else {
                     self.error_at("Invalid initializer", expr.span);
@@ -899,34 +915,50 @@ impl<'source> Parser<'source> {
             fields,
         })
     }
-    fn parse_variant_case(&mut self) -> ParseResult<VariantCase>{
+    fn parse_variant_case(&mut self) -> ParseResult<VariantCase> {
         let name = self.expect_ident("Expected a variant name")?;
-        let (fields,end) = if self.check(TokenKind::LeftParen){
-            let fields = self.parse_delimited_by(TokenKind::RightParen, |this|{
-                let field = this.parse_type()?;
-                Ok(VariantField{ id: this.new_id(), ty:field})
-            })?.into();
+        let (fields, end) = if self.check(TokenKind::LeftParen) {
+            let fields = self
+                .parse_delimited_by(TokenKind::RightParen, |this| {
+                    let field = this.parse_type()?;
+                    Ok(VariantField {
+                        id: this.new_id(),
+                        ty: field,
+                    })
+                })?
+                .into();
             let end = self.current_token.span;
-            let _ = self.expect(TokenKind::RightParen, "Expected ')' at the end of variant case.");
-            (Some(fields),end)
-        }
-        else{
-            (None,name.span)
+            let _ = self.expect(
+                TokenKind::RightParen,
+                "Expected ')' at the end of variant case.",
+            );
+            (Some(fields), end)
+        } else {
+            (None, name.span)
         };
-        Ok(VariantCase { id: self.new_id(), name, span: name.span.combined(end), fields })
+        Ok(VariantCase {
+            id: self.new_id(),
+            name,
+            span: name.span.combined(end),
+            fields,
+        })
     }
     fn parse_variant_def(&mut self) -> ParseResult<Variant> {
         let start_span = self.current_token.span;
         let mut cases = Vec::new();
         let mut end_span = start_span;
-        while let Some(_) = self.match_current(TokenKind::Pipe) {
+        while self.matches_current(TokenKind::Pipe) {
             let case = self.parse_variant_case()?;
-            if !self.check(TokenKind::Pipe){
+            if !self.check(TokenKind::Pipe) {
                 end_span = case.span;
             }
             cases.push(case);
         }
-        Ok(Variant { id: self.new_id(), span: start_span.combined(end_span), cases })
+        Ok(Variant {
+            id: self.new_id(),
+            span: start_span.combined(end_span),
+            cases,
+        })
     }
     fn parse_qual_name(&mut self) -> ParseResult<QualifiedName> {
         let head = self.expect_ident("Expected a valid name.")?;
@@ -1161,7 +1193,7 @@ impl<'source> Parser<'source> {
         let start_span = self.current_token.span;
         self.advance();
         let name = self.expect_ident("Expect a valid type name.")?;
-        let (end_span,kind) = if self.matches_current(TokenKind::Equals){
+        let (end_span, kind) = if self.matches_current(TokenKind::Equals) {
             match self.current_token.kind {
                 TokenKind::LeftBrace => {
                     let struct_def = self.parse_struct_def()?;
@@ -1173,17 +1205,26 @@ impl<'source> Parser<'source> {
                         variant_def.span,
                         TypeDefKind::Variant(Box::new(variant_def)),
                     )
-                },
+                }
                 _ => {
                     self.error_at_current("Expected valid type definition");
                     return Err(ParseError);
                 }
             }
-
-        }
-        else {
-            let _ = self.expect_at(TokenKind::Semicolon, "Expected a '=' or ';' after type name.",name.span);
-            (name.span,TypeDefKind::Variant(Box::new(Variant { id: self.new_id(), span: name.span, cases: Vec::new() })))
+        } else {
+            let _ = self.expect_at(
+                TokenKind::Semicolon,
+                "Expected a '=' or ';' after type name.",
+                name.span,
+            );
+            (
+                name.span,
+                TypeDefKind::Variant(Box::new(Variant {
+                    id: self.new_id(),
+                    span: name.span,
+                    cases: Vec::new(),
+                })),
+            )
         };
         let end_span = if let Some(prev_token) = self.match_current(TokenKind::Semicolon) {
             prev_token.span
