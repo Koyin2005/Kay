@@ -13,3 +13,4 @@ pub use frontend::{
 };
 pub use span::SourceFiles;
 pub use span::SourceInfo;
+pub use frontend::ast::Ast;

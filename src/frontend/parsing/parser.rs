@@ -1,20 +1,12 @@
 use std::{cell::Cell, vec};
 
 use crate::{
-    Lexer,
-    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
-    frontend::{
+    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
         ast::{
-            Ast, BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef,
-            Item, ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Mutable, NodeId,
-            Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct,
-            StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant,
-            VariantCase, VariantField,
+            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, Item, ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase, VariantField
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    },
-    indexvec::Idx,
-    span::{Span, symbol::Ident},
+    }, indexvec::Idx, span::{symbol::{Ident, Symbol}, Span}, Lexer
 };
 #[derive(Clone, Copy)]
 enum BlockKind {
@@ -41,13 +33,15 @@ pub struct Parser<'source> {
     current_token: Token,
     next_id: NodeId,
     panic_mode: Cell<bool>,
+    mod_name : Symbol
 }
 pub struct ParseError;
 
 type ParseResult<T> = Result<T, ParseError>;
 impl<'source> Parser<'source> {
-    pub fn new(lexer: Lexer<'source>, diag_reporter: DiagnosticReporter) -> Self {
+    pub fn new(name: &str, lexer: Lexer<'source>, diag_reporter: DiagnosticReporter) -> Self {
         Self {
+            mod_name : Symbol::intern(name),
             current_token: Token::empty(),
             lexer,
             diag_reporter,
@@ -1317,7 +1311,7 @@ impl<'source> Parser<'source> {
             }
         }
     }
-    pub fn parse(mut self) -> ParseResult<Ast> {
+    pub fn parse(mut self) -> ParseResult<Module> {
         self.advance();
         let items = std::iter::from_fn(|| {
             if self.is_at_eof() {
@@ -1338,6 +1332,6 @@ impl<'source> Parser<'source> {
         .filter_map(|item| item.ok())
         .collect();
         self.diag_reporter.emit();
-        Ok(Ast { items })
+        Ok(Module { id : self.new_id(), name:self.mod_name,items })
     }
 }

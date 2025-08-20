@@ -1,19 +1,19 @@
 use crate::{
-    Resolver,
     frontend::{
         ast::{Ast, Item, ItemKind, NodeId, TypeDefKind},
-        ast_visit::{Visitor, walk_item},
+        ast_visit::{walk_item, walk_module, Visitor},
         hir::{DefId, DefInfo, DefKind},
-    },
+    }, Resolver
 };
 
 pub struct DefCollector<'rsv, 'source> {
     resolver: &'rsv mut Resolver<'source>,
+    current_module : Option<DefId>
 }
 
 impl<'a, 'b> DefCollector<'a, 'b> {
     pub fn new(resolver: &'a mut Resolver<'b>) -> Self {
-        Self { resolver }
+        Self { resolver, current_module : None }
     }
     fn create_id(&mut self, id: NodeId, kind: DefKind, parent: Option<DefId>) -> DefId {
         let next_id = self.resolver.info.push(DefInfo { parent, kind });
@@ -30,10 +30,15 @@ impl<'a, 'b> DefCollector<'a, 'b> {
 }
 
 impl Visitor for DefCollector<'_, '_> {
+    fn visit_module(&mut self, module : &crate::frontend::ast::Module) {
+        self.current_module = Some(self.create_id(module.id, DefKind::Module, None));
+        walk_module(self, module);
+        self.current_module = None;
+    }
     fn visit_item(&mut self, item: &Item) {
         match item.kind {
             ItemKind::Function(ref function_def) => {
-                self.create_id(function_def.id, DefKind::Function, None);
+                self.create_id(function_def.id, DefKind::Function, self.current_module);
             }
             ItemKind::Type(ref type_def) => {
                 let type_id = self.create_id(
@@ -42,7 +47,7 @@ impl Visitor for DefCollector<'_, '_> {
                         TypeDefKind::Struct(..) => DefKind::Struct,
                         TypeDefKind::Variant(..) => DefKind::Variant,
                     },
-                    None,
+                    self.current_module,
                 );
                 match type_def.kind {
                     TypeDefKind::Struct(ref struct_def) => {

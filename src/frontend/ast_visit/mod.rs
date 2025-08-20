@@ -1,6 +1,5 @@
 use crate::frontend::ast::{
-    Ast, Block, Expr, ExprKind, Item, ItemKind, IteratorExpr, IteratorExprKind, Pattern,
-    PatternKind, Stmt, StmtKind, Type, TypeDefKind, TypeKind,
+    Ast, Block, Expr, ExprKind, Item, ItemKind, IteratorExpr, IteratorExprKind, Module, Pattern, PatternKind, Stmt, StmtKind, Type, TypeDefKind, TypeKind
 };
 
 pub trait Visitor: Sized {
@@ -36,13 +35,21 @@ pub trait Visitor: Sized {
         }
         self.visit_expr(expr);
     }
+    fn visit_module(&mut self, module : &Module){
+        walk_module(self, module);
+    }
     fn visit_ast(&mut self, ast: &Ast) {
         walk_ast(self, ast);
     }
 }
-pub fn walk_ast(visitor: &mut impl Visitor, ast: &Ast) {
-    for item in ast.items.iter() {
+pub fn walk_module(visitor: &mut impl Visitor, module : &Module){
+    for item in module.items.iter(){
         visitor.visit_item(item);
+    }
+}
+pub fn walk_ast(visitor: &mut impl Visitor, ast: &Ast) {
+    for module in ast.modules.iter(){
+        visitor.visit_module(module);
     }
 }
 pub fn walk_item(visitor: &mut impl Visitor, item: &Item) {

@@ -690,8 +690,10 @@ impl<'diag> AstLower<'diag> {
     }
     pub fn lower_ast(mut self, ast: &ast::Ast) -> Hir {
         let items = ast
-            .items
+            .modules
             .iter()
+            .map(|module| module.items.iter())
+            .flatten()
             .map(|item| self.lower_item(item))
             .collect::<Vec<_>>();
         self.items.extend(items);

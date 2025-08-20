@@ -7,15 +7,17 @@ use crate::{
 
 pub struct Lexer<'source> {
     source: &'source SourceRef,
+    file_index : u16,
     curr_offset: u32,
     start_offset: u32,
     chars: Peekable<CharIndices<'source>>,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a SourceRef) -> Self {
+    pub fn new(source: &'a SourceRef, file_index: u16) -> Self {
         Self {
             source,
+            file_index,
             chars: source.source().char_indices().peekable(),
             curr_offset: 0,
             start_offset: 0,
@@ -195,7 +197,7 @@ impl<'a> Lexer<'a> {
         let Some(c) = self.peek() else {
             return Token {
                 kind: TokenKind::Eof,
-                span: Span::new(self.curr_offset, 1),
+                span: Span::new(self.curr_offset, 1,self.file_index),
             };
         };
         self.start_offset = self.curr_offset;
@@ -238,7 +240,7 @@ impl<'a> Lexer<'a> {
         };
         Token {
             kind,
-            span: Span::new(self.start_offset, len as u32),
+            span: Span::new(self.start_offset, len as u32,self.file_index),
         }
     }
 }

@@ -54,6 +54,7 @@ pub enum Definition {
 pub enum DefKind {
     Struct,
     Field,
+    Module,
     Function,
     Variant,
     VariantCase,
@@ -63,6 +64,7 @@ impl DefKind {
         match self {
             Self::Variant => "variant",
             Self::Struct => "struct",
+            Self::Module => "module",
             Self::Field => "field",
             Self::Function => "function",
             Self::VariantCase => "case",

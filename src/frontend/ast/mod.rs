@@ -311,6 +311,12 @@ impl std::fmt::Display for NodeId {
     }
 }
 
-pub struct Ast {
+pub struct Module {
+    pub id : NodeId,
+    pub name : Symbol,
     pub items: Vec<Item>,
+}
+
+pub struct Ast{
+    pub modules : Vec<Module>
 }

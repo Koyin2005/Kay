@@ -1,15 +1,15 @@
 use std::{borrow::Cow, cell::RefCell};
 
-use crate::span::{SourceRef, Span};
+use crate::span::{SourceFilesRef, Span};
 
 pub struct DiagnosticReporter(RefCell<DiagnosticReporterInner>);
 struct DiagnosticReporterInner {
-    source_info: SourceRef,
+    source_info: SourceFilesRef,
     all_diagnostics: Vec<Diagnostic>,
 }
 
 impl DiagnosticReporter {
-    pub fn new(source_info: SourceRef) -> Self {
+    pub fn new(source_info: SourceFilesRef) -> Self {
         Self(RefCell::new(DiagnosticReporterInner {
             source_info,
             all_diagnostics: Vec::new(),
@@ -28,13 +28,15 @@ impl DiagnosticReporter {
         let mut inner = self.0.borrow_mut();
         for diagnostic in std::mem::take(&mut inner.all_diagnostics) {
             let span_info = diagnostic.span.info();
-            let start = inner.source_info.location_at(span_info.start_offset);
-            let end = inner.source_info.location_at(span_info.end_offset);
+            let file = span_info.file;
+            let source_info = inner.source_info.get_source_files()[file as usize].as_ref();
+            let start = source_info.location_at(span_info.start_offset);
+            let end = source_info.location_at(span_info.end_offset);
             eprintln!(
                 "Error on line {}, column {}:\n {}",
                 start.line, start.column, diagnostic.message
             );
-            let lines = &inner.source_info.line_info()[start.line as usize - 1..end.line as usize];
+            let lines = &source_info.line_info()[start.line as usize - 1..end.line as usize];
 
             let max_digits = lines
                 .last()
@@ -43,8 +45,7 @@ impl DiagnosticReporter {
                 .ilog10()
                 + 1;
             for line in lines {
-                let line_source = inner
-                    .source_info
+                let line_source = source_info
                     .source_within(line.start_offset(), line.end_offset());
                 for _ in 0..max_digits - (line.line_number().ilog10() + 1) {
                     eprint!(" ");
@@ -61,13 +62,13 @@ impl DiagnosticReporter {
                         .next()
                         .map(|offset| offset as u32 + line.start_offset())
                         .unwrap_or(line.start_offset());
-                    inner.source_info.location_at(first_non_space_char)
+                    source_info.location_at(first_non_space_char)
                 };
 
                 let end_of_line = if line.line_number() == end.line {
                     end
                 } else {
-                    line.location_within(line.end_offset(), inner.source_info.source())
+                    line.location_within(line.end_offset(), source_info.source())
                 };
 
                 let start_column = start_of_line.column; //if is_whitespace_line { start_of_line.column.min(start.column)} else { start_of_line.column};

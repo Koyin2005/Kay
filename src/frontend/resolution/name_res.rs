@@ -2,19 +2,15 @@ use fxhash::FxHashSet;
 use indexmap::{IndexMap, map::Entry};
 
 use crate::{
-    Resolver,
     frontend::{
         ast::{
-            self, Ast, Block, Expr, ExprKind, FunctionDef, Item, ItemKind, NodeId, PathSegment,
-            Pattern, PatternKind, StmtKind, Type, TypeDef, TypeDefKind,
+            self, Ast, Block, Expr, ExprKind, FunctionDef, Item, ItemKind, Module, NodeId, PathSegment, Pattern, PatternKind, StmtKind, Type, TypeDef, TypeDefKind
         },
-        ast_visit::{Visitor, walk_ast, walk_block, walk_expr, walk_iterator, walk_pat, walk_type},
+        ast_visit::{walk_ast, walk_block, walk_expr, walk_iterator, walk_module, walk_pat, walk_type, Visitor},
         hir::{Builtin, DefId, DefKind, Definition, Resolution},
-    },
-    span::{
-        Span,
-        symbol::{Ident, Symbol, symbols},
-    },
+    }, span::{
+        symbol::{symbols, Ident, Symbol}, Span
+    }, Resolver
 };
 
 #[derive(Debug)]
@@ -27,6 +23,7 @@ struct Namespace {
 pub struct NameRes<'rsv, 'src> {
     resolver: &'rsv mut Resolver<'src>,
     scopes: Vec<ScopeData>,
+    current_module : Option<DefId>,
     namespaces: IndexMap<Definition, Namespace>,
 }
 
@@ -51,6 +48,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
         )];
         Self {
             resolver,
+            current_module : None,
             scopes: [root_scope].into_iter().collect(),
             namespaces: namespaces.into_iter().collect(),
         }
@@ -71,13 +69,17 @@ impl<'a, 'b> NameRes<'a, 'b> {
             .last_mut()
             .expect("There should always be at least 1 scope")
     }
-    fn create_item_binding(&mut self, name: Symbol, res: Resolution<NodeId>, span: Span) {
+    fn create_item_binding(&mut self, name: Symbol, def_id : DefId, span: Span) {
+        let kind = self.resolver.info[def_id].kind;
         match self.current_scope_mut().bindings.entry(name) {
             Entry::Occupied(_) => self
                 .resolver
                 .error(format!("Repeated item {}.", name.as_str()), span),
             Entry::Vacant(entry) => {
-                entry.insert(res);
+                entry.insert(Resolution::Def(def_id, kind));
+                if let Some(module) = self.current_module{
+                    self.namespaces[&Definition::Def(module)].children.push((name,Definition::Def(def_id)));
+                }
             }
         }
     }
@@ -176,7 +178,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                     return None;
                 }
                 Resolution::Builtin(builtin) => Definition::Builtin(builtin),
-                Resolution::Def(id, DefKind::Struct | DefKind::Variant) => Definition::Def(id),
+                Resolution::Def(id, DefKind::Struct | DefKind::Variant | DefKind::Module) => Definition::Def(id),
             };
             let Some(namespace) = self.namespaces.get(&definition) else {
                 self.resolver.error(
@@ -237,12 +239,15 @@ impl<'a, 'b> NameRes<'a, 'b> {
             }
         }
     }
+    pub(super) fn define_module(&mut self, module : &Module){
+        self.namespaces.insert(Definition::Def(self.expect_def_id(module.id)), Namespace { children: Vec::new() });
+    }
     pub(super) fn define_item(&mut self, item: &Item) {
         match item.kind {
             ItemKind::Function(ref function_def) => {
                 self.create_item_binding(
                     function_def.name.symbol,
-                    Resolution::Def(self.expect_def_id(function_def.id), DefKind::Function),
+                    self.expect_def_id(function_def.id),
                     function_def.name.span,
                 );
             }
@@ -250,13 +255,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 let def_id = self.expect_def_id(type_def.id);
                 self.create_item_binding(
                     type_def.name.symbol,
-                    Resolution::Def(
                         def_id,
-                        match type_def.kind {
-                            TypeDefKind::Struct(..) => DefKind::Struct,
-                            TypeDefKind::Variant(..) => DefKind::Variant,
-                        },
-                    ),
                     type_def.name.span,
                 );
                 match &type_def.kind {
@@ -416,10 +415,18 @@ impl Visitor for NameRes<'_, '_> {
         self.resolve_block(block);
     }
     fn visit_ast(&mut self, ast: &Ast) {
-        for item in ast.items.iter() {
-            self.define_item(item);
+        for module in ast.modules.iter() {
+            self.define_module(module);
         }
         walk_ast(self, ast);
+    }
+    fn visit_module(&mut self, module : &ast::Module) {
+        self.current_module = Some(self.expect_def_id(module.id));
+        for item in module.items.iter(){
+            self.define_item(item);
+        }
+        walk_module(self, module);
+        self.current_module = None;
     }
     fn visit_ty(&mut self, ty: &Type) {
         self.resolve_type(ty);
