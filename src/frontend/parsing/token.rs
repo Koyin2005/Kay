@@ -56,6 +56,7 @@ pub enum TokenKind {
     Is,
     Variant,
     Loop,
+    Import,
 
     Uint,
     Int,
