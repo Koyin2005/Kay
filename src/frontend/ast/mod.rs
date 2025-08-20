@@ -186,6 +186,7 @@ pub struct PathSegment {
 
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    Loop(Block),
     Tuple(Vec<Expr>),
     Block(Block),
     Match(Box<Expr>, Box<[MatchArm]>),

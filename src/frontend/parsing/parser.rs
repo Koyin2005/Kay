@@ -524,6 +524,13 @@ impl<'source> Parser<'source> {
             span: start_span.combined(end_span),
         })
     }
+    fn parse_loop(&mut self) -> ParseResult<Expr>{
+        let start_span = self.current_token.span;
+        self.advance();
+        let block = self.parse_block_with_end(start_span)?;
+        let span = block.span;
+        Ok(Expr { id: self.new_id(), kind: ExprKind::Loop(block), span })
+    }
     fn parse_expr_prefix(&mut self) -> ParseResult<Expr> {
         match self.current_token.kind {
             TokenKind::Literal(literal) => {
@@ -591,6 +598,9 @@ impl<'source> Parser<'source> {
                     kind: ExprKind::Return(expr.map(Box::new)),
                     span,
                 })
+            },
+            TokenKind::Loop => {
+                self.parse_loop()
             }
             _ => {
                 let Some(op) = self.unary_op() else {
@@ -711,6 +721,7 @@ impl<'source> Parser<'source> {
                 | ExprKind::While(..)
                 | ExprKind::For(..)
                 | ExprKind::Match(..)
+                | ExprKind::Loop(..)
         )
     }
     fn parse_expr_stmt(&mut self, in_block: Option<BlockKind>) -> ParseResult<Stmt> {

@@ -13,6 +13,12 @@ type B = {
     a : int,
     b : int
 }
+
+fun forever() = do
+    let a : () = loop
+        break 1
+    end;
+end
     
 fun how_many(x : NeverNotEvenOnce) -> int = match x with end
 fun favorite_color() -> Color = Color.Red
