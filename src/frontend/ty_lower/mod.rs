@@ -22,9 +22,9 @@ impl<'a> TypeLower<'a> {
             hir::Resolution::Builtin(builtin) => {
                 Type::new_nominal(hir::Definition::Builtin(builtin))
             }
-            hir::Resolution::Def(id, hir::DefKind::Struct | hir::DefKind::Variant) => {
-                Type::new_nominal(hir::Definition::Def(id))
-            }
+            hir::Resolution::Def(id, hir::DefKind::Struct | hir::DefKind::Variant| hir::DefKind::GenericParam) => {
+                self.ctxt.type_of(hir::Definition::Def(id)).skip_instantiate()
+            },
             hir::Resolution::Err => Type::Err,
             _ => return Err(NotAType),
         })

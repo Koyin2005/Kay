@@ -2,22 +2,17 @@ use fxhash::{FxHashMap, FxHashSet};
 use indexmap::{IndexMap, map::Entry};
 
 use crate::{
-    Resolver,
     frontend::{
         ast::{
-            self, Ast, Block, Expr, ExprKind, FunctionDef, Item, ItemKind, Module, NodeId,
-            PathSegment, Pattern, PatternKind, QualifiedName, StmtKind, Type, TypeDef, TypeDefKind,
+            self, Ast, Block, Expr, ExprKind, FunctionDef, GenericParams, Item, ItemKind, Module, NodeId, PathSegment, Pattern, PatternKind, QualifiedName, StmtKind, Type, TypeDef, TypeDefKind
         },
         ast_visit::{
-            Visitor, walk_ast, walk_block, walk_expr, walk_iterator, walk_module, walk_pat,
-            walk_type,
+            walk_ast, walk_block, walk_expr, walk_iterator, walk_module, walk_pat, walk_type, Visitor
         },
         hir::{Builtin, DefId, DefKind, Definition, Resolution},
-    },
-    span::{
-        Span,
-        symbol::{Ident, Symbol, symbols},
-    },
+    }, span::{
+        symbol::{symbols, Ident, Symbol}, Span
+    }, Resolver
 };
 #[derive(Debug, PartialEq, Eq)]
 enum ScopeKind {
@@ -232,7 +227,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
             let definition = match current {
                 Resolution::Variable(_) => return None,
                 Resolution::Err => return None,
-                Resolution::Def(_, DefKind::Field | DefKind::Function | DefKind::VariantCase) => {
+                Resolution::Def(_, DefKind::Field | DefKind::Function | DefKind::VariantCase | DefKind::GenericParam) => {
                     self.resolver.error(
                         format!(
                             "'{}' has no item '{}'.",
@@ -281,35 +276,44 @@ impl<'a, 'b> NameRes<'a, 'b> {
         self.resolver.resolutions.insert(id, current);
         Some(current)
     }
+    fn resolve_generics(&mut self, generics: Option<&GenericParams>){
+        for param in generics.as_slice().iter().map(|generics| generics.params.as_slice()).flatten(){
+            self.create_item_binding(param.name.symbol, Resolution::Def(self.expect_def_id(param.id), DefKind::GenericParam), param.name.span);
+        }
+    }
     fn resolve_type_def(&mut self, type_def: &TypeDef) {
-        match &type_def.kind {
+        self.in_scope(ScopeKind::Item, |this|{
+            this.resolve_generics(type_def.generics.as_ref());
+            match &type_def.kind {
             TypeDefKind::Struct(struct_def) => {
                 let mut seen_fields = FxHashSet::default();
                 for field in struct_def.fields.iter() {
                     if !seen_fields.insert(field.name.symbol) {
-                        self.resolver.error(
+                        this.resolver.error(
                             format!("Repeated field '{}'.", field.name.symbol.as_str()),
                             field.span,
                         );
                     }
-                    self.visit_ty(&field.ty);
+                    this.visit_ty(&field.ty);
                 }
             }
             TypeDefKind::Variant(variant_def) => {
                 let mut seen_cases = FxHashSet::default();
                 for case in variant_def.cases.iter() {
                     if !seen_cases.insert(case.name.symbol) {
-                        self.resolver.error(
+                        this.resolver.error(
                             format!("Repeated case '{}'.", case.name.symbol.as_str()),
                             case.span,
                         );
                     }
                     for field in case.fields.iter().flatten() {
-                        self.visit_ty(&field.ty);
+                        this.visit_ty(&field.ty);
                     }
                 }
             }
         }
+        });
+        
     }
     fn import_name(&mut self, id: NodeId, span: Span, name: &QualifiedName) {
         let import_name = name.tail.last().unwrap_or(&name.head).name;
@@ -494,6 +498,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
     fn resolve_function_def(&mut self, function_def: &FunctionDef) {
         //Scope for the function item
         self.in_scope(ScopeKind::Item, |this| {
+            this.resolve_generics(function_def.generics.as_ref());
             //Scope for the function parameters
             this.in_scope(ScopeKind::Normal, |this| {
                 let mut bindings = Vec::new();

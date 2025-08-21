@@ -76,7 +76,7 @@ impl<'diag> AstLower<'diag> {
     fn lower_path(&self, name: &ast::QualifiedName) -> hir::Path {
         hir::Path {
             id: self.next_hir_id(),
-            res: self.map_res(name.id).unwrap_or(hir::Resolution::Err),
+            res : self.map_res(name.id).unwrap_or(hir::Resolution::Err),
         }
     }
     fn lower_ty(&self, ty: &ast::Type) -> hir::Type {
@@ -600,6 +600,25 @@ impl<'diag> AstLower<'diag> {
             kind: hir::ExprKind::For(Box::new(pat), Box::new(iterator), Box::new(body)),
         }
     }
+    fn lower_generics(&mut self, generics: Option<&ast::GenericParams>) -> hir::Generics{
+        if let Some(generics) = generics{
+            hir::Generics{
+                span : generics.span,
+                params : generics.params.iter().map(|param|{
+                    hir::GenericParam{
+                        def_id : self.expect_def_id(param.id),
+                        name : param.name
+                    }
+                }).collect()
+            }
+        }
+        else{
+            hir::Generics{
+                span : Span::EMPTY,
+                params : Vec::new()
+            }
+        }
+    }
     fn lower_item(&mut self, item: &ast::Item) -> Option<(DefId, hir::Item)> {
         let span = item.span;
         let (id, kind) = match &item.kind {
@@ -654,6 +673,7 @@ impl<'diag> AstLower<'diag> {
                         id,
                         span,
                         kind,
+                        generics : self.lower_generics(type_def.generics.as_ref()),
                         name: type_def.name,
                     }),
                 )
@@ -680,6 +700,7 @@ impl<'diag> AstLower<'diag> {
                             function_def.params.iter().map(|param| &param.ty),
                             function_def.return_type.as_ref(),
                         ),
+                        generics : self.lower_generics(function_def.generics.as_ref()),
                         body_id,
                         span,
                     }),

@@ -6,7 +6,7 @@ use crate::{
     },
     indexvec::IndexVec,
     span::symbol::{Ident, Symbol},
-    types::{FieldIndex, GenericArg, Type, TypeScheme, VariantCaseIndex},
+    types::{self, FieldIndex, GenericArg, Type, TypeScheme, VariantCaseIndex},
 };
 use indexmap::IndexMap;
 use typed_arena::Arena;
@@ -45,11 +45,32 @@ impl TypeDef {
         }
     }
 }
+pub struct Generics{
+    pub owner : DefId,
+    pub params : Vec<hir::GenericParam>
+}
+impl Generics{
+    pub fn index_of(&self, param_name: Symbol) -> Option<u32>{
+        self.params.iter().position(|param|{
+            param.name.symbol == param_name
+        }).map(|param| param.try_into().expect("Should have less than u32::MAX generic params."))
+    }
+    pub fn expect_index(&self, param_name: Symbol) -> u32{
+        self.index_of(param_name).expect("This generic param should be here")
+    }
+    pub fn len(&self) -> u32{
+        self.params.len().try_into().expect("Should have less than u32::MAX generic params.")
+    }
+    pub fn as_args(&self) -> types::GenericArgs{
+        self.params.iter().enumerate().map(|(i,param)| GenericArg(Type::Generic(param.name.symbol, i.try_into().expect("Should have less than u32::MAX generic params.")))).collect()
+    }
+}
 pub enum NodeInfo<'hir> {
     Field(&'hir hir::StructField),
     VariantField(&'hir hir::VariantField),
     VariantCase(&'hir hir::VariantCase),
     Item(&'hir hir::Item),
+    GenericParam(&'hir hir::GenericParam)
 }
 pub type CtxtRef<'ctxt> = &'ctxt GlobalContext<'ctxt>;
 pub struct GlobalContext<'hir> {
@@ -57,6 +78,7 @@ pub struct GlobalContext<'hir> {
     diag: &'hir DiagnosticReporter,
     nodes: IndexMap<DefId, NodeInfo<'hir>>,
     type_def_arena: Arena<TypeDef>,
+    generics_arena : Arena<Generics>
 }
 
 impl<'hir> GlobalContext<'hir> {
@@ -70,6 +92,7 @@ impl<'hir> GlobalContext<'hir> {
             diag,
             nodes,
             type_def_arena: Arena::new(),
+            generics_arena : Arena::new(),
         }
     }
     pub fn diag<'a>(&'a self) -> &'a DiagnosticReporter
@@ -111,6 +134,7 @@ impl<'hir> GlobalContext<'hir> {
                     span: item.span,
                 },
             },
+            NodeInfo::GenericParam(param) => param.name
         }
     }
     pub fn kind(&self, id: DefId) -> DefKind {
@@ -128,8 +152,11 @@ impl<'hir> GlobalContext<'hir> {
                 | Builtin::OptionSomeField => 1,
                 Builtin::Println => 0,
             },
-            //Todo get this to handle generic user defined types
-            Definition::Def(_) => 0,
+            Definition::Def(def) => match self.kind(def) {
+                DefKind::VariantCase => self.generic_arg_count(self.expect_parent_of_def(def.into())),
+                DefKind::Field | DefKind::Module | DefKind::GenericParam  => 0,
+                DefKind::Struct | DefKind::Function | DefKind::Variant => self.generics_for(def).len()
+            }
         }
     }
     pub fn type_def(&self, def: Definition) -> &TypeDef {
@@ -245,39 +272,60 @@ impl<'hir> GlobalContext<'hir> {
         };
         case
     }
+    pub fn generics_for(&self, id: DefId) -> &Generics{
+        let generics = match &self.expect_item(id).kind{
+            hir::ItemKind::Function(function_def) => &function_def.generics,
+            hir::ItemKind::Module(_) => {
+                static GENERICS : &hir::Generics = &hir::Generics::empty();
+                GENERICS
+            },
+            hir::ItemKind::TypeDef(type_def) => &type_def.generics
+        };
+        self.generics_arena.alloc(Generics { owner: id, params: generics.params.iter().map(|param|{
+            *param
+        }).collect() })
+    }
     pub fn type_of(&self, def: Definition) -> TypeScheme {
         let ty_lower = TypeLower::new(self);
-        TypeScheme::new(
-            match def {
+        match def {
                 Definition::Builtin(builtin) => return self.type_of_builtin(builtin),
                 Definition::Def(id) => match self.nodes[&id] {
-                    NodeInfo::Field(field) => ty_lower.lower(&field.ty),
-                    NodeInfo::VariantField(field) => ty_lower.lower(&field.ty),
+                    NodeInfo::GenericParam(param) => {
+                        let generics = self.generics_for(self.expect_parent(id));
+                        let param_index = generics.expect_index(param.name.symbol);
+                        TypeScheme::new(Type::Generic(param.name.symbol,param_index),0)
+                    },
+                    NodeInfo::Field(field) => TypeScheme::new(ty_lower.lower(&field.ty),0),
+                    NodeInfo::VariantField(field) => TypeScheme::new(ty_lower.lower(&field.ty),0),
                     NodeInfo::VariantCase(case) => {
+                        let parent_id = self.expect_parent(case.id);
+                        let generics = self.generics_for(parent_id);
                         let variant_ty = self
-                            .type_of(self.expect_parent_of_def(case.id.into()))
+                            .type_of(parent_id.into())
                             .skip_instantiate();
                         if let Some(ref fields) = case.fields {
-                            Type::new_function(
+                            TypeScheme::new(Type::new_function(
                                 fields.iter().map(|field| ty_lower.lower(&field.ty)),
                                 variant_ty,
-                            )
+                            ),generics.len())
                         } else {
-                            variant_ty
+                            TypeScheme::new(variant_ty, generics.len())
                         }
                     }
-                    NodeInfo::Item(item) => match &item.kind {
-                        hir::ItemKind::Function(function) => {
-                            let (params, return_ty) = ty_lower.lower_function_sig(&function.sig);
-                            Type::new_function(params, return_ty)
-                        }
-                        hir::ItemKind::TypeDef(..) => Type::new_nominal(Definition::Def(id)),
-                        hir::ItemKind::Module(..) => Type::Err,
+                    NodeInfo::Item(item) => {
+                        let generics = self.generics_for(item.id);
+                        let ty = match &item.kind {
+                            hir::ItemKind::Function(function) => {
+                                let (params, return_ty) = ty_lower.lower_function_sig(&function.sig);
+                                Type::new_function(params, return_ty)
+                            }
+                            hir::ItemKind::TypeDef(..) => Type::new_nominal_with_args(Definition::Def(id),self.generics_for(id).as_args()),
+                            hir::ItemKind::Module(..) => Type::Err,
+                        };
+                        TypeScheme::new(ty, generics.len())
                     },
                 },
-            },
-            0,
-        )
+            }
     }
 
     pub fn expect_body_for(&self, id: DefId) -> &hir::Body {

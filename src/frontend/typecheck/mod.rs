@@ -567,6 +567,18 @@ impl<'ctxt> TypeCheck<'ctxt> {
                         .skip_instantiate(),
                     Some(1),
                 ),
+                Resolution::Def(id, _) => {
+                    let generic_count = self.context.generic_arg_count(id.into());
+                    if generic_count > 0  {
+                        Callee::Normal(self.context
+                        .type_of(id.into())
+                        .skip_instantiate(),
+                        Some(generic_count))
+                    }
+                    else{
+                        Callee::Normal(self.check_expr(callee, Expected::None), None)
+                    }
+                },
                 _ => Callee::Normal(self.check_expr(callee, Expected::None), None),
             },
             _ => Callee::Normal(self.check_expr(callee, Expected::None), None),
