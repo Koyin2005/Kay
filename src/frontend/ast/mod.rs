@@ -16,6 +16,7 @@ pub struct FunctionDef {
     pub id: NodeId,
     pub span: Span,
     pub name: Ident,
+    pub generics : Option<GenericParams>,
     pub params: Vec<Param>,
     pub return_type: Option<Type>,
     pub body: Box<Expr>,
@@ -134,6 +135,7 @@ pub struct TypeDef {
     pub id: NodeId,
     pub span: Span,
     pub name: Ident,
+    pub generics : Option<GenericParams>,
     pub kind: TypeDefKind,
 }
 #[derive(Clone, Debug)]
@@ -314,7 +316,17 @@ impl std::fmt::Display for NodeId {
         f.debug_tuple("NodeId").field(&self.0).finish()
     }
 }
-
+#[derive(Clone,Debug)]
+pub struct GenericParam{
+    pub id : NodeId,
+    pub name : Ident
+}
+#[derive(Clone,Debug)]
+pub struct GenericParams{
+    pub id : NodeId,
+    pub span : Span,
+    pub params : Vec<GenericParam>
+}
 pub struct Module {
     pub id: NodeId,
     pub name: Symbol,

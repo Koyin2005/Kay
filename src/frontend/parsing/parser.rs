@@ -1,23 +1,14 @@
 use std::{cell::Cell, vec};
 
 use crate::{
-    Lexer,
-    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
-    frontend::{
+    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
         ast::{
-            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, Item,
-            ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable,
-            NodeId, Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind,
-            Struct, StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind,
-            Variant, VariantCase, VariantField,
+            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, GenericParam, GenericParams, Item, ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase, VariantField
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    },
-    indexvec::Idx,
-    span::{
-        Span,
-        symbol::{Ident, Symbol},
-    },
+    }, indexvec::Idx, span::{
+        symbol::{Ident, Symbol}, Span
+    }, Lexer
 };
 #[derive(Clone, Copy)]
 enum BlockKind {
@@ -498,6 +489,11 @@ impl<'source> Parser<'source> {
                 | TokenKind::If
                 | TokenKind::While
                 | TokenKind::For
+                | TokenKind::LeftBracket
+                | TokenKind::Loop
+                | TokenKind::Ref
+                | TokenKind::Match
+                | TokenKind::Wildcard
         )
     }
     fn parse_optional_expr(&mut self) -> Option<ParseResult<Expr>> {
@@ -1187,6 +1183,7 @@ impl<'source> Parser<'source> {
         self.advance();
 
         let function_name = self.expect_ident("Expected a function name")?;
+        let generic_params = self.parse_optional_generic_params()?;
         let _ = self.expect(TokenKind::LeftParen, "Expected '(' after 'function' name.");
         let params = self
             .parse_delimited_by(TokenKind::RightParen, Self::parse_fun_param)?
@@ -1208,6 +1205,7 @@ impl<'source> Parser<'source> {
             span,
             name: function_name,
             params,
+            generics : generic_params,
             body: Box::new(body),
             return_type,
         })
@@ -1216,6 +1214,7 @@ impl<'source> Parser<'source> {
         let start_span = self.current_token.span;
         self.advance();
         let name = self.expect_ident("Expect a valid type name.")?;
+        let generic_params = self.parse_optional_generic_params()?;
         let (end_span, kind) = if self.matches_current(TokenKind::Equals) {
             match self.current_token.kind {
                 TokenKind::LeftBrace => {
@@ -1259,6 +1258,7 @@ impl<'source> Parser<'source> {
             id: self.new_id(),
             span,
             name,
+            generics : generic_params,
             kind,
         })
     }
@@ -1266,6 +1266,22 @@ impl<'source> Parser<'source> {
         let path = self.parse_qual_name()?;
         let _ = self.expect(TokenKind::Semicolon, "Expected ';' at end of 'import'.");
         Ok(path)
+    }
+    fn parse_optional_generic_params(&mut self) -> ParseResult<Option<GenericParams>>{
+        self.check(TokenKind::LeftBracket).then(||{
+            self.parse_generic_params()
+        }).transpose()
+    }
+    fn parse_generic_params(&mut self) -> ParseResult<GenericParams>{
+        let start_span = self.current_token.span;
+        self.advance();
+        let params = Vec::from(self.parse_delimited_by(TokenKind::RightBracket, |this|{
+            let name = this.expect_ident("Expected a type param.")?;
+            Ok(GenericParam{id : this.new_id(), name})
+        })?);
+        let end_span = self.current_token.span;
+        let _ = self.expect(TokenKind::RightBracket, "Expected a ']' at the end of generic parameters.");
+        Ok(GenericParams { id: self.new_id(), span: start_span.combined(end_span), params })
     }
     fn try_parse_item(&mut self) -> Option<ParseResult<Item>> {
         Some(Ok(match self.current_token.kind {
