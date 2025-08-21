@@ -40,8 +40,17 @@ impl TypeInfer {
         match (ty, other) {
             (Type::Generic(_, _), Type::Generic(_, _)) => None,
             (Type::Generic(_, index), ty) | (ty, Type::Generic(_, index)) => {
-                self.vars[*index as usize] = Some(ty.clone());
-                Some(ty.clone())
+                let curr_ty = &mut self.vars[*index as usize];
+                if let Some(curr_ty) = curr_ty  && curr_ty == ty{
+                    Some(curr_ty.clone())
+                }
+                else if curr_ty.is_some(){
+                    None
+                }
+                else {
+                    *curr_ty = Some(ty.clone());
+                    Some(ty.clone())
+                }
             }
             (Type::Array(element), Type::Array(other_element)) => {
                 Some(Type::new_array(self.unify(element, other_element)?))

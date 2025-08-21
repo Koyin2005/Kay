@@ -107,7 +107,6 @@ fn main() {
             return;
         }
     };
-
     let mut next_id = NodeId::FIRST;
     let modules = source_files
         .get_source_files()
