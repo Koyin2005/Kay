@@ -80,6 +80,7 @@ pub fn walk_item(visitor: &mut impl Visitor, item: &Item) {
                 }
             }
         },
+        ItemKind::Import(_) => ()
     }
 }
 pub fn walk_pat(visitor: &mut impl Visitor, pat: &Pattern) {

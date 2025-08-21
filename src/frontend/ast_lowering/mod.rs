@@ -189,8 +189,8 @@ impl<'diag> AstLower<'diag> {
             )),
         }
     }
-    fn lower_stmt(&mut self, stmt: &ast::Stmt) -> hir::Stmt {
-        hir::Stmt {
+    fn lower_stmt(&mut self, stmt: &ast::Stmt) -> Option<hir::Stmt> {
+        Some(hir::Stmt {
             id: self.next_hir_id(),
             span: stmt.span,
             kind: match stmt.kind {
@@ -199,7 +199,7 @@ impl<'diag> AstLower<'diag> {
                     hir::StmtKind::ExprWithSemi(self.lower_expr(expr))
                 }
                 ast::StmtKind::Item(ref item) => {
-                    let (id, item) = self.lower_item(item);
+                    let (id, item) = self.lower_item(item)?;
                     self.items.insert(id, item);
                     hir::StmtKind::Item(id)
                 }
@@ -209,7 +209,7 @@ impl<'diag> AstLower<'diag> {
                     Box::new(self.lower_expr(expr)),
                 ),
             },
-        }
+        })
     }
     fn lower_block_expr(&mut self, block: &ast::Block) -> hir::Expr {
         hir::Expr {
@@ -265,7 +265,7 @@ impl<'diag> AstLower<'diag> {
         let mut stmts: Vec<_> = block
             .stmts
             .iter()
-            .map(|stmt| self.lower_stmt(stmt))
+            .filter_map(|stmt| self.lower_stmt(stmt))
             .collect();
         let expr = stmts
             .pop_if(|stmt| matches!(stmt.kind, hir::StmtKind::Expr(_)))
@@ -600,7 +600,7 @@ impl<'diag> AstLower<'diag> {
             kind: hir::ExprKind::For(Box::new(pat), Box::new(iterator), Box::new(body)),
         }
     }
-    fn lower_item(&mut self, item: &ast::Item) -> (DefId, hir::Item) {
+    fn lower_item(&mut self, item: &ast::Item) -> Option<(DefId, hir::Item)> {
         let span = item.span;
         let (id, kind) = match &item.kind {
             ItemKind::Type(type_def) => {
@@ -684,9 +684,10 @@ impl<'diag> AstLower<'diag> {
                         span,
                     }),
                 )
-            }
+            },
+            ItemKind::Import(..) => return None
         };
-        (id, hir::Item { id, kind })
+        Some((id, hir::Item { id, kind }))
     }
     pub fn lower_ast(mut self, ast: &ast::Ast) -> Hir {
         let items = ast
@@ -694,7 +695,7 @@ impl<'diag> AstLower<'diag> {
             .iter()
             .map(|module| module.items.iter())
             .flatten()
-            .map(|item| self.lower_item(item))
+            .filter_map(|item| self.lower_item(item))
             .collect::<Vec<_>>();
         self.items.extend(items);
         self.diag.emit();

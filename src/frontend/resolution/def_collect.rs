@@ -21,7 +21,7 @@ impl<'a, 'b> DefCollector<'a, 'b> {
             .node_ids_to_defs
             .insert(id, next_id)
             .ok_or(())
-            .expect_err("There should be only 1 def-id for each stmt.");
+            .expect_err("There should be only 1 def-id for each definition.");
         next_id
     }
     pub fn collect(mut self, ast: &Ast) {
@@ -68,9 +68,11 @@ impl Visitor for DefCollector<'_, '_> {
                         }
                     }
                 }
-            }
+            },
+            ItemKind::Import(_) => ()
         }
-
+        let old_module = std::mem::replace(&mut self.current_module, None);
         walk_item(self, item);
+        self.current_module = old_module;
     }
 }

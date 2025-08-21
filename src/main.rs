@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use pl5::{
-    config::{Config, ConfigError, PathKind, KAE_EXTENSION}, errors::DiagnosticReporter, Ast, AstLower, ItemCollect, Lexer, Parser, Resolver, SourceFiles, TypeCheck
+    config::{Config, ConfigError, PathKind, KAE_EXTENSION}, errors::DiagnosticReporter, Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, TypeCheck
 };
 
 enum SourceError {
@@ -92,12 +92,16 @@ fn main() {
         }
     };
 
+    let mut next_id = NodeId::FIRST;
     let modules = source_files.get_source_files().iter().enumerate().filter_map(|(file_index,source_file)|{
         let file_index = file_index.try_into().ok()?;
         let lexer = Lexer::new(&source_file,file_index);
         let parse_diagnostics = DiagnosticReporter::new(source_files.clone());
-        let parser = Parser::new(source_file.name(),lexer, parse_diagnostics);
-        parser.parse().ok()
+        let parser = Parser::new(source_file.name(),lexer, parse_diagnostics,next_id);
+        parser.parse().ok().map(|module|{
+            next_id = module.id;
+            module
+        })
     });
     let ast = Ast{ modules: modules.collect()};
     let name_res_diagnostics = DiagnosticReporter::new(source_files.clone());

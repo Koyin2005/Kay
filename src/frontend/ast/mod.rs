@@ -145,6 +145,7 @@ pub enum TypeDefKind {
 pub enum ItemKind {
     Function(FunctionDef),
     Type(TypeDef),
+    Import(QualifiedName)
 }
 #[derive(Clone, Debug, Copy)]
 pub enum LiteralKind {
@@ -304,6 +305,9 @@ define_id! {
 
     }
 }
+impl NodeId{
+    pub const FIRST : Self = NodeId(0);
+}
 
 impl std::fmt::Display for NodeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -315,6 +319,7 @@ pub struct Module {
     pub id : NodeId,
     pub name : Symbol,
     pub items: Vec<Item>,
+    pub span : Span,
 }
 
 pub struct Ast{

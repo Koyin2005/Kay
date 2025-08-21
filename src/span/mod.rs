@@ -297,7 +297,7 @@ impl SourceFiles {
             .into_iter()
             .map(|(mut name,source)| {
                 if let Some(index) = name.find(|c| c == '.'){
-                    name.drain(0..index);
+                    name.drain(index..);
                 };
                 SourceInfo::new(name,source)
             })
