@@ -113,6 +113,9 @@ macro_rules! define_id {
                 assert!(index < u32::MAX as usize, "Index too big");
                 Self(index as u32)
             }
+            pub fn plus(self, by: u32) -> Self{
+                Self::new(self.0 as usize + by as usize)
+            }
         }
     };
 }

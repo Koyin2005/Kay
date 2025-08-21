@@ -58,33 +58,31 @@ enum Callee {
 }
 pub struct TypeCheck<'ctxt> {
     context: CtxtRef<'ctxt>,
-    id: DefId,
     body: &'ctxt Body,
-    return_type: Option<Type>,
+    param_types : Vec<Type>,
+    return_type : Type,
     loop_expectation: RefCell<Option<Type>>,
     locals: RefCell<FxHashMap<HirId, LocalInfo>>,
     types: RefCell<FxHashMap<HirId, Type>>,
-    spans: RefCell<FxHashMap<HirId, Span>>,
 }
 impl<'ctxt> TypeCheck<'ctxt> {
     pub fn new(context: CtxtRef<'ctxt>, id: DefId) -> Option<Self> {
         let body = context.get_body_for(id)?;
+        let (params, return_ty) = context.signature_of(id);
         Some(Self {
             context,
-            spans: RefCell::new(FxHashMap::default()),
-            id,
             body,
-            return_type: None,
+            param_types : params,
+            return_type : return_ty,
             loop_expectation: RefCell::new(None),
             locals: RefCell::new(FxHashMap::default()),
             types: RefCell::new(FxHashMap::default()),
         })
     }
-    fn write_type(&self, id: HirId, ty: Type, span: Span) {
+    fn write_type(&self, id: HirId, ty: Type) {
         self.types.borrow_mut().insert(id, ty);
-        self.spans.borrow_mut().insert(id, span);
     }
-    fn local_ty(&self, id: HirId) -> Type {
+    fn local_ty(&self, id: HirId) -> Type{
         self.locals.borrow()[&id].ty.clone()
     }
     fn err(&self, msg: impl IntoDiagnosticMessage, span: Span) -> Type {
@@ -338,7 +336,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         else_branch: Option<&Expr>,
         expected_ty: Expected,
     ) -> Type {
-        let _ = self.check_expr(condition, Expected::HasType(&Type::new_bool()));
+        self.check_expr(condition, Expected::HasType(&Type::new_bool()));
         let then_branch = self.check_expr(then_branch, expected_ty);
         if let Some(else_branch) = else_branch {
             let else_branch = self.check_expr(else_branch, expected_ty);
@@ -389,39 +387,36 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
     }
     fn check_path(&self, path: &hir::Path, expected_ty: Expected, span: Span) -> Type {
-        match path.res {
-            hir::Resolution::Builtin(builtin) => match builtin {
-                Builtin::Println => self.err(
+        let def = match path.res {
+            hir::Resolution::Builtin(builtin @ Builtin::Println) => {
+                return self.err(
                     format!("Cannot use '{}' without parameters.", builtin.as_str()),
                     span,
-                ),
-                Builtin::Option => {
-                    self.err(format!("Cannot use '{}' as value.", builtin.as_str()), span)
-                }
-                _ => self.check_generic_def(
-                    1,
-                    Definition::Builtin(builtin),
-                    span,
-                    expected_ty.as_option_ty(),
-                ),
-            },
-            hir::Resolution::Variable(id) => self.local_ty(id),
-            hir::Resolution::Err => Type::Err,
+                );
+            }
+            hir::Resolution::Builtin(builtin @ (Builtin::Option|Builtin::OptionSomeField)) => {
+                return self.err(format!("Cannot use '{}' as value.", builtin.as_str()), span);
+            }
+            hir::Resolution::Err => return Type::Err,
             hir::Resolution::Def(
                 id,
                 kind @ (DefKind::Field | DefKind::Module | DefKind::Struct | DefKind::Variant),
-            ) => self.err(
-                format!(
-                    "Cannot use {} '{}' as value.",
-                    kind.as_str(),
-                    self.context.ident(id).symbol.as_str()
-                ),
-                span,
-            ),
-            hir::Resolution::Def(id, _) => {
-                self.check_generic_def(1, Definition::Def(id), span, expected_ty.as_option_ty())
-            }
-        }
+            ) => {
+                return self.err(
+                    format!(
+                        "Cannot use {} '{}' as value.",
+                        kind.as_str(),
+                        self.context.ident(id).symbol.as_str()
+                    ),
+                    span,
+                );
+            },
+            hir::Resolution::Variable(var) => return self.local_ty(var),
+            hir::Resolution::Builtin(builtin @ (Builtin::OptionSome | Builtin::OptionNone)) => hir::Definition::Builtin(builtin),
+            hir::Resolution::Def(id, _) => hir::Definition::Def(id),
+        };
+        let generic_count = self.context.generic_arg_count(def);
+        self.check_generic_def(generic_count, def, span, expected_ty.as_option_ty())
     }
     fn check_loop(&self, body: &Block, expected_ty: Expected, loop_source: LoopSource) -> Type {
         let old_ty = std::mem::replace(
@@ -432,7 +427,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 expected_ty.as_option_ty().cloned()
             },
         );
-        let _ = self.check_block(body, Expected::None);
+        self.check_block(body, Expected::HasType(&Type::new_unit()));
         let current_ty = std::mem::replace(&mut *self.loop_expectation.borrow_mut(), old_ty);
         if let LoopSource::Explicit = loop_source {
             current_ty.unwrap_or_else(Type::new_never)
@@ -492,7 +487,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         if !self.is_valid_assign_target(lhs) {
             self.err("Invalid assingment target.", lhs.span);
         }
-        let _ = self.check_expr(rhs, Expected::CoercesTo(&lhs_ty));
+        self.check_expr(rhs, Expected::CoercesTo(&lhs_ty));
         Type::new_unit()
     }
     fn check_init(
@@ -648,27 +643,28 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 .or(return_ty.cloned())
                 .unwrap_or(Type::Err)
         };
-
-        if infer_ctxt.is_some_and(TypeInfer::completed) {
+        //Error on type inference not complete
+        if infer_ctxt.is_some_and(|infer| !infer.completed()) {
             self.err("Cannot infer args of generic function.", span);
         }
         return_ty
     }
     fn check_return(&self, returned_expr: Option<&Expr>) -> Type {
-        let return_ty = self
-            .return_type
-            .as_ref()
-            .expect("There should be a return type when we type check");
         if let Some(expr) = returned_expr {
-            self.check_expr(expr, Expected::CoercesTo(return_ty));
+            self.check_expr(expr, Expected::CoercesTo(&self.return_type));
         }
         Type::new_never()
     }
     fn check_for(&self, pat: &Pattern, iterator: &hir::Iterator, body: &Block) -> Type {
         let item_ty = match iterator {
             hir::Iterator::Expr(expr) => {
-                let _ = self.check_expr(expr, Expected::None);
-                None
+                match self.check_expr(expr, Expected::None) {
+                    Type::Array(elem) => Some(*elem),
+                    ty => {
+                        self.err(format!("Cannot iterate with {}.",self.format_ty(&ty)), expr.span);
+                        None
+                    }
+                }
             }
             hir::Iterator::Ranged(span, start, end) => {
                 let start = self.check_expr(start, Expected::None);
@@ -696,17 +692,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 }
             }
         };
-        let _ = self.check_pattern(pat, Some(item_ty.as_ref().unwrap_or(&Type::Err)));
-        let block_ty = self.check_block(body, Expected::CoercesTo(&Type::new_unit()));
-        if !block_ty.has_error() && block_ty != Type::new_unit() {
-            self.err(
-                format!(
-                    "Expected '()' for 'for' body got '{}'.",
-                    block_ty.format(self.context)
-                ),
-                body.span,
-            );
-        }
+        self.check_pattern(pat, Some(item_ty.as_ref().unwrap_or(&Type::Err)));
+        self.check_block(body, Expected::CoercesTo(&Type::new_unit()));
         Type::new_unit()
     }
     ///Computes a type that both a and b can be coerced to.
@@ -767,7 +754,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             body,
         } in arms
         {
-            let _ = self.check_pattern(pat, Some(&scrut_ty));
+            self.check_pattern(pat, Some(&scrut_ty));
             let body_ty = self.check_expr(body, expected_ty);
             if let Some(ref mut combined_ty) = combined_ty {
                 if let Some(common_ty) = self.coercion_lub(&body_ty, combined_ty) {
@@ -903,7 +890,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             ExprKind::For(pat, iter, body) => self.check_for(pat, iter, body),
             ExprKind::Err => Type::Err,
         };
-        self.write_type(expr.id, ty.clone(), expr.span);
+        self.write_type(expr.id, ty.clone());
         match expected_ty {
             Expected::None => ty,
             Expected::CoercesTo(target) => self.coerce(&ty, target, expr.span),
@@ -1056,7 +1043,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 Type::new_ref(ty, is_mutable.copied().unwrap_or(IsMutable::No))
             }
         };
-        self.write_type(pat.id, ty.clone(), pat.span);
+        self.write_type(pat.id, ty.clone());
         if !ty.has_error()
             && let Some(expected_ty) = expected_ty
         {
@@ -1065,12 +1052,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
             ty
         }
     }
-    pub fn check(mut self) {
-        let (params, return_ty) = self.context.signature_of(self.id);
-        self.return_type = Some(return_ty.clone());
-        for (param, ty) in self.body.params.iter().zip(params) {
+    pub fn check(self) {
+        for (param, ty) in self.body.params.iter().zip(self.param_types.iter()) {
             self.check_pattern(&param.pat, Some(&ty));
         }
-        self.check_expr(&self.body.value, Expected::CoercesTo(&return_ty));
+        self.check_expr(&self.body.value, Expected::CoercesTo(&self.return_type));
     }
 }

@@ -1,6 +1,3 @@
-import test2.f;
-fun hello() = do 
-    f();
+fun main() = do
+    println("Hello world!");
 end
-
-type A = | C | D | E;

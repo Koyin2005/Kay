@@ -26,13 +26,12 @@ fn get_source(config: &Config) -> Result<Box<[(String, String)]>, SourceError> {
                             .next()
                             .expect("Already checked if it has it.");
                         !file_name.chars().all(|c| c == '_')
-                            &&
-                            file_name.char_indices()
-                            .all(|(i,c)| if i == 0{
-                                c.is_ascii_alphabetic() || c == '_'
-                            }
-                            else{
-                                c.is_ascii_alphanumeric() || c == '_'
+                            && file_name.char_indices().all(|(i, c)| {
+                                if i == 0 {
+                                    c.is_ascii_alphabetic() || c == '_'
+                                } else {
+                                    c.is_ascii_alphanumeric() || c == '_'
+                                }
                             })
                     })
                 {
@@ -120,7 +119,7 @@ fn main() {
             let parse_diagnostics = DiagnosticReporter::new(source_files.clone());
             let parser = Parser::new(source_file.name(), lexer, parse_diagnostics, next_id);
             parser.parse().ok().inspect(|module| {
-                next_id = module.id;
+                next_id = module.id.plus(1);
             })
         });
     let ast = Ast {

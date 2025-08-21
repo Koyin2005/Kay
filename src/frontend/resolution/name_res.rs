@@ -318,7 +318,10 @@ impl<'a, 'b> NameRes<'a, 'b> {
             let res = match res {
                 Resolution::Def(
                     id,
-                    kind @ (DefKind::Struct | DefKind::Variant | DefKind::Function | DefKind::Module) ,
+                    kind @ (DefKind::Struct
+                    | DefKind::Variant
+                    | DefKind::Function
+                    | DefKind::Module),
                 ) => Resolution::Def(id, kind),
                 Resolution::Builtin(builtin) => Resolution::Builtin(builtin),
                 Resolution::Err => Resolution::Err,

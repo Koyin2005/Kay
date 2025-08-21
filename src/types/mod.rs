@@ -276,7 +276,6 @@ impl TypeScheme {
     }
     ///Replaces all generic parameters using generic arguments
     pub fn instantiate(self, args: GenericArgs) -> Type {
-        assert_eq!(args.len() as u32, self.arg_count);
         if self.arg_count == 0 {
             return self.ty;
         }
@@ -288,7 +287,7 @@ impl TypeScheme {
             type Error = InfallibleMap;
             fn map_ty(&self, ty: &Type) -> Result<Type, InfallibleMap> {
                 if let &Type::Generic(_, index) = ty {
-                    Ok(self.args[index as usize].clone())
+                    Ok(self.args.get(index as usize).cloned().unwrap_or(Type::Err))
                 } else {
                     super_map_ty(self, ty)
                 }
