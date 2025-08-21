@@ -266,7 +266,11 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 })
             }) else {
                 self.resolver.error(
-                    format!("'type' has no item '{}'.", next_seg.name.symbol.as_str()),
+                    format!(
+                        "'{}' has no item '{}'.",
+                        current.as_str(),
+                        next_seg.name.symbol.as_str()
+                    ),
                     next_seg.span,
                 );
                 return None;

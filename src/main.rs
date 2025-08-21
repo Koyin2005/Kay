@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use pl5::{
     Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, TypeCheck,
-    config::{Config, ConfigError, KAE_EXTENSION, PathKind},
+    config::{Config, ConfigError, KAE_EXTENSION, KAE_EXTENSION_WITH_DOT, PathKind},
     errors::DiagnosticReporter,
 };
 
@@ -18,7 +18,23 @@ fn get_source(config: &Config) -> Result<Box<[(String, String)]>, SourceError> {
                 let path = entry.path();
                 if path
                     .extension()
-                    .is_some_and(|ext| ext.to_string_lossy().ends_with(KAE_EXTENSION))
+                    .is_some_and(|ext| ext.to_string_lossy().matches(KAE_EXTENSION).any(|_| true))
+                    && path.file_name().is_some_and(|name| {
+                        let name = name.to_string_lossy().into_owned();
+                        let mut with_no_extensions = name.split_terminator(KAE_EXTENSION_WITH_DOT);
+                        let file_name = with_no_extensions
+                            .next()
+                            .expect("Already checked if it has it.");
+                        !file_name.chars().all(|c| c == '_')
+                            &&
+                            file_name.char_indices()
+                            .all(|(i,c)| if i == 0{
+                                c.is_ascii_alphabetic() || c == '_'
+                            }
+                            else{
+                                c.is_ascii_alphanumeric() || c == '_'
+                            })
+                    })
                 {
                     read_file_source(&entry.path().to_string_lossy())
                         .map(|src| (entry.file_name().to_string_lossy().into_owned(), src))

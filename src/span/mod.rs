@@ -8,6 +8,8 @@ use std::{
 
 use indexmap::IndexSet;
 
+use crate::config::KAE_EXTENSION;
+
 pub mod symbol;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
@@ -298,7 +300,10 @@ impl SourceFiles {
         sources
             .into_iter()
             .map(|(mut name, source)| {
-                if let Some(index) = name.find('.') {
+                if let Some(index) = name
+                    .rfind(KAE_EXTENSION)
+                    .and_then(|x| usize::checked_sub(x, 1))
+                {
                     name.drain(index..);
                 };
                 SourceInfo::new(name, source)

@@ -407,6 +407,17 @@ impl<'ctxt> TypeCheck<'ctxt> {
             },
             hir::Resolution::Variable(id) => self.local_ty(id),
             hir::Resolution::Err => Type::Err,
+            hir::Resolution::Def(
+                id,
+                kind @ (DefKind::Field | DefKind::Module | DefKind::Struct | DefKind::Variant),
+            ) => self.err(
+                format!(
+                    "Cannot use {} '{}' as value.",
+                    kind.as_str(),
+                    self.context.ident(id).symbol.as_str()
+                ),
+                span,
+            ),
             hir::Resolution::Def(id, _) => {
                 self.check_generic_def(1, Definition::Def(id), span, expected_ty.as_option_ty())
             }

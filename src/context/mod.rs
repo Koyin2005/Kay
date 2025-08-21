@@ -99,13 +99,17 @@ impl<'hir> GlobalContext<'hir> {
         }
     }
     pub fn ident(&self, id: DefId) -> Ident {
-        let item = self.expect_item(id);
-        match &item.kind {
-            hir::ItemKind::Function(function) => function.name,
-            hir::ItemKind::TypeDef(ty) => ty.name,
-            hir::ItemKind::Module(name) => Ident {
-                symbol: *name,
-                span: item.span,
+        match &self.nodes[&id] {
+            NodeInfo::Field(field) => field.name,
+            NodeInfo::VariantCase(case) => case.name,
+            NodeInfo::VariantField(_) => unreachable!("This can't be accessed"),
+            NodeInfo::Item(item) => match &item.kind {
+                hir::ItemKind::Function(function) => function.name,
+                hir::ItemKind::TypeDef(ty) => ty.name,
+                hir::ItemKind::Module(name) => Ident {
+                    symbol: *name,
+                    span: item.span,
+                },
             },
         }
     }

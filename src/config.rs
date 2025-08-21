@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 pub const KAE_EXTENSION: &str = "k";
+pub const KAE_EXTENSION_WITH_DOT: &str = ".k";
 pub enum ConfigError {
     ExpectedArgs { expected: usize, got: usize },
     InvalidFile,

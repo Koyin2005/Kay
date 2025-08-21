@@ -1,12 +1,11 @@
-
+import test.hello;
+import test.testy.hey;
 fun f() = do
-    import test.hello;
+    hey();
     println("Hi from test2!");
     hello();
 end
 
 fun h() = do 
-    let a = test;
-    let a = 5;
-    fun x(a:int) = println(a)
+    hello();
 end
