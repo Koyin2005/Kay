@@ -94,6 +94,25 @@ impl Type {
     pub fn format(&self, ctxt: CtxtRef) -> String {
         TypeFormat::new(ctxt).format_type(self)
     }
+    pub fn has_infer(&self) -> bool {
+        struct HasInfer {
+            found: bool,
+        }
+        impl TypeVisitor for HasInfer {
+            fn visit_ty(&mut self, ty: &Type) {
+                if self.found {
+                    return;
+                }
+                if let Type::Infer(_) = ty {
+                    self.found = true;
+                }
+                walk_ty(self, ty);
+            }
+        }
+        let mut has_error = HasInfer { found: false };
+        has_error.visit_ty(self);
+        has_error.found
+    }
     pub fn has_error(&self) -> bool {
         struct HasError {
             found: bool,

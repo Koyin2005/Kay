@@ -126,10 +126,8 @@ fn main() {
     };
     let name_res_diagnostics = DiagnosticReporter::new(source_files.clone());
     let results = Resolver::new(&name_res_diagnostics).resolve(&ast);
-
     let ast_lower_diagnostics = DiagnosticReporter::new(source_files.clone());
     let hir = AstLower::new(results, &ast_lower_diagnostics).lower_ast(&ast);
-
     let global_diagnostics = DiagnosticReporter::new(source_files.clone());
     let context = ItemCollect::new(&global_diagnostics).collect(&hir);
     let context_ref = &context;

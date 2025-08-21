@@ -293,6 +293,7 @@ pub enum TypeKind {
     Uint,
     Never,
     String,
+    Underscore,
     Variant(Box<Variant>),
     Struct(Box<Struct>),
     Array(Box<Type>),

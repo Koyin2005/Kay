@@ -1,0 +1,3 @@
+type Option[T] = 
+    | Some(T)
+    | None

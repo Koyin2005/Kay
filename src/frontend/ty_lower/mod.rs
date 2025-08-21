@@ -55,6 +55,16 @@ impl<'a> TypeLower<'a> {
     }
     pub fn lower(&self, ty: &hir::Type) -> Type {
         match &ty.kind {
+            hir::TypeKind::Infer => {
+                if let Some(infer) = self.infer {
+                    Type::Infer(infer.new_var(ty.span))
+                } else {
+                    self.ctxt
+                        .diag()
+                        .emit_diag("Cannot infer generic parameters.", ty.span);
+                    Type::Err
+                }
+            }
             hir::TypeKind::Array(element_ty) => Type::new_array(self.lower(element_ty)),
             &hir::TypeKind::Ref(mutable, ref ty) => Type::new_ref(self.lower(ty), mutable.into()),
             hir::TypeKind::Tuple(elements) => {

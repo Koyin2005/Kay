@@ -235,6 +235,7 @@ pub struct VariantTypeCase {
 pub enum TypeKind {
     Tuple(Vec<Type>),
     Path(Path),
+    Infer,
     Variant(Vec<VariantTypeCase>),
     Struct(Vec<StructTypeField>),
     Array(Box<Type>),

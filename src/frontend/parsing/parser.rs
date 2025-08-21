@@ -1025,6 +1025,10 @@ impl<'source> Parser<'source> {
                 self.advance();
                 (TypeKind::Int, start_span)
             }
+            TokenKind::Wildcard => {
+                self.advance();
+                (TypeKind::Underscore, start_span)
+            }
             TokenKind::Bool => {
                 self.advance();
                 (TypeKind::Bool, start_span)

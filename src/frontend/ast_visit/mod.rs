@@ -100,6 +100,7 @@ pub fn walk_block(visitor: &mut impl Visitor, block: &Block) {
 }
 pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
     match &ty.kind {
+        TypeKind::Underscore => (),
         TypeKind::Array(element) => visitor.visit_ty(element),
         TypeKind::Fun(params, return_ty) => params
             .iter()

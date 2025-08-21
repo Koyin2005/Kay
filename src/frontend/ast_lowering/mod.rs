@@ -84,6 +84,7 @@ impl<'diag> AstLower<'diag> {
             id: self.next_hir_id(),
             span: ty.span,
             kind: match &ty.kind {
+                ast::TypeKind::Underscore => hir::TypeKind::Infer,
                 ast::TypeKind::Grouped(grouped_ty) => {
                     return {
                         let mut lowered_ty = self.lower_ty(grouped_ty);

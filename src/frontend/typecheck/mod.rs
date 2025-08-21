@@ -12,16 +12,16 @@ use crate::{
             HirId, IntType, LoopSource, MatchArm, OutsideLoop, Path, Pattern, PatternKind,
             PrimitiveType, Resolution, Stmt, StmtKind,
         },
-        ty_infer::TypeInfer,
+        ty_infer::{InferError, TypeInfer},
         ty_lower::TypeLower,
     },
     span::{
         Span,
         symbol::{Ident, Symbol},
     },
-    types::{GenericArg, GenericArgs, IsMutable, Type},
+    types::{GenericArg, GenericArgs, IsMutable, Type, TypeVisitor},
 };
-struct CoerceError;
+struct CoerceError(InferError);
 #[derive(Clone, Copy)]
 enum Expected<'a> {
     HasType(&'a Type),
@@ -105,11 +105,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
     }
     fn format_ty(&self, ty: &Type) -> String {
-        self.infer
-            .normalize(ty)
-            .as_ref()
-            .unwrap_or(ty)
-            .format(self.context)
+        (&self.infer.normalize(ty)).format(self.context)
     }
     fn diag<'a>(&'a self) -> &'a DiagnosticReporter
     where
@@ -669,7 +665,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     ///Computes a type that both a and b can be coerced to.
     fn coercion_lub(&self, a: &Type, b: &Type) -> Option<Type> {
-        if let Some(ty) = self.infer.unify(a, b) {
+        if let Ok(ty) = self.infer.unify(a, b) {
             return Some(ty);
         }
         match (a, b) {
@@ -683,12 +679,12 @@ impl<'ctxt> TypeCheck<'ctxt> {
             (ty, target) if ty == target => ty.clone(),
             (Type::Primitive(PrimitiveType::Never), target) => target.clone(),
             (ty, target) => {
-                if let Some(ty) = self.infer.unify(ty, target) {
-                    ty
-                } else if !ty.has_error() && !target.has_error() {
-                    return Err(CoerceError);
-                } else {
-                    Type::Err
+                match self.infer.unify(ty, target){
+                    Ok(ty) => ty,
+                    Err(err) => match err {
+                        _ if ty.has_error() && target.has_error() => Type::Err,
+                        err => return Err(CoerceError(err))
+                    }
                 }
             }
         })
@@ -696,35 +692,39 @@ impl<'ctxt> TypeCheck<'ctxt> {
     fn coerce(&self, ty: &Type, target: &Type, span: Span) -> Type {
         match self.try_coerce(ty, target) {
             Ok(ty) => ty,
-            Err(_) => self.err(
-                format!(
-                    "Expected '{}' got '{}'.",
-                    self.format_ty(target),
-                    self.format_ty(ty)
-                ),
-                span,
-            ),
+            Err(CoerceError(infer_errror)) => self.unify_error(infer_errror, ty, target, span)
         }
     }
-
+    fn unify_error(&self, err: InferError, ty: &Type, expected_ty: &Type, span: Span) -> Type{
+        match err{
+            InferError::InfiniteType => self.err("Infinitely recursive type.", span),
+            InferError::UnifyFailed => {
+                if !ty.has_error() && !expected_ty.has_error() {
+                    self.err(
+                        format!(
+                            "Expected '{}' got '{}'.",
+                            self.format_ty(expected_ty),
+                            self.format_ty(ty)
+                        ),
+                        span,
+                    )
+                } else {
+                    Type::Err
+                }
+            }
+        }
+    }
     fn expect_ty(&self, ty: &Type, expected_ty: &Type, span: Span) -> Type {
         if ty == expected_ty {
             ty.clone()
-        } else if let Some(ty) = self.infer.unify(expected_ty, ty) {
-            ty
-        } else if !ty.has_error() && !expected_ty.has_error() {
-            self.err(
-                format!(
-                    "Expected '{}' got '{}'.",
-                    self.format_ty(expected_ty),
-                    self.format_ty(ty)
-                ),
-                span,
-            )
         } else {
-            Type::Err
-        }
+            match self.infer.unify(expected_ty, ty) {
+                Ok(ty) => ty,
+                Err(err) => self.unify_error(err, ty, expected_ty, span)
+                }
+            }
     }
+    
     fn check_match(&self, scrutinee: &Expr, arms: &[MatchArm], expected_ty: Expected) -> Type {
         let mut combined_ty = None;
         let scrut_ty = self.check_expr(scrutinee, Expected::None);
@@ -1037,10 +1037,28 @@ impl<'ctxt> TypeCheck<'ctxt> {
             self.check_pattern(&param.pat, Some(ty));
         }
         self.check_expr(&self.body.value, Expected::CoercesTo(&self.return_type));
-        for var in 0..self.infer.var_count() {
-            if self.infer.normalize(&Type::Infer(var)).is_none() {
-                self.err("Type annotations needed.", self.infer.var_span(var));
+        struct InferVarCollector {
+            vars: FxHashSet<u32>,
+        }
+        impl TypeVisitor for InferVarCollector {
+            fn visit_ty(&mut self, ty: &Type) {
+                use crate::types::walk_ty;
+                match ty {
+                    Type::Infer(var) => {
+                        self.vars.insert(*var);
+                    }
+                    _ => walk_ty(self, ty),
+                }
             }
+        }
+        let mut infer_var = InferVarCollector {
+            vars: FxHashSet::default(),
+        };
+        for var in 0..self.infer.var_count() {
+            infer_var.visit_ty(&self.infer.normalize(&Type::Infer(var)));
+        }
+        for var in infer_var.vars.into_iter().collect::<Vec<_>>() {
+            self.err("Type annotations needed.", self.infer.var_span(var));
         }
     }
 }
