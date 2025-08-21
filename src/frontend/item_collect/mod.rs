@@ -17,8 +17,8 @@ impl<'a> ItemCollect<'a> {
         let mut nodes = IndexMap::new();
         for (&id, item) in hir.items.iter() {
             match &item.kind {
-                ItemKind::TypeDef(type_def)=>{
-                    for generic_param in type_def.generics.params.iter(){
+                ItemKind::TypeDef(type_def) => {
+                    for generic_param in type_def.generics.params.iter() {
                         nodes.insert(generic_param.def_id, NodeInfo::GenericParam(generic_param));
                     }
                     match &type_def.kind {
@@ -36,13 +36,13 @@ impl<'a> ItemCollect<'a> {
                             }
                         }
                     }
-                },
+                }
                 ItemKind::Function(function) => {
-                    for generic_param in function.generics.params.iter(){
+                    for generic_param in function.generics.params.iter() {
                         nodes.insert(generic_param.def_id, NodeInfo::GenericParam(generic_param));
                     }
-                },
-                ItemKind::Module(_) => ()
+                }
+                ItemKind::Module(_) => (),
             }
             nodes.insert(id, NodeInfo::Item(item));
         }

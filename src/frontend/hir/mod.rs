@@ -58,7 +58,7 @@ pub enum DefKind {
     Function,
     Variant,
     VariantCase,
-    GenericParam
+    GenericParam,
 }
 impl DefKind {
     pub fn as_str(&self) -> &str {
@@ -69,7 +69,7 @@ impl DefKind {
             Self::Field => "field",
             Self::Function => "function",
             Self::VariantCase => "case",
-            Self::GenericParam => "generic param"
+            Self::GenericParam => "generic param",
         }
     }
 }
@@ -262,7 +262,7 @@ pub struct FunctionSig {
 pub struct FunctionDef {
     pub id: DefId,
     pub name: Ident,
-    pub generics : Generics,
+    pub generics: Generics,
     pub sig: FunctionSig,
     pub body_id: HirId,
     pub span: Span,
@@ -307,7 +307,7 @@ pub struct TypeDef {
     pub id: DefId,
     pub span: Span,
     pub name: Ident,
-    pub generics : Generics,
+    pub generics: Generics,
     pub kind: TypeDefKind,
 }
 #[derive(Debug)]
@@ -340,17 +340,20 @@ pub enum LoopSource {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct GenericParam{
-    pub def_id : DefId,
-    pub name : Ident
+pub struct GenericParam {
+    pub def_id: DefId,
+    pub name: Ident,
 }
 #[derive(Clone, Debug)]
-pub struct Generics{
-    pub span : Span,
-    pub params : Vec<GenericParam>
+pub struct Generics {
+    pub span: Span,
+    pub params: Vec<GenericParam>,
 }
-impl Generics{
-    pub const fn empty() -> Self{
-        Self { span: Span::EMPTY, params: Vec::new() }
+impl Generics {
+    pub const fn empty() -> Self {
+        Self {
+            span: Span::EMPTY,
+            params: Vec::new(),
+        }
     }
 }

@@ -84,6 +84,7 @@ pub enum Type {
     Ref(Box<Type>, IsMutable),
     Generic(symbol::Symbol, u32),
     Array(Box<Type>),
+    Infer(u32),
     Err,
 }
 impl Type {
@@ -184,6 +185,7 @@ pub trait TypeVisitor {
 }
 pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
     match ty {
+        Type::Infer(_) => (),
         Type::Array(ty) => v.visit_ty(ty),
         Type::Tuple(fields) => fields.iter().for_each(|ty| v.visit_ty(ty)),
         Type::Struct(fields) => fields.iter().for_each(|field| v.visit_ty(&field.ty)),
@@ -203,6 +205,7 @@ pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
 
 pub fn super_map_ty<M: TypeMapper>(mapper: &M, ty: &Type) -> Result<Type, M::Error> {
     Ok(match ty {
+        &Type::Infer(infer) => Type::Infer(infer),
         Type::Array(ty) => Type::new_array(mapper.map_ty(ty)?),
         &Type::Ref(ref ty, mutable) => Type::new_ref(mapper.map_ty(ty)?, mutable),
         Type::Function(params, return_ty) => Type::new_function(
@@ -265,6 +268,9 @@ pub struct TypeScheme {
     arg_count: u32,
 }
 impl TypeScheme {
+    pub fn arg_count(&self) -> u32 {
+        self.arg_count
+    }
     pub fn new(ty: Type, param_count: u32) -> Self {
         Self {
             ty,
@@ -276,7 +282,7 @@ impl TypeScheme {
     }
     ///Replaces all generic parameters using generic arguments
     pub fn instantiate(self, args: GenericArgs) -> Type {
-        if self.arg_count == 0 {
+        if args.is_empty() {
             return self.ty;
         }
         struct InstanceArgs {

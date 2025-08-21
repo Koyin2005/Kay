@@ -1,20 +1,42 @@
+use std::cell::RefCell;
+
 use fxhash::FxHashSet;
 
-use crate::types::{GenericArg, Type, TypeMapper, super_map_ty};
+use crate::{
+    span::Span,
+    types::{GenericArg, Type, TypeMapper, super_map_ty},
+};
 
 pub struct TypeInfer {
-    vars: Box<[Option<Type>]>,
+    vars: RefCell<Vec<(Option<Type>, Span)>>,
 }
 
 impl TypeInfer {
-    pub fn new(vars: u32) -> Self {
+    pub fn new() -> Self {
         Self {
-            vars: Box::from_iter((0..vars).map(|_| None)),
+            vars: RefCell::new(Vec::new()),
         }
     }
-    pub fn completed(self) -> bool {
-        self.vars.iter().all(Option::is_some)
+    pub fn new_var(&self, span: Span) -> u32 {
+        self.vars.borrow_mut().push((None, span));
+        self.vars
+            .borrow()
+            .len()
+            .wrapping_sub(1)
+            .try_into()
+            .expect("Should be less than u32::MAX type vars.")
     }
+    pub fn var_span(&self, var: u32) -> Span {
+        self.vars.borrow()[var as usize].1
+    }
+    pub fn var_count(&self) -> u32 {
+        self.vars
+            .borrow()
+            .len()
+            .try_into()
+            .expect("Can't have more than u32::MAX vars")
+    }
+
     pub fn normalize(&self, ty: &Type) -> Option<Type> {
         struct Normalizer<'infer> {
             infer: &'infer TypeInfer,
@@ -23,11 +45,12 @@ impl TypeInfer {
             type Error = ();
             fn map_ty(&self, ty: &Type) -> Result<Type, Self::Error> {
                 match ty {
-                    &Type::Generic(_, index) => self
+                    &Type::Infer(index) => self
                         .infer
                         .vars
+                        .borrow()
                         .get(index as usize)
-                        .and_then(|ty| ty.as_ref())
+                        .and_then(|(ty, _)| ty.as_ref())
                         .cloned()
                         .ok_or(()),
                     _ => super_map_ty(self, ty),
@@ -36,22 +59,29 @@ impl TypeInfer {
         }
         Normalizer { infer: self }.map_ty(ty).ok()
     }
-    pub fn unify(&mut self, ty: &Type, other: &Type) -> Option<Type> {
+    pub fn unify(&self, ty: &Type, other: &Type) -> Option<Type> {
         match (ty, other) {
-            (Type::Generic(_, _), Type::Generic(_, _)) => None,
-            (Type::Generic(_, index), ty) | (ty, Type::Generic(_, index)) => {
-                let curr_ty = &mut self.vars[*index as usize];
-                if let Some(curr_ty) = curr_ty  && curr_ty == ty{
+            (Type::Generic(_, _), Type::Generic(_, _))
+            | (Type::Infer(_), Type::Infer(_))
+            | (Type::Primitive(_), Type::Primitive(_))
+                if ty == other =>
+            {
+                Some(ty.clone())
+            }
+            (Type::Infer(index), ty) | (ty, Type::Infer(index)) => {
+                let curr_ty = &mut self.vars.borrow_mut()[*index as usize].0;
+                if let Some(curr_ty) = curr_ty
+                    && curr_ty == ty
+                {
                     Some(curr_ty.clone())
-                }
-                else if curr_ty.is_some(){
+                } else if curr_ty.is_some() {
                     None
-                }
-                else {
+                } else {
                     *curr_ty = Some(ty.clone());
                     Some(ty.clone())
                 }
             }
+            (Type::Err, _) | (_, Type::Err) => Some(Type::Err),
             (Type::Array(element), Type::Array(other_element)) => {
                 Some(Type::new_array(self.unify(element, other_element)?))
             }
@@ -82,11 +112,6 @@ impl TypeInfer {
                 if mutable == other_mutable =>
             {
                 Some(Type::new_ref(self.unify(ty, other_ty)?, *mutable))
-            }
-            (Type::Primitive(primative), Type::Primitive(other_primative))
-                if primative == other_primative =>
-            {
-                Some(Type::new_primative(*primative))
             }
             (Type::Struct(fields), Type::Struct(other_fields))
                 if fields.len() == other_fields.len() && {

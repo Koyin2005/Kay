@@ -1,14 +1,23 @@
 use std::{cell::Cell, vec};
 
 use crate::{
-    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
+    Lexer,
+    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
+    frontend::{
         ast::{
-            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, GenericParam, GenericParams, Item, ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase, VariantField
+            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef,
+            GenericParam, GenericParams, Item, ItemKind, IteratorExpr, IteratorExprKind,
+            LiteralKind, MatchArm, Module, Mutable, NodeId, Param, PathSegment, Pattern,
+            PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField, Type, TypeDef,
+            TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase, VariantField,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    }, indexvec::Idx, span::{
-        symbol::{Ident, Symbol}, Span
-    }, Lexer
+    },
+    indexvec::Idx,
+    span::{
+        Span,
+        symbol::{Ident, Symbol},
+    },
 };
 #[derive(Clone, Copy)]
 enum BlockKind {
@@ -1205,7 +1214,7 @@ impl<'source> Parser<'source> {
             span,
             name: function_name,
             params,
-            generics : generic_params,
+            generics: generic_params,
             body: Box::new(body),
             return_type,
         })
@@ -1258,7 +1267,7 @@ impl<'source> Parser<'source> {
             id: self.new_id(),
             span,
             name,
-            generics : generic_params,
+            generics: generic_params,
             kind,
         })
     }
@@ -1267,21 +1276,31 @@ impl<'source> Parser<'source> {
         let _ = self.expect(TokenKind::Semicolon, "Expected ';' at end of 'import'.");
         Ok(path)
     }
-    fn parse_optional_generic_params(&mut self) -> ParseResult<Option<GenericParams>>{
-        self.check(TokenKind::LeftBracket).then(||{
-            self.parse_generic_params()
-        }).transpose()
+    fn parse_optional_generic_params(&mut self) -> ParseResult<Option<GenericParams>> {
+        self.check(TokenKind::LeftBracket)
+            .then(|| self.parse_generic_params())
+            .transpose()
     }
-    fn parse_generic_params(&mut self) -> ParseResult<GenericParams>{
+    fn parse_generic_params(&mut self) -> ParseResult<GenericParams> {
         let start_span = self.current_token.span;
         self.advance();
-        let params = Vec::from(self.parse_delimited_by(TokenKind::RightBracket, |this|{
+        let params = Vec::from(self.parse_delimited_by(TokenKind::RightBracket, |this| {
             let name = this.expect_ident("Expected a type param.")?;
-            Ok(GenericParam{id : this.new_id(), name})
+            Ok(GenericParam {
+                id: this.new_id(),
+                name,
+            })
         })?);
         let end_span = self.current_token.span;
-        let _ = self.expect(TokenKind::RightBracket, "Expected a ']' at the end of generic parameters.");
-        Ok(GenericParams { id: self.new_id(), span: start_span.combined(end_span), params })
+        let _ = self.expect(
+            TokenKind::RightBracket,
+            "Expected a ']' at the end of generic parameters.",
+        );
+        Ok(GenericParams {
+            id: self.new_id(),
+            span: start_span.combined(end_span),
+            params,
+        })
     }
     fn try_parse_item(&mut self) -> Option<ParseResult<Item>> {
         Some(Ok(match self.current_token.kind {

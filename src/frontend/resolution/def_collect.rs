@@ -42,8 +42,13 @@ impl Visitor for DefCollector<'_, '_> {
     fn visit_item(&mut self, item: &Item) {
         match item.kind {
             ItemKind::Function(ref function_def) => {
-                let func_id = self.create_id(function_def.id, DefKind::Function, self.current_module);
-                for generic_param in function_def.generics.as_ref().map_or(&[] as &[_], |generics|{ generics.params.as_slice()}){
+                let func_id =
+                    self.create_id(function_def.id, DefKind::Function, self.current_module);
+                for generic_param in function_def
+                    .generics
+                    .as_ref()
+                    .map_or(&[] as &[_], |generics| generics.params.as_slice())
+                {
                     self.create_id(generic_param.id, DefKind::GenericParam, Some(func_id));
                 }
             }
@@ -56,7 +61,11 @@ impl Visitor for DefCollector<'_, '_> {
                     },
                     self.current_module,
                 );
-                for generic_param in type_def.generics.as_ref().map_or(&[] as &[_], |generics|{ generics.params.as_slice()}){
+                for generic_param in type_def
+                    .generics
+                    .as_ref()
+                    .map_or(&[] as &[_], |generics| generics.params.as_slice())
+                {
                     self.create_id(generic_param.id, DefKind::GenericParam, Some(type_id));
                 }
                 match type_def.kind {
