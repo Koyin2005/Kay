@@ -684,19 +684,25 @@ impl<'diag> AstLower<'diag> {
                         span,
                     }),
                 )
-            },
-            ItemKind::Import(..) => return None
+            }
+            ItemKind::Import(..) => return None,
         };
-        Some((id, hir::Item { id, kind }))
+        Some((id, hir::Item { id, kind, span }))
     }
     pub fn lower_ast(mut self, ast: &ast::Ast) -> Hir {
-        let items = ast
-            .modules
-            .iter()
-            .map(|module| module.items.iter())
-            .flatten()
-            .filter_map(|item| self.lower_item(item))
-            .collect::<Vec<_>>();
+        let mut items = Vec::new();
+        for module in ast.modules.iter() {
+            let def_id = self.expect_def_id(module.id);
+            items.push((
+                def_id,
+                hir::Item {
+                    id: def_id,
+                    span: module.span,
+                    kind: hir::ItemKind::Module(module.name),
+                },
+            ));
+            items.extend(module.items.iter().filter_map(|item| self.lower_item(item)));
+        }
         self.items.extend(items);
         self.diag.emit();
         Hir {

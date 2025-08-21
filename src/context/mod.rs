@@ -89,6 +89,7 @@ impl<'hir> GlobalContext<'hir> {
                 (params.collect(), return_ty)
             }
             hir::ItemKind::TypeDef(_) => (Vec::new(), Type::new_unit()),
+            hir::ItemKind::Module(_) => (Vec::new(), Type::Err),
         }
     }
     pub fn symbol(&self, def: Definition) -> Symbol {
@@ -98,9 +99,14 @@ impl<'hir> GlobalContext<'hir> {
         }
     }
     pub fn ident(&self, id: DefId) -> Ident {
-        match &self.expect_item(id).kind {
+        let item = self.expect_item(id);
+        match &item.kind {
             hir::ItemKind::Function(function) => function.name,
             hir::ItemKind::TypeDef(ty) => ty.name,
+            hir::ItemKind::Module(name) => Ident {
+                symbol: *name,
+                span: item.span,
+            },
         }
     }
     pub fn kind(&self, id: DefId) -> DefKind {
@@ -262,6 +268,7 @@ impl<'hir> GlobalContext<'hir> {
                             Type::new_function(params, return_ty)
                         }
                         hir::ItemKind::TypeDef(..) => Type::new_nominal(Definition::Def(id)),
+                        hir::ItemKind::Module(..) => Type::Err,
                     },
                 },
             },
@@ -277,6 +284,7 @@ impl<'hir> GlobalContext<'hir> {
         match self.expect_item(id).kind {
             hir::ItemKind::Function(ref function) => self.hir.bodies.get(&function.body_id),
             hir::ItemKind::TypeDef(_) => None,
+            hir::ItemKind::Module(_) => None,
         }
     }
 }

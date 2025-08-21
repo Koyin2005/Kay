@@ -310,10 +310,12 @@ pub struct TypeDef {
 pub enum ItemKind {
     Function(FunctionDef),
     TypeDef(TypeDef),
+    Module(Symbol),
 }
 #[derive(Debug)]
 pub struct Item {
     pub id: DefId,
+    pub span: Span,
     pub kind: ItemKind,
 }
 #[derive(Debug)]

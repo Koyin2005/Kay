@@ -145,7 +145,7 @@ pub enum TypeDefKind {
 pub enum ItemKind {
     Function(FunctionDef),
     Type(TypeDef),
-    Import(QualifiedName)
+    Import(QualifiedName),
 }
 #[derive(Clone, Debug, Copy)]
 pub enum LiteralKind {
@@ -305,8 +305,8 @@ define_id! {
 
     }
 }
-impl NodeId{
-    pub const FIRST : Self = NodeId(0);
+impl NodeId {
+    pub const FIRST: Self = NodeId(0);
 }
 
 impl std::fmt::Display for NodeId {
@@ -316,12 +316,12 @@ impl std::fmt::Display for NodeId {
 }
 
 pub struct Module {
-    pub id : NodeId,
-    pub name : Symbol,
+    pub id: NodeId,
+    pub name: Symbol,
     pub items: Vec<Item>,
-    pub span : Span,
+    pub span: Span,
 }
 
-pub struct Ast{
-    pub modules : Vec<Module>
+pub struct Ast {
+    pub modules: Vec<Module>,
 }

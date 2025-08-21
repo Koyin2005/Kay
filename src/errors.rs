@@ -45,8 +45,7 @@ impl DiagnosticReporter {
                 .ilog10()
                 + 1;
             for line in lines {
-                let line_source = source_info
-                    .source_within(line.start_offset(), line.end_offset());
+                let line_source = source_info.source_within(line.start_offset(), line.end_offset());
                 for _ in 0..max_digits - (line.line_number().ilog10() + 1) {
                     eprint!(" ");
                 }

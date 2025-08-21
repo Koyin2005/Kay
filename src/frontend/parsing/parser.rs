@@ -1,12 +1,23 @@
 use std::{cell::Cell, vec};
 
 use crate::{
-    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
+    Lexer,
+    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
+    frontend::{
         ast::{
-            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, Item, ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase, VariantField
+            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, Item,
+            ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable,
+            NodeId, Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind,
+            Struct, StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind,
+            Variant, VariantCase, VariantField,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    }, indexvec::Idx, span::{symbol::{Ident, Symbol}, Span}, Lexer
+    },
+    indexvec::Idx,
+    span::{
+        Span,
+        symbol::{Ident, Symbol},
+    },
 };
 #[derive(Clone, Copy)]
 enum BlockKind {
@@ -33,15 +44,20 @@ pub struct Parser<'source> {
     current_token: Token,
     next_id: NodeId,
     panic_mode: Cell<bool>,
-    mod_name : Symbol
+    mod_name: Symbol,
 }
 pub struct ParseError;
 
 type ParseResult<T> = Result<T, ParseError>;
 impl<'source> Parser<'source> {
-    pub fn new(name: &str, lexer: Lexer<'source>, diag_reporter: DiagnosticReporter, start_id : NodeId) -> Self {
+    pub fn new(
+        name: &str,
+        lexer: Lexer<'source>,
+        diag_reporter: DiagnosticReporter,
+        start_id: NodeId,
+    ) -> Self {
         Self {
-            mod_name : Symbol::intern(name),
+            mod_name: Symbol::intern(name),
             current_token: Token::empty(),
             lexer,
             diag_reporter,
@@ -1246,7 +1262,7 @@ impl<'source> Parser<'source> {
             kind,
         })
     }
-    fn parse_import_name(&mut self) -> ParseResult<QualifiedName>{
+    fn parse_import_name(&mut self) -> ParseResult<QualifiedName> {
         let path = self.parse_qual_name()?;
         let _ = self.expect(TokenKind::Semicolon, "Expected ';' at end of 'import'.");
         Ok(path)
@@ -1272,13 +1288,17 @@ impl<'source> Parser<'source> {
                     span: type_def.span,
                     kind: ItemKind::Type(type_def),
                 }
-            },
+            }
             TokenKind::Import => {
                 let span = self.current_token.span;
                 self.advance();
                 let name = self.parse_import_name().ok()?;
-                Item { id: self.new_id(), span: span.combined(name.span), kind: ItemKind::Import(name) }
-            },
+                Item {
+                    id: self.new_id(),
+                    span: span.combined(name.span),
+                    kind: ItemKind::Import(name),
+                }
+            }
             _ => return None,
         }))
     }
@@ -1344,7 +1364,15 @@ impl<'source> Parser<'source> {
         .filter_map(|item| item.ok())
         .collect::<Vec<_>>();
         self.diag_reporter.emit();
-        let end_span = items.last().map(|item| item.span).unwrap_or(start_token.span);
-        Ok(Module { id : self.new_id(),span : start_token.span.combined(end_span), name:self.mod_name,items })
+        let end_span = items
+            .last()
+            .map(|item| item.span)
+            .unwrap_or(start_token.span);
+        Ok(Module {
+            id: self.new_id(),
+            span: start_token.span.combined(end_span),
+            name: self.mod_name,
+            items,
+        })
     }
 }

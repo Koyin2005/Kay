@@ -12,7 +12,7 @@ pub mod symbol;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 pub struct SpanInfo {
-    pub file : u16,
+    pub file: u16,
     pub start_offset: u32,
     pub end_offset: u32,
 }
@@ -76,7 +76,7 @@ static SPAN_INTERNER: LazyLock<Mutex<SpanInterner>> =
 pub struct Span {
     index_or_offset: u32,
     len_or_marker: u16,
-    file_index : u16
+    file_index: u16,
 }
 impl PartialEq for Span {
     fn eq(&self, other: &Self) -> bool {
@@ -87,7 +87,7 @@ impl Span {
     pub const EMPTY: Self = Self {
         index_or_offset: 0,
         len_or_marker: 0,
-        file_index : 0
+        file_index: 0,
     };
     pub fn new(start_offset: u32, len: u32, file: u16) -> Self {
         let (index_or_offset, len_or_marker) = if len >= u16::MAX as u32 {
@@ -95,7 +95,7 @@ impl Span {
                 SPAN_INTERNER.lock().unwrap().intern(&SpanInfo {
                     start_offset,
                     end_offset: start_offset + len,
-                    file
+                    file,
                 }),
                 u16::MAX,
             )
@@ -105,7 +105,7 @@ impl Span {
         Self {
             index_or_offset,
             len_or_marker,
-            file_index: file
+            file_index: file,
         }
     }
     pub fn is_empty(self) -> bool {
@@ -118,7 +118,7 @@ impl Span {
             SpanInfo {
                 start_offset: self.index_or_offset,
                 end_offset: self.index_or_offset + self.len_or_marker as u32,
-                file : self.file_index
+                file: self.file_index,
             }
         }
     }
@@ -148,7 +148,7 @@ impl Span {
     }
     pub fn start(self) -> Self {
         let info = self.info();
-        Self::new(info.start_offset, 0,info.file)
+        Self::new(info.start_offset, 0, info.file)
     }
     pub fn end(self) -> Self {
         let info = self.info();
@@ -193,13 +193,13 @@ pub type SourceRef = Rc<SourceInfo>;
 pub struct SourceTooLarge;
 #[derive(Clone)]
 pub struct SourceInfo {
-    name : Box<str>,
+    name: Box<str>,
     source: Box<str>,
     lines: Box<[LineInfo]>,
 }
 
 impl SourceInfo {
-    pub fn new(name: String,source: String) -> Result<Self, SourceTooLarge> {
+    pub fn new(name: String, source: String) -> Result<Self, SourceTooLarge> {
         if source.len() >= u32::MAX as usize {
             return Err(SourceTooLarge);
         }
@@ -236,12 +236,12 @@ impl SourceInfo {
             });
         }
         Ok(SourceInfo {
-            name : name.into_boxed_str(),
+            name: name.into_boxed_str(),
             source: source.into_boxed_str(),
             lines: lines.into_boxed_slice(),
         })
     }
-    pub fn name(&self) -> &str{
+    pub fn name(&self) -> &str {
         &self.name
     }
     pub fn source(&self) -> &str {
@@ -292,14 +292,16 @@ pub struct SourceFiles {
     info: Box<[Rc<SourceInfo>]>,
 }
 impl SourceFiles {
-    pub fn new(sources: impl IntoIterator<Item = (String,String)>) -> Result<Self, SourceTooLarge> {
+    pub fn new(
+        sources: impl IntoIterator<Item = (String, String)>,
+    ) -> Result<Self, SourceTooLarge> {
         sources
             .into_iter()
-            .map(|(mut name,source)| {
-                if let Some(index) = name.find(|c| c == '.'){
+            .map(|(mut name, source)| {
+                if let Some(index) = name.find('.') {
                     name.drain(index..);
                 };
-                SourceInfo::new(name,source)
+                SourceInfo::new(name, source)
             })
             .collect::<Result<Box<[_]>, _>>()
             .map(|info| Self {

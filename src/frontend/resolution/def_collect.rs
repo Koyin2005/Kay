@@ -1,19 +1,23 @@
 use crate::{
+    Resolver,
     frontend::{
         ast::{Ast, Item, ItemKind, NodeId, TypeDefKind},
-        ast_visit::{walk_item, walk_module, Visitor},
+        ast_visit::{Visitor, walk_item, walk_module},
         hir::{DefId, DefInfo, DefKind},
-    }, Resolver
+    },
 };
 
 pub struct DefCollector<'rsv, 'source> {
     resolver: &'rsv mut Resolver<'source>,
-    current_module : Option<DefId>
+    current_module: Option<DefId>,
 }
 
 impl<'a, 'b> DefCollector<'a, 'b> {
     pub fn new(resolver: &'a mut Resolver<'b>) -> Self {
-        Self { resolver, current_module : None }
+        Self {
+            resolver,
+            current_module: None,
+        }
     }
     fn create_id(&mut self, id: NodeId, kind: DefKind, parent: Option<DefId>) -> DefId {
         let next_id = self.resolver.info.push(DefInfo { parent, kind });
@@ -30,7 +34,7 @@ impl<'a, 'b> DefCollector<'a, 'b> {
 }
 
 impl Visitor for DefCollector<'_, '_> {
-    fn visit_module(&mut self, module : &crate::frontend::ast::Module) {
+    fn visit_module(&mut self, module: &crate::frontend::ast::Module) {
         self.current_module = Some(self.create_id(module.id, DefKind::Module, None));
         walk_module(self, module);
         self.current_module = None;
@@ -68,10 +72,10 @@ impl Visitor for DefCollector<'_, '_> {
                         }
                     }
                 }
-            },
-            ItemKind::Import(_) => ()
+            }
+            ItemKind::Import(_) => (),
         }
-        let old_module = std::mem::replace(&mut self.current_module, None);
+        let old_module = self.current_module.take();
         walk_item(self, item);
         self.current_module = old_module;
     }

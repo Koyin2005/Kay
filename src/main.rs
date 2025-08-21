@@ -1,15 +1,17 @@
 use std::rc::Rc;
 
 use pl5::{
-    config::{Config, ConfigError, PathKind, KAE_EXTENSION}, errors::DiagnosticReporter, Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, TypeCheck
+    Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, TypeCheck,
+    config::{Config, ConfigError, KAE_EXTENSION, PathKind},
+    errors::DiagnosticReporter,
 };
 
 enum SourceError {
     ReadFileFailed,
     InvalidFile(String),
 }
-fn get_source(config: &Config) -> Result<Box<[(String,String)]>, SourceError> {
-    fn find_files_with_kae_extension(path: &str) -> Result<Box<[(String,String)]>, SourceError> {
+fn get_source(config: &Config) -> Result<Box<[(String, String)]>, SourceError> {
+    fn find_files_with_kae_extension(path: &str) -> Result<Box<[(String, String)]>, SourceError> {
         let dir = std::fs::read_dir(path).expect("Already checked its a directory");
         dir.filter_map(|entry| entry.ok())
             .map(|entry| {
@@ -18,9 +20,8 @@ fn get_source(config: &Config) -> Result<Box<[(String,String)]>, SourceError> {
                     .extension()
                     .is_some_and(|ext| ext.to_string_lossy().ends_with(KAE_EXTENSION))
                 {
-                    read_file_source(&entry.path().to_string_lossy()).map(|src|{
-                        (entry.file_name().to_string_lossy().into_owned(),src)
-                    })
+                    read_file_source(&entry.path().to_string_lossy())
+                        .map(|src| (entry.file_name().to_string_lossy().into_owned(), src))
                 } else {
                     Err(SourceError::InvalidFile(
                         path.to_string_lossy().into_owned(),
@@ -49,7 +50,7 @@ fn get_source(config: &Config) -> Result<Box<[(String,String)]>, SourceError> {
         PathKind::Folder => find_files_with_kae_extension(config.path_str())?,
         PathKind::Source => {
             let source = read_file_source(config.path_str())?;
-            Box::new([(config.file_name(),source)])
+            Box::new([(config.file_name(), source)])
         }
     };
     Ok(source_files)
@@ -93,17 +94,22 @@ fn main() {
     };
 
     let mut next_id = NodeId::FIRST;
-    let modules = source_files.get_source_files().iter().enumerate().filter_map(|(file_index,source_file)|{
-        let file_index = file_index.try_into().ok()?;
-        let lexer = Lexer::new(&source_file,file_index);
-        let parse_diagnostics = DiagnosticReporter::new(source_files.clone());
-        let parser = Parser::new(source_file.name(),lexer, parse_diagnostics,next_id);
-        parser.parse().ok().map(|module|{
-            next_id = module.id;
-            module
-        })
-    });
-    let ast = Ast{ modules: modules.collect()};
+    let modules = source_files
+        .get_source_files()
+        .iter()
+        .enumerate()
+        .filter_map(|(file_index, source_file)| {
+            let file_index = file_index.try_into().ok()?;
+            let lexer = Lexer::new(source_file, file_index);
+            let parse_diagnostics = DiagnosticReporter::new(source_files.clone());
+            let parser = Parser::new(source_file.name(), lexer, parse_diagnostics, next_id);
+            parser.parse().ok().inspect(|module| {
+                next_id = module.id;
+            })
+        });
+    let ast = Ast {
+        modules: modules.collect(),
+    };
     let name_res_diagnostics = DiagnosticReporter::new(source_files.clone());
     let results = Resolver::new(&name_res_diagnostics).resolve(&ast);
 
