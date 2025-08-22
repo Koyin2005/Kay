@@ -1,18 +1,16 @@
 use crate::{
     context::CtxtRef,
-    frontend::{hir, ty_infer::TypeInfer},
-    span::Span,
-    types::{GenericArg, Type},
+    frontend::hir,
+    types::{GenericArg, Type, TypeScheme},
 };
 
 pub struct NotAType;
 pub struct TypeLower<'ctxt> {
     ctxt: CtxtRef<'ctxt>,
-    infer: Option<&'ctxt TypeInfer>,
 }
 impl<'a> TypeLower<'a> {
-    pub fn new(ctxt: CtxtRef<'a>, infer: Option<&'a TypeInfer>) -> Self {
-        Self { ctxt, infer }
+    pub fn new(ctxt: CtxtRef<'a>) -> Self {
+        Self { ctxt }
     }
     pub fn lower_function_sig(&self, sig: &hir::FunctionSig) -> (impl Iterator<Item = Type>, Type) {
         (
@@ -23,47 +21,27 @@ impl<'a> TypeLower<'a> {
                 .unwrap_or(Type::new_unit()),
         )
     }
-    pub fn lower_ty_path(&self, path: &hir::Path, span: Span) -> Result<Type, NotAType> {
-        Ok(match path.res {
-            hir::Resolution::Builtin(builtin) => {
-                Type::new_nominal(hir::Definition::Builtin(builtin))
+    pub fn lower_ty_path(&self, path: &hir::Path) -> Result<TypeScheme, NotAType> {
+        let def = match path.res {
+            hir::Resolution::Builtin(builtin @ hir::Builtin::Option) => {
+                hir::Definition::Builtin(builtin)
             }
             hir::Resolution::Def(
                 id,
                 hir::DefKind::Struct | hir::DefKind::Variant | hir::DefKind::GenericParam,
-            ) => {
-                let scheme = self.ctxt.type_of(hir::Definition::Def(id));
-                let arg_count = scheme.arg_count();
-                if let Some(infer) = self.infer {
-                    scheme.instantiate(
-                        (0..arg_count)
-                            .map(|_| GenericArg(Type::Infer(infer.new_var(span))))
-                            .collect(),
-                    )
-                } else if arg_count == 0 {
-                    scheme.skip_instantiate()
-                } else {
-                    self.ctxt
-                        .diag()
-                        .emit_diag("Cannot infer generic parameters.", span);
-                    scheme.instantiate((0..arg_count).map(|_| GenericArg(Type::Err)).collect())
-                }
-            }
-            hir::Resolution::Err => Type::Err,
+            ) => hir::Definition::Def(id),
+            hir::Resolution::Err => return Ok(TypeScheme::new(Type::Err, 0)),
             _ => return Err(NotAType),
-        })
+        };
+        Ok(self.ctxt.type_of(def))
     }
     pub fn lower(&self, ty: &hir::Type) -> Type {
         match &ty.kind {
             hir::TypeKind::Infer => {
-                if let Some(infer) = self.infer {
-                    Type::Infer(infer.new_var(ty.span))
-                } else {
-                    self.ctxt
-                        .diag()
-                        .emit_diag("Cannot infer generic parameters.", ty.span);
-                    Type::Err
-                }
+                self.ctxt
+                    .diag()
+                    .emit_diag("Cannot infer generic parameters.", ty.span);
+                Type::Err
             }
             hir::TypeKind::Array(element_ty) => Type::new_array(self.lower(element_ty)),
             &hir::TypeKind::Ref(mutable, ref ty) => Type::new_ref(self.lower(ty), mutable.into()),
@@ -86,13 +64,24 @@ impl<'a> TypeLower<'a> {
                 )
             })),
             &hir::TypeKind::Primitive(primative) => Type::new_primative(primative),
-            hir::TypeKind::Path(path) => self.lower_ty_path(path, ty.span).unwrap_or_else(|_| {
-                self.ctxt.diag().emit_diag(
-                    format!("Cannot use '{}' as a type.", path.res.as_str()),
-                    ty.span,
-                );
-                Type::Err
-            }),
+            hir::TypeKind::Path(path) => {
+                let Ok(scheme) = self.lower_ty_path(path) else {
+                    self.ctxt.diag().emit_diag(
+                        format!("Cannot use '{}' as a type.", path.res.as_str()),
+                        ty.span,
+                    );
+                    return Type::Err;
+                };
+                if scheme.arg_count() == 0 {
+                    scheme.skip_instantiate()
+                } else {
+                    let arg_count = scheme.arg_count();
+                    self.ctxt
+                        .diag()
+                        .emit_diag("Cannot infer generic parameters.", ty.span);
+                    scheme.instantiate((0..arg_count).map(|_| GenericArg(Type::Err)).collect())
+                }
+            }
             hir::TypeKind::Fun(params, return_ty) => Type::new_function(
                 params.iter().map(|ty| self.lower(ty)),
                 return_ty

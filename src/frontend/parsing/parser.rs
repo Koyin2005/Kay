@@ -321,7 +321,13 @@ impl<'source> Parser<'source> {
             .parse_delimited_by(TokenKind::RightBrace, |this| {
                 let start_span = this.current_token.span;
                 let name = this.expect_ident("Expected field name");
-                let _ = this.expect(TokenKind::Equals, "Expected '=' after field name.");
+                if this
+                    .expect(TokenKind::Equals, "Expected '=' after field name.")
+                    .is_err()
+                    && this.check(TokenKind::Colon)
+                {
+                    this.advance();
+                }
                 let expr = this.parse_expr(0)?;
                 Ok(ExprField {
                     id: this.new_id(),

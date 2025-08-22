@@ -2,112 +2,53 @@ use std::cell::RefCell;
 
 use fxhash::FxHashSet;
 
-use crate::{
-    span::Span,
-    types::{GenericArg, Type, TypeMapper, TypeVisitor, super_map_ty},
-};
+use crate::types::{GenericArg, Type, TypeMapper, super_map_ty};
 
 pub type InferResult<T> = Result<T, InferError>;
+#[derive(Debug)]
 pub enum InferError {
-    InfiniteType,
     UnifyFailed,
 }
+#[derive(Debug)]
 pub struct TypeInfer {
-    vars: RefCell<Vec<(Option<Type>, Span,bool)>>,
+    vars: RefCell<Vec<Option<Type>>>,
 }
 
 impl TypeInfer {
-    pub fn new() -> Self {
+    pub fn new_with_count(count: u32) -> Self {
         Self {
-            vars: RefCell::new(Vec::new()),
+            vars: RefCell::new((0..count).map(|_| (None)).collect()),
         }
     }
-    pub fn new_var(&self, span: Span) -> u32 {
-        self.vars.borrow_mut().push((None, span,false));
-        self.vars
-            .borrow()
-            .len()
-            .wrapping_sub(1)
-            .try_into()
-            .expect("Should be less than u32::MAX type vars.")
+    pub fn completed(self) -> bool {
+        self.vars.into_inner().iter().all(Option::is_some)
     }
-    pub fn var_span(&self, var: u32) -> Span {
-        self.vars.borrow()[var as usize].1
-    }
-    pub fn var_count(&self) -> u32 {
-        self.vars
-            .borrow()
-            .len()
-            .try_into()
-            .expect("Can't have more than u32::MAX vars")
-    }
-    pub fn normalize(&self, ty: &Type) -> Type {
+    pub fn normalize(&self, ty: &Type) -> Option<Type> {
         struct Normalizer<'infer> {
             infer: &'infer TypeInfer,
         }
         impl TypeMapper for Normalizer<'_> {
-            type Error = std::convert::Infallible;
+            type Error = ();
             fn map_ty(&self, ty: &Type) -> Result<Type, Self::Error> {
                 match ty {
-                    &Type::Infer(index) => Ok(self
+                    &Type::Generic(_, index) => Ok(self
                         .infer
                         .vars
                         .borrow()
                         .get(index as usize)
-                        .and_then(|(ty, _,_)| ty.as_ref())
-                        .map(|ty| self.infer.normalize(ty))
-                        .unwrap_or(Type::Infer(index))),
+                        .and_then(|ty| ty.clone())
+                        .ok_or(())?),
                     _ => super_map_ty(self, ty),
                 }
             }
         }
-        let Ok(ty) = Normalizer { infer: self }.map_ty(ty);
-        ty
+        Normalizer { infer: self }.map_ty(ty).ok()
     }
-    pub fn unify(&self, ty: &Type, other: &Type) -> InferResult<Type> {
-        match (ty, other) {
-            (Type::Generic(_, _), Type::Generic(_, _))
-            | (Type::Infer(_), Type::Infer(_))
-            | (Type::Primitive(_), Type::Primitive(_))
-                if ty == other =>
-            {
-                Ok(ty.clone())
-            }
-            (&Type::Infer(var), &Type::Infer(other)) => {
-                let min_var = var.min(other);
-                let max_var = var.max(other);
-                let ty = self.vars.borrow_mut()[min_var as usize].0.clone();
-                let other_ty = self.vars.borrow_mut()[max_var as usize].0.clone();
-                match (ty, other_ty) {
-                    (Some(ty), Some(other_ty)) => self.unify(&ty, &other_ty),
-                    (Some(ty), None) => self.unify(&Type::Infer(max_var), &ty),
-                    (None, Some(ty)) => self.unify(&ty, &Type::Infer(min_var)),
-                    (None, None) => {
-                        self.vars.borrow_mut()[min_var as usize].0 = Some(Type::Infer(max_var));
-                        Ok(Type::Infer(max_var))
-                    }
-                }
-            }
-            (Type::Infer(index), ty) | (ty, Type::Infer(index)) => {
-                struct OccursCheck {
-                    var: u32,
-                    found_var: bool,
-                }
-                impl TypeVisitor for OccursCheck {
-                    fn visit_ty(&mut self, ty: &Type) {
-                        use crate::types::walk_ty;
-                        match ty {
-                            &Type::Infer(other_var) => {
-                                if self.var == other_var {
-                                    self.found_var = true;
-                                }
-                            }
-                            _ => walk_ty(self, ty),
-                        }
-                    }
-                }
-
-                let curr_ty = &mut self.vars.borrow_mut()[*index as usize].0;
+    ///Try to unify a ty with an expected ty
+    pub fn unify(&self, ty: &Type, expected: &Type) -> InferResult<Type> {
+        match (ty, expected) {
+            (ty, Type::Generic(_, index)) => {
+                let curr_ty = &mut self.vars.borrow_mut()[*index as usize];
                 if let Some(curr_ty) = curr_ty
                     && curr_ty == ty
                 {
@@ -115,19 +56,11 @@ impl TypeInfer {
                 } else if curr_ty.is_some() {
                     Err(InferError::UnifyFailed)
                 } else {
-                    let mut occurs_check = OccursCheck {
-                        var: *index,
-                        found_var: false,
-                    };
-                    occurs_check.visit_ty(ty);
-                    if occurs_check.found_var {
-                        *curr_ty = Some(Type::Err);
-                        return Err(InferError::InfiniteType);
-                    }
                     *curr_ty = Some(ty.clone());
                     Ok(ty.clone())
                 }
             }
+            (ty, expected) if ty == expected => Ok(ty.clone()),
             (Type::Err, _) | (_, Type::Err) => Ok(Type::Err),
             (Type::Array(element), Type::Array(other_element)) => {
                 Ok(Type::new_array(self.unify(element, other_element)?))

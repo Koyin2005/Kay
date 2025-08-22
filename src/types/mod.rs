@@ -84,7 +84,6 @@ pub enum Type {
     Ref(Box<Type>, IsMutable),
     Generic(symbol::Symbol, u32),
     Array(Box<Type>),
-    Infer(u32),
     Err,
 }
 impl Type {
@@ -95,23 +94,7 @@ impl Type {
         TypeFormat::new(ctxt).format_type(self)
     }
     pub fn has_infer(&self) -> bool {
-        struct HasInfer {
-            found: bool,
-        }
-        impl TypeVisitor for HasInfer {
-            fn visit_ty(&mut self, ty: &Type) {
-                if self.found {
-                    return;
-                }
-                if let Type::Infer(_) = ty {
-                    self.found = true;
-                }
-                walk_ty(self, ty);
-            }
-        }
-        let mut has_error = HasInfer { found: false };
-        has_error.visit_ty(self);
-        has_error.found
+        false
     }
     pub fn has_error(&self) -> bool {
         struct HasError {
@@ -204,7 +187,6 @@ pub trait TypeVisitor {
 }
 pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
     match ty {
-        Type::Infer(_) => (),
         Type::Array(ty) => v.visit_ty(ty),
         Type::Tuple(fields) => fields.iter().for_each(|ty| v.visit_ty(ty)),
         Type::Struct(fields) => fields.iter().for_each(|field| v.visit_ty(&field.ty)),
@@ -224,7 +206,6 @@ pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
 
 pub fn super_map_ty<M: TypeMapper>(mapper: &M, ty: &Type) -> Result<Type, M::Error> {
     Ok(match ty {
-        &Type::Infer(infer) => Type::Infer(infer),
         Type::Array(ty) => Type::new_array(mapper.map_ty(ty)?),
         &Type::Ref(ref ty, mutable) => Type::new_ref(mapper.map_ty(ty)?, mutable),
         Type::Function(params, return_ty) => Type::new_function(
