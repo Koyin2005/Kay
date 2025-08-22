@@ -15,6 +15,7 @@ fun map_arr[T,U](x:[T],f:fun(T)->U) -> [U] = loop end
 fun square(x : int) -> int = x * x
 fun main() = do
     let a = Wrapper{ value = 5};
+    let a = AndInt{ int_value = 1, value = "Hey"};
     let c = Pair{ fst = true, snd = false};
     let x  = map(square,5);
 end

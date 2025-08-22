@@ -517,44 +517,57 @@ impl<'ctxt> TypeCheck<'ctxt> {
             Generic(GenericArgs),
             Infer(TypeInfer, GenericArgs),
         }
+        struct GotErr;
         let struct_def_args = if let Some(path) = path {
             let ty_lower = TypeLower::new(self.context);
-            ty_lower.lower_ty_path(path).ok().and_then(|scheme| {
-                let arg_count = scheme.arg_count();
-                let ty = scheme.skip_instantiate();
-                if let Type::Nominal(def, args) = ty {
-                    self.context.type_def(def).as_struct().map(|type_def| {
-                        (
-                            type_def,
-                            def,
-                            if arg_count == 0 {
-                                GenericArgsOrInfer::Generic(args)
-                            } else {
-                                GenericArgsOrInfer::Infer(
-                                    TypeInfer::new_with_count(arg_count),
-                                    args,
-                                )
-                            },
-                        )
-                    })
-                } else {
-                    None
+
+            match ty_lower.lower_ty_path(path) {
+                Ok(scheme) => {
+                    let arg_count = scheme.arg_count();
+                    let ty = scheme.skip_instantiate();
+                    if let Type::Nominal(def, args) = ty {
+                        Ok(self.context.type_def(def).as_struct().map(|type_def| {
+                            (
+                                type_def,
+                                def,
+                                if arg_count == 0 {
+                                    GenericArgsOrInfer::Generic(args)
+                                } else {
+                                    GenericArgsOrInfer::Infer(
+                                        TypeInfer::new_with_count(arg_count),
+                                        args,
+                                    )
+                                },
+                            )
+                        }))
+                    } else if ty.has_error() {
+                        Err(GotErr)
+                    } else {
+                        Ok(None)
+                    }
                 }
-            })
+                Err(_) => Err(GotErr),
+            }
         } else if let Some(&Type::Nominal(def, ref args)) = expected_ty.as_option_ty() {
-            self.context
+            Ok(self
+                .context
                 .type_def(def)
                 .as_struct()
-                .map(|case_def| (case_def, def, GenericArgsOrInfer::Generic(args.clone())))
+                .map(|case_def| (case_def, def, GenericArgsOrInfer::Generic(args.clone()))))
         } else {
-            None
+            Ok(None)
         };
-        let Some((struct_def, def, args)) = struct_def_args else {
-            self.err("Cannot initialize.", span);
-            for field in fields {
-                self.check_expr(&field.expr, Expected::None);
+        let (struct_def, def, args) = match struct_def_args {
+            Ok(Some((struct_def, def, args))) => (struct_def, def, args),
+            err @ (Ok(None) | Err(GotErr)) => {
+                if err.is_ok() {
+                    self.err("Cannot initialize.", span);
+                }
+                for field in fields {
+                    self.check_expr(&field.expr, Expected::None);
+                }
+                return Type::Err;
             }
-            return Type::Err;
         };
         let mut seen_fields = FxHashSet::default();
         for field in fields {
