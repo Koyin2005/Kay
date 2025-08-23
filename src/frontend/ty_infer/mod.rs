@@ -4,12 +4,12 @@ use fxhash::FxHashSet;
 
 use crate::{
     span::Span,
-    types::{super_map_ty, walk_ty, GenericArg, Type, TypeMapper, TypeVisitor},
+    types::{GenericArg, Type, TypeMapper, TypeVisitor, super_map_ty, walk_ty},
 };
 #[derive(Debug)]
-struct TypeVar{
-    current_ty : Option<Type>,
-    source : Span
+struct TypeVar {
+    current_ty: Option<Type>,
+    source: Span,
 }
 
 pub type InferResult<T> = Result<T, InferError>;
@@ -24,23 +24,29 @@ pub struct TypeInfer {
 }
 
 impl TypeInfer {
-    pub fn new() -> Self{
-        Self { vars: RefCell::new(Vec::new()) }
+    pub fn new() -> Self {
+        Self {
+            vars: RefCell::new(Vec::new()),
+        }
     }
     pub fn fresh_var(&self, span: Span) -> u32 {
-        self.vars.borrow_mut().push(TypeVar { current_ty: None, source: span });
+        self.vars.borrow_mut().push(TypeVar {
+            current_ty: None,
+            source: span,
+        });
         (self.vars.borrow().len() - 1)
             .try_into()
             .expect("SHould never have too many type variables")
     }
-    pub fn span(&self, var: u32) -> Span{
+    pub fn span(&self, var: u32) -> Span {
         self.vars.borrow()[var as usize].source
     }
-    pub fn var_count(&self) -> u32{
-        self.vars.borrow().len().try_into().expect("Shouldn't have more than u32::MAX type vars")
-    }
-    pub fn completed(self) -> bool {
-        self.vars.into_inner().iter().all(|ty_var| ty_var.current_ty.is_some())
+    pub fn var_count(&self) -> u32 {
+        self.vars
+            .borrow()
+            .len()
+            .try_into()
+            .expect("Shouldn't have more than u32::MAX type vars")
     }
     pub fn normalize(&self, ty: &Type) -> Type {
         struct Normalizer<'infer> {
@@ -98,7 +104,7 @@ impl TypeInfer {
                     var.current_ty = Some(Type::Err);
                     Err(InferError::InfiniteType)
                 } else if let Some(curr_ty) = &var.current_ty {
-                    self.unify(&curr_ty, &ty)
+                    self.unify(curr_ty, &ty)
                 } else {
                     var.current_ty = Some(ty.clone());
                     Ok(ty)
@@ -106,7 +112,7 @@ impl TypeInfer {
             }
             (Type::Err, _) | (_, Type::Err) => Ok(Type::Err),
             (Type::Array(element), Type::Array(other_element)) => {
-                Ok(Type::new_array(self.unify(&*element, &*other_element)?))
+                Ok(Type::new_array(self.unify(&element, &other_element)?))
             }
             (Type::Tuple(elements), Type::Tuple(other_elements))
                 if elements.len() == other_elements.len() =>
@@ -134,7 +140,7 @@ impl TypeInfer {
             (Type::Ref(ty, mutable), Type::Ref(other_ty, other_mutable))
                 if mutable == other_mutable =>
             {
-                Ok(Type::new_ref(self.unify(&*ty, &*other_ty)?, mutable))
+                Ok(Type::new_ref(self.unify(&ty, &other_ty)?, mutable))
             }
             (Type::Struct(fields), Type::Struct(other_fields))
                 if fields.len() == other_fields.len() && {

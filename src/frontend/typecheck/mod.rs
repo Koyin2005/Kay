@@ -38,12 +38,20 @@ impl<'a> Expected<'a> {
     }
     fn map_ty(self, f: impl FnOnce(&'a Type) -> Option<&'a Type>) -> Self {
         match self {
-            Self::HasType(ty) => if let Some(ty) = f(ty){
-                Self::HasType(ty)
-            }  else { Self::None },
-            Self::CoercesTo(ty) => if let Some(ty) = f(ty){
-                Self::CoercesTo(ty)
-            }  else { Self::None },
+            Self::HasType(ty) => {
+                if let Some(ty) = f(ty) {
+                    Self::HasType(ty)
+                } else {
+                    Self::None
+                }
+            }
+            Self::CoercesTo(ty) => {
+                if let Some(ty) = f(ty) {
+                    Self::CoercesTo(ty)
+                } else {
+                    Self::None
+                }
+            }
             Self::None => Self::None,
         }
     }
@@ -92,11 +100,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
             locals: RefCell::new(FxHashMap::default()),
             types: RefCell::new(FxHashMap::default()),
         })
-    }
-    fn err_on_inclomplete(&self, ty_infer: TypeInfer, span: Span) {
-        if !ty_infer.completed() {
-            self.err("Type annotations needed.", span);
-        }
     }
     fn fresh_ty_var(&self, span: Span) -> Type {
         Type::Infer(self.infer_ctxt.fresh_var(span))
@@ -210,7 +213,9 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 //Don't check items here
             }
             StmtKind::Let(pat, ty, expr) => {
-                let ty = ty.as_ref().map(|ty| TypeLower::new(self.context).lower(ty));
+                let ty = ty
+                    .as_ref()
+                    .map(|ty| TypeLower::new(self.context, Some(&self.infer_ctxt)).lower(ty));
                 let ty = self.check_expr(
                     expr,
                     match ty {
@@ -324,10 +329,12 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
     }
     fn check_array(&self, span: Span, elements: &[Expr], expected_ty: Expected) -> Type {
-        let expected_element_ty = expected_ty.map_ty(|ty|{
-            if let Type::Array(ty) =  ty {
+        let expected_element_ty = expected_ty.map_ty(|ty| {
+            if let Type::Array(ty) = ty {
                 Some(&**ty)
-            } else { None }
+            } else {
+                None
+            }
         });
         let mut element_ty = expected_element_ty.as_option_ty().cloned();
         for element in elements {
@@ -533,53 +540,45 @@ impl<'ctxt> TypeCheck<'ctxt> {
         fields: &[ExprField],
         expected_ty: Expected,
     ) -> Type {
-        enum GenericArgsOrInfer {
-            Generic(GenericArgs),
-            Infer(TypeInfer, GenericArgs),
-        }
-        struct GotErr;
-        let struct_def_args = if let Some(path) = path {
-            let ty_lower = TypeLower::new(self.context);
-
+        let struct_def = if let Some(path) = path {
+            let ty_lower = TypeLower::new(self.context, Some(&self.infer_ctxt));
             match ty_lower.lower_ty_path(path) {
                 Ok(scheme) => {
                     let arg_count = scheme.arg_count();
-                    let ty = scheme.skip_instantiate();
+                    let ty = scheme.instantiate(
+                        (0..arg_count)
+                            .map(|_| GenericArg(self.fresh_ty_var(span)))
+                            .collect(),
+                    );
                     if let Type::Nominal(def, args) = ty {
-                        Ok(self.context.type_def(def).as_struct().map(|type_def| {
-                            (
-                                type_def,
-                                def,
-                                if arg_count == 0 {
-                                    GenericArgsOrInfer::Generic(args)
-                                } else {
-                                    GenericArgsOrInfer::Infer(
-                                        TypeInfer::new(),
-                                        args,
-                                    )
-                                },
-                            )
-                        }))
+                        Ok(self
+                            .context
+                            .type_def(def)
+                            .as_struct()
+                            .map(|type_def| (type_def, def, args)))
                     } else if ty.has_error() {
-                        Err(GotErr)
+                        Err(())
                     } else {
                         Ok(None)
                     }
                 }
-                Err(_) => Err(GotErr),
+                Err(_) => Ok(None),
             }
-        } else if let Some(&Type::Nominal(def, ref args)) = expected_ty.as_option_ty() {
+        } else if let Some(Type::Nominal(def, args)) = expected_ty
+            .as_option_ty()
+            .map(|ty| self.infer_ctxt.normalize(ty))
+        {
             Ok(self
                 .context
                 .type_def(def)
                 .as_struct()
-                .map(|case_def| (case_def, def, GenericArgsOrInfer::Generic(args.clone()))))
+                .map(|case_def| (case_def, def, args)))
         } else {
             Ok(None)
         };
-        let (struct_def, def, args) = match struct_def_args {
+        let (struct_def, def, args) = match struct_def {
             Ok(Some((struct_def, def, args))) => (struct_def, def, args),
-            err @ (Ok(None) | Err(GotErr)) => {
+            err @ (Ok(None) | Err(_)) => {
                 if err.is_ok() {
                     self.err("Cannot initialize.", span);
                 }
@@ -600,36 +599,14 @@ impl<'ctxt> TypeCheck<'ctxt> {
             let field_def = struct_def.fields.iter().find_map(|field_def| {
                 (field_def.name == field.name.symbol).then_some(field_def.id)
             });
-            match args {
-                GenericArgsOrInfer::Generic(ref generic_args) => {
-                    self.check_expr(
-                        &field.expr,
-                        field_def
-                            .map(|field_def| {
-                                self.context
-                                    .type_of(field_def)
-                                    .instantiate(generic_args.clone())
-                            })
-                            .as_ref()
-                            .map_or(Expected::None, Expected::HasType),
-                    );
-                }
-                GenericArgsOrInfer::Infer(ref infer, _) => {
-                    let expected_field_ty =
-                        field_def.map(|def| self.context.type_of(def).skip_instantiate());
-                    let expected_field_ty_normal =
-                        expected_field_ty.as_ref().map(|ty| infer.normalize(ty));
-                    let field_ty = self.check_expr(
-                        &field.expr,
-                        expected_field_ty_normal
-                            .as_ref()
-                            .map_or(Expected::None, Expected::CoercesTo),
-                    );
-                    if let Some(expected) = expected_field_ty.as_ref() {
-                        let _ = infer.unify(&field_ty, expected);
-                    }
-                }
-            }
+            let expected_field_ty =
+                field_def.map(|def| self.context.type_of(def).instantiate(args.clone()));
+            self.check_expr(
+                &field.expr,
+                expected_field_ty
+                    .as_ref()
+                    .map_or(Expected::None, Expected::CoercesTo),
+            );
         }
         for field in struct_def
             .fields
@@ -638,24 +615,14 @@ impl<'ctxt> TypeCheck<'ctxt> {
         {
             self.err(format!("Missing field '{}'.", field.as_str()), span);
         }
-        match args {
-            GenericArgsOrInfer::Generic(args) => Type::new_nominal_with_args(def, args),
-            GenericArgsOrInfer::Infer(infer, args) => {
-                let generic_args: GenericArgs = args
-                    .into_iter()
-                    .map(|arg| GenericArg(infer.normalize(&arg.0)))
-                    .collect();
-                self.err_on_inclomplete(infer, span);
-                Type::new_nominal_with_args(def, generic_args)
-            }
-        }
+        Type::new_nominal_with_args(def, args)
     }
     fn check_callee(&self, callee: &Expr) -> Callee {
         match &callee.kind {
-            &ExprKind::Path(hir::Path { id: _, res }) => match res {
-                Resolution::Builtin(Builtin::Println) => Callee::Builtin(BuiltinFunction::Println),
-                _ => Callee::Normal(self.check_expr(callee, Expected::None)),
-            },
+            &ExprKind::Path(hir::Path {
+                id: _,
+                res: Resolution::Builtin(Builtin::Println),
+            }) => Callee::Builtin(BuiltinFunction::Println),
             _ => Callee::Normal(self.check_expr(callee, Expected::None)),
         }
     }
@@ -695,7 +662,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             };
             self.check_expr(arg, expected);
         }
-        return return_ty.cloned().unwrap_or(Type::Err);
+        return_ty.cloned().unwrap_or(Type::Err)
     }
     fn check_return(&self, returned_expr: Option<&Expr>) -> Type {
         if let Some(expr) = returned_expr {
@@ -779,7 +746,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         span: Span,
     ) -> Type {
         match infer_error {
-            InferError::InfiniteType => self.err(format!("Infinitely recursive type."), span),
+            InferError::InfiniteType => self.err("Infinitely recursive type.", span),
             InferError::UnifyFailed => self.err(
                 format!(
                     "Expected '{}' got '{}'.",
@@ -913,7 +880,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         ty
     }
     fn check_as_expr(&self, expr: &Expr, ty: &hir::Type) -> Type {
-        let target_ty = TypeLower::new(self.context).lower(ty);
+        let target_ty = TypeLower::new(self.context, Some(&self.infer_ctxt)).lower(ty);
         self.check_expr(expr, Expected::CoercesTo(&target_ty))
     }
     fn check_expr_kind(&self, expr: &Expr, expected_ty: Expected) -> Type {
@@ -1122,7 +1089,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
         self.check_expr(&self.body.value, Expected::CoercesTo(&self.return_type));
         let mut incomplete_vars = FxHashSet::default();
-        for var in 0..self.infer_ctxt.var_count(){
+        for var in 0..self.infer_ctxt.var_count() {
             incomplete_vars.extend(self.infer_ctxt.normalize(&Type::Infer(var)).infer_vars());
         }
         let incomplete_vars = {
@@ -1130,7 +1097,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             vars.sort();
             vars
         };
-        for var in incomplete_vars{
+        for var in incomplete_vars {
             self.err("Type annotations needed.", self.infer_ctxt.span(var));
         }
     }

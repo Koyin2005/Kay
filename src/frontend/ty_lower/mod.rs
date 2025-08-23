@@ -1,16 +1,17 @@
 use crate::{
     context::CtxtRef,
-    frontend::hir,
+    frontend::{hir, ty_infer::TypeInfer},
     types::{GenericArg, GenericArgs, Type, TypeScheme},
 };
 
 pub struct NotAType;
 pub struct TypeLower<'ctxt> {
     ctxt: CtxtRef<'ctxt>,
+    infer: Option<&'ctxt TypeInfer>,
 }
 impl<'a> TypeLower<'a> {
-    pub fn new(ctxt: CtxtRef<'a>) -> Self {
-        Self { ctxt }
+    pub fn new(ctxt: CtxtRef<'a>, infer: Option<&'a TypeInfer>) -> Self {
+        Self { ctxt, infer }
     }
     pub fn lower_function_sig(&self, sig: &hir::FunctionSig) -> (impl Iterator<Item = Type>, Type) {
         (
@@ -35,10 +36,14 @@ impl<'a> TypeLower<'a> {
         };
         Ok(self.ctxt.type_of(def))
     }
-    pub fn lower_generic_args(&self, generic_args: &hir::GenericArgs) -> GenericArgs{
-        GenericArgs { args: generic_args.args.iter().map(|arg|{
-            GenericArg(self.lower(&arg.ty))
-        }).collect() }
+    pub fn lower_generic_args(&self, generic_args: &hir::GenericArgs) -> GenericArgs {
+        GenericArgs {
+            args: generic_args
+                .args
+                .iter()
+                .map(|arg| GenericArg(self.lower(&arg.ty)))
+                .collect(),
+        }
     }
     pub fn lower(&self, ty: &hir::Type) -> Type {
         match &ty.kind {
@@ -69,7 +74,7 @@ impl<'a> TypeLower<'a> {
                 )
             })),
             &hir::TypeKind::Primitive(primative) => Type::new_primative(primative),
-            hir::TypeKind::Path(path,args) => {
+            hir::TypeKind::Path(path, args) => {
                 let Ok(scheme) = self.lower_ty_path(path) else {
                     self.ctxt.diag().emit_diag(
                         format!("Cannot use '{}' as a type.", path.res.as_str()),
@@ -79,10 +84,16 @@ impl<'a> TypeLower<'a> {
                 };
                 if scheme.arg_count() == 0 {
                     scheme.skip_instantiate()
-                } else if let Some(args) = args.as_ref(){
+                } else if let Some(args) = args.as_ref() {
                     scheme.instantiate(self.lower_generic_args(args))
-                }
-                else{
+                } else if let Some(infer) = self.infer {
+                    let arg_count = scheme.arg_count();
+                    scheme.instantiate(
+                        (0..arg_count)
+                            .map(|_| GenericArg(Type::Infer(infer.fresh_var(ty.span))))
+                            .collect(),
+                    )
+                } else {
                     let arg_count = scheme.arg_count();
                     self.ctxt
                         .diag()

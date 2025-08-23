@@ -232,18 +232,18 @@ pub struct VariantTypeCase {
     pub fields: Option<Vec<Type>>,
 }
 #[derive(Debug)]
-pub struct GenericArg{
-    pub ty : Type
+pub struct GenericArg {
+    pub ty: Type,
 }
 #[derive(Debug)]
-pub struct GenericArgs{
-    pub span : Span,
-    pub args : Vec<GenericArg>
+pub struct GenericArgs {
+    pub span: Span,
+    pub args: Vec<GenericArg>,
 }
 #[derive(Debug)]
 pub enum TypeKind {
     Tuple(Vec<Type>),
-    Path(Path,Option<GenericArgs>),
+    Path(Path, Option<GenericArgs>),
     Infer,
     Variant(Vec<VariantTypeCase>),
     Struct(Vec<StructTypeField>),

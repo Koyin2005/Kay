@@ -99,7 +99,7 @@ impl Type {
     pub fn infer_vars(&self) -> FxHashSet<u32> {
         struct HasError {
             found: bool,
-            vars : FxHashSet<u32>
+            vars: FxHashSet<u32>,
         }
         impl TypeVisitor for HasError {
             fn visit_ty(&mut self, ty: &Type) {
@@ -113,7 +113,10 @@ impl Type {
                 walk_ty(self, ty);
             }
         }
-        let mut has_error = HasError { found: false, vars : FxHashSet::default() };
+        let mut has_error = HasError {
+            found: false,
+            vars: FxHashSet::default(),
+        };
         has_error.visit_ty(self);
         has_error.vars
     }

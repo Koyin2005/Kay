@@ -127,7 +127,7 @@ pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
             }
         }
         TypeKind::Named(_, Some(generic_args)) => {
-            for arg in generic_args.args.iter(){
+            for arg in generic_args.args.iter() {
                 visitor.visit_ty(&arg.ty);
             }
         }
@@ -136,7 +136,7 @@ pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
         | TypeKind::Bool
         | TypeKind::String
         | TypeKind::Never
-        | TypeKind::Named(_,None) => (),
+        | TypeKind::Named(_, None) => (),
     }
 }
 pub fn walk_iterator(visitor: &mut impl Visitor, iterator: &IteratorExpr) {

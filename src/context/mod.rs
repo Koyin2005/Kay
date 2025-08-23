@@ -126,7 +126,7 @@ impl<'hir> GlobalContext<'hir> {
     pub fn signature_of(&'hir self, id: DefId) -> (Vec<Type>, Type) {
         match &self.expect_item(id).kind {
             hir::ItemKind::Function(function) => {
-                let lower = TypeLower::new(self);
+                let lower = TypeLower::new(self, None);
                 let (params, return_ty) = lower.lower_function_sig(&function.sig);
                 (params.collect(), return_ty)
             }
@@ -310,7 +310,7 @@ impl<'hir> GlobalContext<'hir> {
         })
     }
     pub fn type_of(&self, def: Definition) -> TypeScheme {
-        let ty_lower = TypeLower::new(self);
+        let ty_lower = TypeLower::new(self, None);
         match def {
             Definition::Builtin(builtin) => self.type_of_builtin(builtin),
             Definition::Def(id) => match self.nodes[&id] {

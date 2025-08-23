@@ -287,7 +287,7 @@ pub struct QualifiedName {
 
 #[derive(Clone, Debug)]
 pub enum TypeKind {
-    Named(Box<QualifiedName>,Option<GenericArgs>),
+    Named(Box<QualifiedName>, Option<GenericArgs>),
     Int,
     Bool,
     Uint,
@@ -338,12 +338,12 @@ pub struct Module {
 pub struct Ast {
     pub modules: Vec<Module>,
 }
-#[derive(Clone,Debug)]
-pub struct GenericArgs{
-    pub span : Span,
-    pub args : Vec<GenericArg>
+#[derive(Clone, Debug)]
+pub struct GenericArgs {
+    pub span: Span,
+    pub args: Vec<GenericArg>,
 }
 #[derive(Clone, Debug)]
-pub struct GenericArg{
-    pub ty : Type
+pub struct GenericArg {
+    pub ty: Type,
 }

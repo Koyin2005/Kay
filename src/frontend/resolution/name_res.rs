@@ -420,11 +420,8 @@ impl<'a, 'b> NameRes<'a, 'b> {
     }
     fn resolve_type(&mut self, ty: &Type) {
         use crate::frontend::ast::TypeKind;
-        match &ty.kind {
-            TypeKind::Named(name,_) => {
-                self.resolve_path(name.id, name.head, name.tail.iter().copied());
-            }
-            _ => (),
+        if let TypeKind::Named(name, _) = &ty.kind {
+            self.resolve_path(name.id, name.head, name.tail.iter().copied());
         }
         walk_type(self, ty)
     }
