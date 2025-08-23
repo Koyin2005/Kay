@@ -15,5 +15,10 @@ fun map_option[T,U](f: fun(T) -> U, x : Option[T]) -> Option[U] =
 fun id[T](x:T) -> T = x
 fun map[T,U](f:fun(T)->U,x:T) -> U = f(x)
 fun main() = do
-    let c : Option[int] = Option.None;
+    let c  = Option.None;
+    let a = match c with
+        Option.Some(x) => x + 2,
+        Option.None => 0
+    end;
+    let c = map_option(id,c);
 end
