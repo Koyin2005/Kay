@@ -79,6 +79,13 @@ impl<'diag> AstLower<'diag> {
             res: self.map_res(name.id).unwrap_or(hir::Resolution::Err),
         }
     }
+    fn lower_generic_args(&self, args: &ast::GenericArgs) -> hir::GenericArgs{
+        hir::GenericArgs { span: args.span, args: args.args.iter().map(|arg|{
+            hir::GenericArg{
+                ty : self.lower_ty(&arg.ty)
+            }
+        }).collect()}
+    }
     fn lower_ty(&self, ty: &ast::Type) -> hir::Type {
         hir::Type {
             id: self.next_hir_id(),
@@ -133,7 +140,9 @@ impl<'diag> AstLower<'diag> {
                         })
                         .collect(),
                 ),
-                ast::TypeKind::Named(name) => hir::TypeKind::Path(self.lower_path(name)),
+                ast::TypeKind::Named(name,args) => hir::TypeKind::Path(self.lower_path(name),args.as_ref().map(|args|{
+                    self.lower_generic_args(args)
+                })),
                 ast::TypeKind::Fun(params, return_ty) => hir::TypeKind::Fun(
                     params.iter().map(|ty| self.lower_ty(ty)).collect(),
                     return_ty.as_ref().map(|ty| Box::new(self.lower_ty(ty))),

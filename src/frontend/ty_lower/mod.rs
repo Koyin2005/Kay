@@ -1,7 +1,7 @@
 use crate::{
     context::CtxtRef,
     frontend::hir,
-    types::{GenericArg, Type, TypeScheme},
+    types::{GenericArg, GenericArgs, Type, TypeScheme},
 };
 
 pub struct NotAType;
@@ -35,6 +35,11 @@ impl<'a> TypeLower<'a> {
         };
         Ok(self.ctxt.type_of(def))
     }
+    pub fn lower_generic_args(&self, generic_args: &hir::GenericArgs) -> GenericArgs{
+        GenericArgs { args: generic_args.args.iter().map(|arg|{
+            GenericArg(self.lower(&arg.ty))
+        }).collect() }
+    }
     pub fn lower(&self, ty: &hir::Type) -> Type {
         match &ty.kind {
             hir::TypeKind::Infer => {
@@ -64,7 +69,7 @@ impl<'a> TypeLower<'a> {
                 )
             })),
             &hir::TypeKind::Primitive(primative) => Type::new_primative(primative),
-            hir::TypeKind::Path(path) => {
+            hir::TypeKind::Path(path,args) => {
                 let Ok(scheme) = self.lower_ty_path(path) else {
                     self.ctxt.diag().emit_diag(
                         format!("Cannot use '{}' as a type.", path.res.as_str()),
@@ -74,7 +79,10 @@ impl<'a> TypeLower<'a> {
                 };
                 if scheme.arg_count() == 0 {
                     scheme.skip_instantiate()
-                } else {
+                } else if let Some(args) = args.as_ref(){
+                    scheme.instantiate(self.lower_generic_args(args))
+                }
+                else{
                     let arg_count = scheme.arg_count();
                     self.ctxt
                         .diag()

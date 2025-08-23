@@ -1,3 +1,5 @@
+use fxhash::FxHashSet;
+
 use crate::{
     context::CtxtRef,
     define_id,
@@ -84,6 +86,7 @@ pub enum Type {
     Ref(Box<Type>, IsMutable),
     Generic(symbol::Symbol, u32),
     Array(Box<Type>),
+    Infer(u32),
     Err,
 }
 impl Type {
@@ -93,8 +96,26 @@ impl Type {
     pub fn format(&self, ctxt: CtxtRef) -> String {
         TypeFormat::new(ctxt).format_type(self)
     }
-    pub fn has_infer(&self) -> bool {
-        false
+    pub fn infer_vars(&self) -> FxHashSet<u32> {
+        struct HasError {
+            found: bool,
+            vars : FxHashSet<u32>
+        }
+        impl TypeVisitor for HasError {
+            fn visit_ty(&mut self, ty: &Type) {
+                if self.found {
+                    return;
+                }
+                if let &Type::Infer(var) = ty {
+                    self.found = true;
+                    self.vars.insert(var);
+                }
+                walk_ty(self, ty);
+            }
+        }
+        let mut has_error = HasError { found: false, vars : FxHashSet::default() };
+        has_error.visit_ty(self);
+        has_error.vars
     }
     pub fn has_error(&self) -> bool {
         struct HasError {
@@ -200,12 +221,14 @@ pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
         Type::Nominal(_, args) => args.iter().for_each(|GenericArg(ty)| v.visit_ty(ty)),
         Type::Ref(ty, _) => v.visit_ty(ty),
         Type::Generic(..) => (),
+        Type::Infer(..) => (),
         Type::Err | Type::Primitive(_) => (),
     }
 }
 
 pub fn super_map_ty<M: TypeMapper>(mapper: &M, ty: &Type) -> Result<Type, M::Error> {
     Ok(match ty {
+        &Type::Infer(var) => Type::Infer(var),
         Type::Array(ty) => Type::new_array(mapper.map_ty(ty)?),
         &Type::Ref(ref ty, mutable) => Type::new_ref(mapper.map_ty(ty)?, mutable),
         Type::Function(params, return_ty) => Type::new_function(

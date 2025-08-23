@@ -1,23 +1,14 @@
 use std::{cell::Cell, vec};
 
 use crate::{
-    Lexer,
-    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
-    frontend::{
+    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
         ast::{
-            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef,
-            GenericParam, GenericParams, Item, ItemKind, IteratorExpr, IteratorExprKind,
-            LiteralKind, MatchArm, Module, Mutable, NodeId, Param, PathSegment, Pattern,
-            PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField, Type, TypeDef,
-            TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase, VariantField,
+            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, GenericArg, GenericArgs, GenericParam, GenericParams, Item, ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase, VariantField
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    },
-    indexvec::Idx,
-    span::{
-        Span,
-        symbol::{Ident, Symbol},
-    },
+    }, indexvec::Idx, span::{
+        symbol::{Ident, Symbol}, Span
+    }, Lexer
 };
 #[derive(Clone, Copy)]
 enum BlockKind {
@@ -1024,6 +1015,25 @@ impl<'source> Parser<'source> {
         }
         Ok(names)
     }
+    fn parse_generic_args(&mut self) -> ParseResult<GenericArgs>{
+        let start_span = self.current_token.span;
+        self.advance();
+        let args : Vec<_> = self.parse_delimited_by(TokenKind::RightBracket, |this|{
+            let ty = this.parse_type()?;
+            Ok(GenericArg{ ty})
+        })?.into();
+        let end_span = self.current_token.span;
+        let _ = self.expect(TokenKind::RightBracket, "Expected ']' after generic arguments.");
+        Ok(GenericArgs { span: start_span.combined(end_span) , args })
+    }
+    fn parse_optional_generic_args(&mut self) -> ParseResult<Option<GenericArgs>>{
+        if self.check(TokenKind::LeftBracket){
+            Ok(Some(self.parse_generic_args()?))
+        }
+        else{
+            Ok(None)
+        }
+    }
     fn parse_type(&mut self) -> ParseResult<Type> {
         let start_span = self.current_token.span;
         let (kind, span) = match self.current_token.kind {
@@ -1098,8 +1108,14 @@ impl<'source> Parser<'source> {
             }
             TokenKind::Ident(_) => {
                 let name = self.parse_qual_name()?;
-                let span = name.span;
-                (TypeKind::Named(Box::new(name)), span)
+                let name_span = name.span;
+                let generic_args = self.parse_optional_generic_args()?;
+                let span = if let Some(args) = generic_args.as_ref(){
+                    name_span.combined(args.span)
+                } else {
+                    name_span
+                };
+                (TypeKind::Named(Box::new(name),generic_args), span)
             }
             TokenKind::Fun => {
                 let start = self.current_token.span;

@@ -421,11 +421,12 @@ impl<'a, 'b> NameRes<'a, 'b> {
     fn resolve_type(&mut self, ty: &Type) {
         use crate::frontend::ast::TypeKind;
         match &ty.kind {
-            TypeKind::Named(name) => {
+            TypeKind::Named(name,_) => {
                 self.resolve_path(name.id, name.head, name.tail.iter().copied());
             }
-            _ => walk_type(self, ty),
+            _ => (),
         }
+        walk_type(self, ty)
     }
     fn resolve_block(&mut self, block: &Block) {
         /*
