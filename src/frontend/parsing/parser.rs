@@ -2,7 +2,7 @@ use std::{cell::Cell, vec};
 
 use crate::{
     Lexer,
-    errors::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
+    diagnostics::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
     frontend::{
         ast::{
             BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef,

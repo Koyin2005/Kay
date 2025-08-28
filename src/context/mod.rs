@@ -1,5 +1,5 @@
 use crate::{
-    errors::DiagnosticReporter,
+    diagnostics::DiagnosticReporter,
     frontend::{
         hir::{self, Builtin, DefId, DefKind, Definition, Hir},
         ty_lower::TypeLower,

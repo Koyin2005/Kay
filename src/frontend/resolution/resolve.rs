@@ -1,7 +1,7 @@
 use fxhash::FxHashMap;
 
 use crate::{
-    errors::{DiagnosticReporter, IntoDiagnosticMessage},
+    diagnostics::{DiagnosticReporter, IntoDiagnosticMessage},
     frontend::{
         ast::{Ast, NodeId},
         ast_visit::Visitor,

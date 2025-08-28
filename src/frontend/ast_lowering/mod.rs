@@ -4,7 +4,7 @@ use fxhash::FxHashMap;
 use indexmap::IndexMap;
 
 use crate::{
-    errors::DiagnosticReporter,
+    diagnostics::DiagnosticReporter,
     frontend::{
         ast::{self, ItemKind, NodeId},
         hir::{self, Body, DefId, Hir, HirId},

@@ -3,7 +3,7 @@ use std::rc::Rc;
 use pl5::{
     Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, TypeCheck,
     config::{Config, ConfigError, KAE_EXTENSION, KAE_EXTENSION_WITH_DOT, PathKind},
-    errors::DiagnosticReporter,
+    diagnostics::DiagnosticReporter,
 };
 
 enum SourceError {

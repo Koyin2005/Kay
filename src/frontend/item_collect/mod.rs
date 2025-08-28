@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 
 use crate::{
     context::{GlobalContext, NodeInfo},
-    errors::DiagnosticReporter,
+    diagnostics::DiagnosticReporter,
     frontend::hir::{Hir, ItemKind, TypeDefKind},
 };
 

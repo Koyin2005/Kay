@@ -1,6 +1,6 @@
 pub mod config;
 pub mod context;
-pub mod errors;
+pub mod diagnostics;
 mod frontend;
 pub(crate) mod indexvec;
 pub(crate) mod span;

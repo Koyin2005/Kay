@@ -4,7 +4,7 @@ use fxhash::{FxHashMap, FxHashSet};
 
 use crate::{
     context::CtxtRef,
-    errors::{DiagnosticReporter, IntoDiagnosticMessage},
+    diagnostics::{DiagnosticReporter, IntoDiagnosticMessage},
     frontend::{
         ast::{BinaryOp, BinaryOpKind, ByRef, LiteralKind, Mutable, UnaryOp, UnaryOpKind},
         hir::{
