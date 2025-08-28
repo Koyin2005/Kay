@@ -287,7 +287,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         };
         let left = self.check_expr(left, left_expect);
         let right = self.check_expr(right, right_expect);
-        let ty = if left == right {
+        let ty = if let Ok(left) = self.infer_ctxt.unify(&left, &right) {
             match (op.node, &left) {
                 (
                     BinaryOpKind::Add
@@ -714,13 +714,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     ///Computes a type that both a and b can be coerced to.
     fn coercion_lub(&self, a: &Type, b: &Type) -> Option<Type> {
-        if a == b {
-            return Some(a.clone());
-        }
         match (a, b) {
             (Type::Primitive(PrimitiveType::Never), ty)
             | (ty, Type::Primitive(PrimitiveType::Never)) => Some(ty.clone()),
-            _ => None,
+            (a,b) => self.infer_ctxt.unify(a, b).ok(),
         }
     }
     fn try_coerce(&self, ty: &Type, target: &Type) -> Result<Type, CoerceError> {
@@ -1089,7 +1086,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
         self.check_expr(&self.body.value, Expected::CoercesTo(&self.return_type));
         let mut incomplete_vars = FxHashSet::default();
-        for var in 0..self.infer_ctxt.var_count() {
+        for var in self.infer_ctxt.vars() {
             incomplete_vars.extend(self.infer_ctxt.normalize(&Type::Infer(var)).infer_vars());
         }
         let incomplete_vars = {

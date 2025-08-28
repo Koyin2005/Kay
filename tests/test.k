@@ -12,13 +12,13 @@ fun map_option[T,U](f: fun(T) -> U, x : Option[T]) -> Option[U] =
         Option.None => Option.None
     end
 
+fun what_is_this[T]() -> T = loop end
 fun id[T](x:T) -> T = x
 fun map[T,U](f:fun(T)->U,x:T) -> U = f(x)
+
+fun add(x : int, y: int) -> int = x + y
+fun at[T](arr: [T],index : uint) -> ref mut T = loop end
 fun main() = do
-    let c  = Option.None;
-    let a = match c with
-        Option.Some(x) => x + 2,
-        Option.None => 0
-    end;
-    let c = map_option(id,c);
+    let a = what_is_this();
+    a(1,2);
 end

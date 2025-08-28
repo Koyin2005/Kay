@@ -9,9 +9,12 @@ use crate::{
 #[derive(Debug)]
 struct TypeVar {
     current_ty: Option<Type>,
-    source: Span,
+    source: Span
 }
-
+#[derive(Clone, Copy,Debug,PartialEq, Eq,Hash,PartialOrd, Ord)]
+pub struct InferVar{
+    index : u32,
+}
 pub type InferResult<T> = Result<T, InferError>;
 #[derive(Debug)]
 pub enum InferError {
@@ -29,24 +32,27 @@ impl TypeInfer {
             vars: RefCell::new(Vec::new()),
         }
     }
-    pub fn fresh_var(&self, span: Span) -> u32 {
+    pub fn fresh_var(&self, span: Span) -> InferVar {
         self.vars.borrow_mut().push(TypeVar {
             current_ty: None,
             source: span,
         });
-        (self.vars.borrow().len() - 1)
+        let index = (self.vars.borrow().len() - 1)
             .try_into()
-            .expect("SHould never have too many type variables")
+            .expect("SHould never have too many type variables");
+        InferVar { index }
     }
-    pub fn span(&self, var: u32) -> Span {
-        self.vars.borrow()[var as usize].source
+    pub fn span(&self, var: InferVar) -> Span {
+        self.vars.borrow()[var.index as usize].source
     }
-    pub fn var_count(&self) -> u32 {
-        self.vars
+    pub fn vars(&self) -> impl ExactSizeIterator<Item = InferVar> {
+        (0u32..self.vars
             .borrow()
             .len()
             .try_into()
-            .expect("Shouldn't have more than u32::MAX type vars")
+            .expect("Shouldn't have more than u32::MAX type vars"))
+        .map(|i| InferVar { index: i })
+            
     }
     pub fn normalize(&self, ty: &Type) -> Type {
         struct Normalizer<'infer> {
@@ -56,11 +62,11 @@ impl TypeInfer {
             type Error = std::convert::Infallible;
             fn map_ty(&self, ty: &Type) -> Result<Type, Self::Error> {
                 match ty {
-                    &Type::Infer(index) => Ok(self
+                    &Type::Infer(var) => Ok(self
                         .infer
                         .vars
                         .borrow()
-                        .get(index as usize)
+                        .get(var.index as usize)
                         .and_then(|ty| ty.current_ty.as_ref())
                         .map(|ty| self.infer.normalize(ty))
                         .unwrap_or(ty.clone())),
@@ -77,9 +83,9 @@ impl TypeInfer {
         let norm_exp = self.normalize(expected);
         match (norm_ty, norm_exp) {
             (ty, expected) if ty == expected => Ok(ty.clone()),
-            (ty, Type::Infer(index)) | (Type::Infer(index), ty) => {
+            (ty, Type::Infer(var)) | (Type::Infer(var), ty) => {
                 struct OccursCheck {
-                    var: u32,
+                    var: InferVar,
                     found: bool,
                 }
                 impl TypeVisitor for OccursCheck {
@@ -95,18 +101,18 @@ impl TypeInfer {
                     }
                 }
                 let mut occurs = OccursCheck {
-                    var: index,
+                    var,
                     found: false,
                 };
                 occurs.visit_ty(&ty);
-                let var = &mut self.vars.borrow_mut()[index as usize];
+                let var_info = &mut self.vars.borrow_mut()[var.index as usize];
                 if occurs.found {
-                    var.current_ty = Some(Type::Err);
+                    var_info.current_ty = Some(Type::Err);
                     Err(InferError::InfiniteType)
-                } else if let Some(curr_ty) = &var.current_ty {
+                } else if let Some(curr_ty) = &var_info.current_ty {
                     self.unify(curr_ty, &ty)
                 } else {
-                    var.current_ty = Some(ty.clone());
+                    var_info.current_ty = Some(ty.clone());
                     Ok(ty)
                 }
             }

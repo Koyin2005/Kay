@@ -3,7 +3,7 @@ use fxhash::FxHashSet;
 use crate::{
     context::CtxtRef,
     define_id,
-    frontend::{ast, hir},
+    frontend::{ast, hir, ty_infer::InferVar},
     indexvec::IndexVec,
     span::symbol::{self, Symbol},
     types::format::TypeFormat,
@@ -86,7 +86,7 @@ pub enum Type {
     Ref(Box<Type>, IsMutable),
     Generic(symbol::Symbol, u32),
     Array(Box<Type>),
-    Infer(u32),
+    Infer(InferVar),
     Err,
 }
 impl Type {
@@ -96,29 +96,46 @@ impl Type {
     pub fn format(&self, ctxt: CtxtRef) -> String {
         TypeFormat::new(ctxt).format_type(self)
     }
-    pub fn infer_vars(&self) -> FxHashSet<u32> {
-        struct HasError {
-            found: bool,
-            vars: FxHashSet<u32>,
+    pub fn infer_vars(&self) -> FxHashSet<InferVar> {
+        struct InferVarCollect {
+            vars: FxHashSet<InferVar>,
         }
-        impl TypeVisitor for HasError {
+        impl TypeVisitor for InferVarCollect {
             fn visit_ty(&mut self, ty: &Type) {
-                if self.found {
-                    return;
-                }
                 if let &Type::Infer(var) = ty {
-                    self.found = true;
                     self.vars.insert(var);
                 }
                 walk_ty(self, ty);
             }
         }
-        let mut has_error = HasError {
-            found: false,
+        let mut vars_collect = InferVarCollect {
             vars: FxHashSet::default(),
         };
-        has_error.visit_ty(self);
-        has_error.vars
+        vars_collect.visit_ty(self);
+        vars_collect.vars
+    }
+    pub fn has_infer(&self) -> bool {
+        struct HasInfer {
+            found: bool,
+        }
+        impl TypeVisitor for HasInfer {
+            fn visit_ty(&mut self, ty: &Type) {
+                if self.found {
+                    return;
+                }
+                if let &Type::Infer(_) = ty {
+                    self.found = true;
+                }
+                else {
+                    walk_ty(self, ty);
+                }
+            }
+        }
+        let mut has_infer = HasInfer {
+            found: false,
+        };
+        has_infer.visit_ty(self);
+        has_infer.found
     }
     pub fn has_error(&self) -> bool {
         struct HasError {
