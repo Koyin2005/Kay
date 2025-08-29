@@ -422,8 +422,8 @@ impl<'diag> AstLower<'diag> {
             ast::ExprKind::Deref(_, expr) => {
                 lower_expr!(hir::ExprKind::Deref(Box::new(self.lower_expr(expr))))
             }
-            ast::ExprKind::As(expr, ty) => {
-                lower_expr!(hir::ExprKind::As(
+            ast::ExprKind::Ascribe(expr, ty) => {
+                lower_expr!(hir::ExprKind::Ascribe(
                     Box::new(self.lower_expr(expr)),
                     self.lower_ty(ty)
                 ))

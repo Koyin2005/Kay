@@ -90,6 +90,9 @@ pub enum Type {
     Err,
 }
 impl Type {
+    pub fn is_never(&self) -> bool{
+        matches!(self,Type::Primitive(hir::PrimitiveType::Never))
+    }
     pub fn new_array(element: Self) -> Self {
         Self::Array(Box::new(element))
     }

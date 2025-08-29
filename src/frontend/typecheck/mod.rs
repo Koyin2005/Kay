@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Debug};
+use std::cell::RefCell;
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -22,47 +22,6 @@ use crate::{
     types::{GenericArg, GenericArgs, IsMutable, Type},
 };
 struct CoerceError(InferError);
-#[derive(Clone, Copy, Debug)]
-enum Expected<'a> {
-    HasType(&'a Type),
-    CoercesTo(&'a Type),
-    None,
-}
-impl<'a> Expected<'a> {
-    pub fn as_option_ty(self) -> Option<&'a Type> {
-        match self {
-            Self::HasType(ty) => Some(ty),
-            Self::CoercesTo(ty) => Some(ty),
-            _ => None,
-        }
-    }
-    fn map_ty(self, f: impl FnOnce(&'a Type) -> Option<&'a Type>) -> Self {
-        match self {
-            Self::HasType(ty) => {
-                if let Some(ty) = f(ty) {
-                    Self::HasType(ty)
-                } else {
-                    Self::None
-                }
-            }
-            Self::CoercesTo(ty) => {
-                if let Some(ty) = f(ty) {
-                    Self::CoercesTo(ty)
-                } else {
-                    Self::None
-                }
-            }
-            Self::None => Self::None,
-        }
-    }
-    fn and_then_ty(self, f: impl FnOnce(&'a Type) -> Self) -> Self {
-        match self {
-            Self::HasType(ty) => f(ty),
-            Self::CoercesTo(ty) => f(ty),
-            _ => self,
-        }
-    }
-}
 #[derive(Clone, PartialEq, Eq)]
 pub struct LocalInfo {
     pub ty: Type,
@@ -133,23 +92,24 @@ impl<'ctxt> TypeCheck<'ctxt> {
     {
         self.context.diag()
     }
-    fn check_lit(&self, literal: LiteralKind, expected_ty: Expected) -> Type {
+    fn check_lit(&self, literal: LiteralKind, expected_ty: Option<&Type>) -> Type {
         match literal {
             LiteralKind::Bool(_) => Type::new_bool(),
             LiteralKind::Int(_) => Type::new_int(
-                if let Some(Type::Primitive(PrimitiveType::Int(IntType::Unsigned))) =
-                    expected_ty.as_option_ty()
-                {
-                    IntType::Unsigned
-                } else {
-                    IntType::Signed
-                },
+                match expected_ty{
+                    Some(Type::Primitive(PrimitiveType::Int(sign))) => {
+                        *sign
+                    },
+                    _ => {
+                        IntType::Signed
+                    }
+                }
             ),
             LiteralKind::String(_) => Type::new_ref_str(),
         }
     }
     fn check_field(&self, receiver: &Expr, field: Ident) -> Type {
-        let receiver_ty = self.check_expr(receiver, Expected::None);
+        let receiver_ty = self.check_expr(receiver, None);
         let Some(field_ty) = (match &receiver_ty {
             Type::Struct(fields) => fields.iter().find_map(|receiver_field| {
                 (receiver_field.name == field.symbol).then(|| receiver_field.ty.clone())
@@ -186,28 +146,31 @@ impl<'ctxt> TypeCheck<'ctxt> {
         };
         field_ty
     }
-    fn check_tuple(&self, fields: &[Expr], expected_ty: Expected) -> Type {
-        let field_tys = if let Expected::HasType(Type::Tuple(fields)) = expected_ty {
+    fn check_tuple(&self, fields: &[Expr], expected_ty: Option<&Type>) -> Type {
+        let field_tys = if let Some(Type::Tuple(fields)) = expected_ty {
             fields
         } else {
             &Vec::new()
         };
         let field_tys = fields.iter().enumerate().map(|(i, field)| {
-            let expected_ty = field_tys
-                .get(i)
-                .map(Expected::CoercesTo)
-                .unwrap_or_else(|| Expected::None);
-            self.check_expr(field, expected_ty)
+            match field_tys.get(i){
+                Some(ty) => {
+                    self.check_expr_coerces_to(field, ty)
+                },
+                None => {
+                    self.check_expr(field, None)
+                }
+            }
         });
         Type::new_tuple_from_iter(field_tys)
     }
     fn check_stmt(&self, stmt: &Stmt) {
         match &stmt.kind {
             StmtKind::Expr(expr) => {
-                self.check_expr(expr, Expected::CoercesTo(&Type::new_unit()));
+                self.check_expr_coerces_to(expr, &Type::new_unit());
             }
             StmtKind::ExprWithSemi(expr) => {
-                self.check_expr(expr, Expected::None);
+                self.check_expr(expr, None);
             }
             StmtKind::Item(_) => {
                 //Don't check items here
@@ -216,47 +179,49 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 let ty = ty
                     .as_ref()
                     .map(|ty| TypeLower::new(self.context, Some(&self.infer_ctxt)).lower(ty));
-                let ty = self.check_expr(
-                    expr,
-                    match ty {
-                        Some(ref ty) => Expected::CoercesTo(ty),
-                        None => Expected::None,
-                    },
-                );
+                let ty = if let Some(ty) = ty.as_ref(){
+                    self.check_expr_coerces_to(expr, ty)
+                } else {
+                    self.check_expr(expr, None)
+                };
                 self.check_pattern(pat, Some(&ty));
             }
         }
     }
-    fn check_block(&self, block: &Block, expected_ty: Expected) -> Type {
+    fn check_block(&self, block: &Block, expected_ty: Option<&Type>) -> Type {
         for stmt in block.stmts.iter() {
             self.check_stmt(stmt);
         }
         if let Some(ref expr) = block.result {
-            self.check_expr(expr, expected_ty)
+            if let Some(ty) = expected_ty{
+                self.check_expr_coerces_to(expr, ty)
+            }
+            else{
+                self.check_expr(expr, None)
+            }
         } else {
             Type::new_unit()
         }
     }
-    fn check_unary(&self, op: UnaryOp, operand: &Expr, expected_ty: Expected) -> Type {
+    fn check_unary(&self, op: UnaryOp, operand: &Expr, expected_ty: Option<&Type>) -> Type {
         match op.node {
             UnaryOpKind::Negate => {
-                let expected_ty = expected_ty.and_then_ty(|ty| match ty {
-                    Type::Primitive(PrimitiveType::Int(..)) => Expected::HasType(ty),
-                    _ => Expected::None,
+                let expected_ty = expected_ty.and_then(|ty| match ty {
+                    Type::Primitive(PrimitiveType::Int(..)) => Some(ty),
+                    _ => None,
                 });
-                let operand = self.check_expr(operand, expected_ty);
+                let operand = self.check_expr(operand, expected_ty.or(Some(&Type::new_int(IntType::Signed))));
                 match operand {
                     Type::Primitive(PrimitiveType::Int(IntType::Signed)) => operand,
                     operand_ty => self.invalid_negate_operand_err(operand_ty, op.span),
                 }
             }
             UnaryOpKind::Ref(mutable) => {
-                let expected_ty = if let Expected::HasType(Type::Ref(ty, _)) = expected_ty {
+                let expected_ty = if let Some(Type::Ref(ty, _)) = expected_ty {
                     Some(&**ty)
                 } else {
                     None
                 };
-                let expected_ty = expected_ty.map_or(Expected::None, Expected::HasType);
                 let ty = if let Mutable::Yes(_) = mutable {
                     self.check_expr_is_mutable(operand, expected_ty)
                 } else {
@@ -266,11 +231,11 @@ impl<'ctxt> TypeCheck<'ctxt> {
             }
         }
     }
-    fn check_binary(&self, op: BinaryOp, left: &Expr, right: &Expr, expected_ty: Expected) -> Type {
+    fn check_binary(&self, op: BinaryOp, left: &Expr, right: &Expr, expected_ty: Option<&Type>) -> Type {
         let (left_expect, right_expect) = match (op.node, expected_ty) {
             (BinaryOpKind::And | BinaryOpKind::Or, _) => (
-                Expected::HasType(&Type::new_bool()),
-                Expected::HasType(&Type::new_bool()),
+               Some(&Type::new_bool()),
+                Some(&Type::new_bool()),
             ),
             (
                 BinaryOpKind::Add
@@ -281,9 +246,9 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 | BinaryOpKind::GreaterThan
                 | BinaryOpKind::LesserEquals
                 | BinaryOpKind::GreaterEquals,
-                Expected::HasType(Type::Primitive(PrimitiveType::Int(_))),
+                Some(Type::Primitive(PrimitiveType::Int(_))),
             ) => (expected_ty, expected_ty),
-            (_, _) => (Expected::None, Expected::None),
+            (_, _) => (None,None),
         };
         let left = self.check_expr(left, left_expect);
         let right = self.check_expr(right, right_expect);
@@ -328,19 +293,19 @@ impl<'ctxt> TypeCheck<'ctxt> {
             )
         }
     }
-    fn check_array(&self, span: Span, elements: &[Expr], expected_ty: Expected) -> Type {
-        let expected_element_ty = expected_ty.map_ty(|ty| {
+    fn check_array(&self, span: Span, elements: &[Expr], expected_ty: Option<&Type>) -> Type {
+        let expected_element_ty = expected_ty.and_then(|ty| {
             if let Type::Array(ty) = ty {
                 Some(&**ty)
             } else {
                 None
             }
         });
-        let mut element_ty = expected_element_ty.as_option_ty().cloned();
+        let mut element_ty = expected_element_ty.cloned();
         for element in elements {
             let current_element_ty = self.check_expr(element, expected_element_ty);
             if let Some(elem_ty) = element_ty.as_mut() {
-                if let Some(ty) = self.coercion_lub(elem_ty, &current_element_ty) {
+                if let Some(ty) = self.coerce_to_lub(&current_element_ty,elem_ty) {
                     *elem_ty = ty;
                 } else {
                     self.err(
@@ -364,13 +329,13 @@ impl<'ctxt> TypeCheck<'ctxt> {
         condition: &Expr,
         then_branch: &Expr,
         else_branch: Option<&Expr>,
-        expected_ty: Expected,
+        expected_ty: Option<&Type>,
     ) -> Type {
-        self.check_expr(condition, Expected::HasType(&Type::new_bool()));
-        let then_branch = self.check_expr(then_branch, expected_ty);
+        self.check_expr(condition, Some(&Type::new_bool()));
+        let then_branch = self.check_expr_with_hint(then_branch, expected_ty);
         if let Some(else_branch) = else_branch {
-            let else_branch = self.check_expr(else_branch, expected_ty);
-            if let Some(ty) = self.coercion_lub(&then_branch, &else_branch) {
+            let else_branch = self.check_expr_with_hint(else_branch, expected_ty);
+            if let Some(ty) = self.coerce_to_lub(&else_branch, &then_branch) {
                 ty
             } else if !then_branch.has_error() && !else_branch.has_error() {
                 self.err(
@@ -385,17 +350,23 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 Type::Err
             }
         } else {
-            if self.try_coerce(&then_branch, &Type::new_unit()).is_err() && !then_branch.has_error()
-            {
-                self.err(
-                    format!(
-                        "'if' of type '{}' missing else branch.",
-                        self.format_ty(&then_branch)
-                    ),
-                    span,
-                );
+            match self.try_coerce(&then_branch, &Type::new_unit()){
+                Ok(_) => {
+                    Type::new_unit()
+                },
+                Err(_)=> {
+                    if !then_branch.has_error(){
+                        self.err(
+                            format!(
+                                "'if' of type '{}' missing else branch.",
+                                self.format_ty(&then_branch)
+                            ),
+                            span,
+                        );
+                    }
+                    then_branch
+                }
             }
-            then_branch
         }
     }
     fn instantiate_generic_def(
@@ -421,7 +392,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             ty
         }
     }
-    fn check_path(&self, path: &hir::Path, span: Span, expected_ty: Expected) -> Type {
+    fn check_path(&self, path: &hir::Path, span: Span, expected_ty: Option<&Type>) -> Type {
         let def = match path.res {
             hir::Resolution::Builtin(builtin @ Builtin::Println) => {
                 return self.err(
@@ -459,18 +430,18 @@ impl<'ctxt> TypeCheck<'ctxt> {
             }
         };
         let generic_count = self.context.generic_arg_count(def);
-        self.instantiate_generic_def(generic_count, def, expected_ty.as_option_ty(), span)
+        self.instantiate_generic_def(generic_count, def, expected_ty, span)
     }
-    fn check_loop(&self, body: &Block, expected_ty: Expected, loop_source: LoopSource) -> Type {
+    fn check_loop(&self, body: &Block, expected_ty: Option<&Type>, loop_source: LoopSource) -> Type {
         let old_ty = std::mem::replace(
             &mut *self.loop_expectation.borrow_mut(),
             if loop_source != LoopSource::Explicit {
                 Some(Type::new_unit())
             } else {
-                expected_ty.as_option_ty().cloned()
+                expected_ty.cloned()
             },
         );
-        self.check_block(body, Expected::HasType(&Type::new_unit()));
+        self.check_block(body, Some(&Type::new_unit()));
         let current_ty = std::mem::replace(&mut *self.loop_expectation.borrow_mut(), old_ty);
         if let LoopSource::Explicit = loop_source {
             current_ty.unwrap_or_else(Type::new_never)
@@ -479,7 +450,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
     }
     fn check_deref(&self, operand: &Expr) -> Type {
-        let operand_ty = self.check_expr(operand, Expected::None);
+        let operand_ty = self.check_expr(operand, None);
         if let Type::Ref(pointee, _) = operand_ty {
             *pointee
         } else if operand_ty.has_error() {
@@ -503,8 +474,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
             })
             | ExprKind::Field(..)
             | ExprKind::Deref(..) => true,
+            ExprKind::Ascribe(ref expr,_) => self.is_valid_assign_target(expr),
             ExprKind::Return(..)
-            | ExprKind::As(..)
             | ExprKind::Literal(..)
             | ExprKind::Loop(..)
             | ExprKind::Tuple(..)
@@ -526,11 +497,11 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
     }
     fn check_assign(&self, lhs: &Expr, rhs: &Expr) -> Type {
-        let lhs_ty = self.check_expr_is_mutable(lhs, Expected::None);
+        let lhs_ty = self.check_expr_is_mutable(lhs, None);
         if !self.is_valid_assign_target(lhs) {
             self.err("Invalid assingment target.", lhs.span);
         }
-        self.check_expr(rhs, Expected::CoercesTo(&lhs_ty));
+        self.check_expr_coerces_to(rhs, &lhs_ty);
         Type::new_unit()
     }
     fn check_init(
@@ -538,7 +509,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         span: Span,
         path: Option<&Path>,
         fields: &[ExprField],
-        expected_ty: Expected,
+        expected_ty: Option<&Type>,
     ) -> Type {
         let struct_def = if let Some(path) = path {
             let ty_lower = TypeLower::new(self.context, Some(&self.infer_ctxt));
@@ -565,7 +536,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 Err(_) => Ok(None),
             }
         } else if let Some(Type::Nominal(def, args)) = expected_ty
-            .as_option_ty()
             .map(|ty| self.infer_ctxt.normalize(ty))
         {
             Ok(self
@@ -583,7 +553,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     self.err("Cannot initialize.", span);
                 }
                 for field in fields {
-                    self.check_expr(&field.expr, Expected::None);
+                    self.check_expr(&field.expr, None);
                 }
                 return Type::Err;
             }
@@ -601,12 +571,12 @@ impl<'ctxt> TypeCheck<'ctxt> {
             });
             let expected_field_ty =
                 field_def.map(|def| self.context.type_of(def).instantiate(args.clone()));
-            self.check_expr(
-                &field.expr,
-                expected_field_ty
-                    .as_ref()
-                    .map_or(Expected::None, Expected::CoercesTo),
-            );
+            if let Some(ref ty) = expected_field_ty{
+                self.check_expr_coerces_to(&field.expr, ty);
+            }
+            else{
+                self.check_expr(&field.expr, None);
+            }
         }
         for field in struct_def
             .fields
@@ -623,10 +593,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 id: _,
                 res: Resolution::Builtin(Builtin::Println),
             }) => Callee::Builtin(BuiltinFunction::Println),
-            _ => Callee::Normal(self.check_expr(callee, Expected::None)),
+            _ => Callee::Normal(self.check_expr(callee, None)),
         }
     }
-    fn check_call(&self, span: Span, callee: &Expr, args: &[Expr], expected_ty: Expected) -> Type {
+    fn check_call(&self, span: Span, callee: &Expr, args: &[Expr], expected_ty: Option<&Type>) -> Type {
         let callee_kind = self.check_callee(callee);
         let (param_types, expected_param_count, return_ty) = match callee_kind {
             Callee::Normal(ref ty) => match ty {
@@ -640,7 +610,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                             callee.span,
                         );
                     }
-                    (&Vec::new(), None, expected_ty.as_option_ty())
+                    (&Vec::new(), None, expected_ty)
                 }
             },
             Callee::Builtin(BuiltinFunction::Println) => (&vec![], None, Some(&Type::new_unit())),
@@ -655,24 +625,22 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
         for (i, arg) in args.iter().enumerate() {
             let param_ty = param_types.get(i);
-            let normalized_param_ty = param_ty.map(|ty| self.infer_ctxt.normalize(ty));
-            let expected = match normalized_param_ty.as_ref().or(param_ty) {
-                Some(ty) => Expected::CoercesTo(ty),
-                None => Expected::None,
+            match param_ty.map(|ty| self.infer_ctxt.normalize(ty)){
+                Some(ref ty) => self.check_expr_coerces_to(arg, ty),
+                None => self.check_expr(arg, None)
             };
-            self.check_expr(arg, expected);
         }
         return_ty.cloned().unwrap_or(Type::Err)
     }
     fn check_return(&self, returned_expr: Option<&Expr>) -> Type {
         if let Some(expr) = returned_expr {
-            self.check_expr(expr, Expected::CoercesTo(&self.return_type));
+            self.check_expr_coerces_to(expr, &self.return_type);
         }
         Type::new_never()
     }
     fn check_for(&self, pat: &Pattern, iterator: &hir::Iterator, body: &Block) -> Type {
         let item_ty = match iterator {
-            hir::Iterator::Expr(expr) => match self.check_expr(expr, Expected::None) {
+            hir::Iterator::Expr(expr) => match self.check_expr(expr, None) {
                 Type::Array(elem) => Some(*elem),
                 ty => {
                     self.err(
@@ -683,8 +651,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 }
             },
             hir::Iterator::Ranged(span, start, end) => {
-                let start = self.check_expr(start, Expected::None);
-                let end = self.check_expr(end, Expected::None);
+                let start = self.check_expr(start, None);
+                let end = self.check_expr(end, None);
                 let int_ty = if start != end {
                     None
                 } else {
@@ -709,25 +677,33 @@ impl<'ctxt> TypeCheck<'ctxt> {
             }
         };
         self.check_pattern(pat, Some(item_ty.as_ref().unwrap_or(&Type::Err)));
-        self.check_block(body, Expected::CoercesTo(&Type::new_unit()));
+        self.check_block(body, Some(&Type::new_unit()));
         Type::new_unit()
     }
-    ///Computes a type that both a and b can be coerced to.
-    fn coercion_lub(&self, a: &Type, b: &Type) -> Option<Type> {
-        match (a, b) {
-            (Type::Primitive(PrimitiveType::Never), ty)
-            | (ty, Type::Primitive(PrimitiveType::Never)) => Some(ty.clone()),
-            (a,b) => self.infer_ctxt.unify(a, b).ok(),
+
+    fn coerce_to_lub(&self, a: &Type, b: &Type) -> Option<Type>{
+        self.try_coerce_no_unify(a, b)
+        .or_else(|| self.try_coerce_no_unify(b, a))
+        .or_else(|| self.infer_ctxt.unify(a, b).ok()) 
+    }
+    fn try_coerce_no_unify(&self, ty: &Type, target: &Type) -> Option<Type>{
+        match (ty,target){
+            (Type::Primitive(PrimitiveType::Never),target) => Some(target.clone()),
+            _ => None
         }
     }
     fn try_coerce(&self, ty: &Type, target: &Type) -> Result<Type, CoerceError> {
-        Ok(match (ty, target) {
-            (Type::Primitive(PrimitiveType::Never), target) => target.clone(),
-            (ty, target) => match self.infer_ctxt.unify(ty, target) {
-                Ok(ty) => ty,
-                Err(err) => return Err(CoerceError(err)),
-            },
-        })
+        if let Some(ty) = self.try_coerce_no_unify(ty, target){
+            Ok(ty)
+        }
+        else{
+            Ok(match (ty, target) {
+                (ty, target) => match self.infer_ctxt.unify(ty, target) {
+                    Ok(ty) => ty,
+                    Err(err) => return Err(CoerceError(err)),
+                },
+            })
+        }
     }
     fn coerce_or_expect(&self, ty: &Type, target: &Type, span: Span) -> Type {
         match self.try_coerce(ty, target) {
@@ -758,7 +734,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
         match self.infer_ctxt.unify(ty, expected_ty) {
             Ok(ty) => ty,
             Err(infer_error) => {
-                println!("{:?}", infer_error);
                 if ty.has_error() || expected_ty.has_error() {
                     ty.clone()
                 } else {
@@ -768,9 +743,9 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
     }
 
-    fn check_match(&self, scrutinee: &Expr, arms: &[MatchArm], expected_ty: Expected) -> Type {
+    fn check_match(&self, scrutinee: &Expr, arms: &[MatchArm], expected_ty: Option<&Type>) -> Type {
         let mut combined_ty = None;
-        let scrut_ty = self.check_expr(scrutinee, Expected::None);
+        let scrut_ty = self.check_expr(scrutinee, None);
         for MatchArm {
             id: _,
             span: _,
@@ -779,9 +754,9 @@ impl<'ctxt> TypeCheck<'ctxt> {
         } in arms
         {
             self.check_pattern(pat, Some(&scrut_ty));
-            let body_ty = self.check_expr(body, expected_ty);
+            let body_ty = self.check_expr_with_hint(body, expected_ty);
             if let Some(ref mut combined_ty) = combined_ty {
-                if let Some(common_ty) = self.coercion_lub(&body_ty, combined_ty) {
+                if let Some(common_ty) = self.coerce_to_lub(&body_ty, combined_ty) {
                     *combined_ty = common_ty;
                 } else if !combined_ty.has_error() && !body_ty.has_error() {
                     self.err(
@@ -806,12 +781,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
         operand: Option<&Expr>,
     ) -> Type {
         let expected = self.loop_expectation.borrow().as_ref().map(|ty| ty.clone());
-        let expected = match expected {
-            Some(ref ty) => Expected::CoercesTo(ty),
-            None => Expected::None,
-        };
         if let Some(operand) = operand {
-            let operand_ty = self.check_expr(operand, expected);
+            let operand_ty = self.check_expr(operand, expected.as_ref());
             if let Ok(_) = loop_target
                 && self.loop_expectation.borrow().is_none()
             {
@@ -823,7 +794,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
         Type::new_never()
     }
-    fn check_expr_is_mutable(&self, expr: &Expr, expected_ty: Expected) -> Type {
+    fn check_expr_is_mutable(&self, expr: &Expr, expected_ty: Option<&Type>) -> Type {
         let ty = self.check_expr(expr, expected_ty);
         if ty.has_error() {
             return ty;
@@ -855,11 +826,13 @@ impl<'ctxt> TypeCheck<'ctxt> {
                         this.err("Cannot mutate through immutable reference.", expr.span);
                     }
                 }
+                ExprKind::Ascribe(expr, _) => {
+                    check_mutable(this, expr);
+                }
                 ExprKind::Block(..)
                 | ExprKind::Return(..)
                 | ExprKind::Err
                 | ExprKind::Array(..)
-                | ExprKind::As(..)
                 | ExprKind::For(..)
                 | ExprKind::Init(..)
                 | ExprKind::Unary(..)
@@ -876,17 +849,17 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
         ty
     }
-    fn check_as_expr(&self, expr: &Expr, ty: &hir::Type) -> Type {
+    fn check_ascribe_expr(&self, expr: &Expr, ty: &hir::Type) -> Type {
         let target_ty = TypeLower::new(self.context, Some(&self.infer_ctxt)).lower(ty);
-        self.check_expr(expr, Expected::CoercesTo(&target_ty))
+        self.check_expr_coerces_to(expr, &target_ty)
     }
-    fn check_expr_kind(&self, expr: &Expr, expected_ty: Expected) -> Type {
+    fn check_expr_kind(&self, expr: &Expr, expected_ty: Option<&Type>) -> Type {
         let Expr { kind, .. } = expr;
         let ty = match kind {
             &ExprKind::Literal(literal) => self.check_lit(literal, expected_ty),
             &ExprKind::Field(ref reciever, field) => self.check_field(reciever, field),
             ExprKind::Tuple(elements) => self.check_tuple(elements, expected_ty),
-            ExprKind::As(expr, ty) => self.check_as_expr(expr, ty),
+            ExprKind::Ascribe(expr, ty) => self.check_ascribe_expr(expr, ty),
             ExprKind::Block(block) => self.check_block(block, expected_ty),
             ExprKind::Unary(op, val) => self.check_unary(*op, val, expected_ty),
             ExprKind::Binary(op, left, right) => self.check_binary(*op, left, right, expected_ty),
@@ -917,12 +890,18 @@ impl<'ctxt> TypeCheck<'ctxt> {
         self.write_type(expr.id, ty.clone());
         ty
     }
-    fn check_expr(&self, expr: &Expr, expected_ty: Expected) -> Type {
+    fn check_expr_coerces_to(&self, expr: &Expr, expected_ty: &Type) -> Type{
+        let ty = self.check_expr_with_hint(expr, Some(expected_ty));
+        self.coerce_or_expect(&ty, expected_ty, expr.span)
+    }
+    fn check_expr_with_hint(&self, expr: &Expr, ty: Option<&Type>) -> Type{
+        self.check_expr_kind(expr, ty)
+    }
+    fn check_expr(&self, expr: &Expr, expected_ty: Option<&Type>) -> Type {
         let ty = self.check_expr_kind(expr, expected_ty);
         match expected_ty {
-            Expected::None => ty,
-            Expected::CoercesTo(target) => self.coerce_or_expect(&ty, target, expr.span),
-            Expected::HasType(expected) => self.expect_ty(&ty, expected, expr.span),
+            None => ty,
+            Some(expected_ty) => self.expect_ty(&ty, expected_ty, expr.span)
         }
     }
     fn check_pattern(&self, pat: &Pattern, expected_ty: Option<&Type>) -> Type {
@@ -1084,7 +1063,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         for (param, ty) in self.body.params.iter().zip(self.param_types.iter()) {
             self.check_pattern(&param.pat, Some(ty));
         }
-        self.check_expr(&self.body.value, Expected::CoercesTo(&self.return_type));
+        self.check_expr_coerces_to(&self.body.value, &self.return_type);
         let mut incomplete_vars = FxHashSet::default();
         for var in self.infer_ctxt.vars() {
             incomplete_vars.extend(self.infer_ctxt.normalize(&Type::Infer(var)).infer_vars());

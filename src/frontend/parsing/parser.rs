@@ -709,13 +709,13 @@ impl<'source> Parser<'source> {
             lhs = match self.current_token.kind {
                 TokenKind::LeftParen => self.parse_call(lhs)?,
                 TokenKind::Dot => self.parse_field_expr(lhs)?,
-                TokenKind::As => {
+                TokenKind::Colon => {
                     self.advance();
                     let ty = self.parse_type()?;
                     Expr {
                         id: self.new_id(),
                         span: lhs.span.combined(ty.span),
-                        kind: ExprKind::As(Box::new(lhs), Box::new(ty)),
+                        kind: ExprKind::Ascribe(Box::new(lhs), Box::new(ty)),
                     }
                 }
                 TokenKind::Caret => {

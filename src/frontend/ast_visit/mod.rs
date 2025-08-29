@@ -151,7 +151,7 @@ pub fn walk_iterator(visitor: &mut impl Visitor, iterator: &IteratorExpr) {
 pub fn walk_expr(visitor: &mut impl Visitor, expr: &Expr) {
     match &expr.kind {
         ExprKind::Underscore => (),
-        ExprKind::As(expr, ty) => {
+        ExprKind::Ascribe(expr, ty) => {
             visitor.visit_expr(expr);
             visitor.visit_ty(ty);
         }

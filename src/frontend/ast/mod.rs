@@ -211,7 +211,7 @@ pub enum ExprKind {
     Break(Option<Box<Expr>>),
     Return(Option<Box<Expr>>),
     Field(Box<Expr>, Ident),
-    As(Box<Expr>, Box<Type>),
+    Ascribe(Box<Expr>, Box<Type>),
 }
 #[derive(Clone, Debug)]
 pub struct Pattern {

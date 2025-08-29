@@ -6,19 +6,15 @@ type Pair[T,U] = { fst : T, snd : U};
 
 type Result[T,E] = | Ok(T) | Err(E)
 
-fun map_option[T,U](f: fun(T) -> U, x : Option[T]) -> Option[U] = 
-    match x with
-        Option.Some(x) => Option.Some(f(x)),
-        Option.None => Option.None
-    end
-
-fun what_is_this[T]() -> T = loop end
-fun id[T](x:T) -> T = x
-fun map[T,U](f:fun(T)->U,x:T) -> U = f(x)
-
-fun add(x : int, y: int) -> int = x + y
-fun at[T](arr: [T],index : uint) -> ref mut T = loop end
+fun as_uint(x:uint) -> uint = x
 fun main() = do
-    let a = what_is_this();
-    a(1,2);
+    let (a,b) = (1,2);
+    let mut i : uint = 50;
+    while true do
+        println(i);
+        i = i - 1;
+        if i < 0:uint then
+            break
+        end
+    end
 end

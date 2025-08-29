@@ -191,7 +191,7 @@ pub enum Iterator {
 #[derive(Debug)]
 pub enum ExprKind {
     Assign(Span, Box<Expr>, Box<Expr>),
-    As(Box<Expr>, Type),
+    Ascribe(Box<Expr>, Type),
     Literal(LiteralKind),
     Array(Vec<Expr>),
     Tuple(Vec<Expr>),
