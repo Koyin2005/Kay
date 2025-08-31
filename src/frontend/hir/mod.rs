@@ -198,7 +198,6 @@ pub enum ExprKind {
     Loop(Box<Block>, LoopSource),
     For(Box<Pattern>, Box<Iterator>, Box<Block>),
     Path(Path),
-    Deref(Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     If(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
     Match(Box<Expr>, Vec<MatchArm>),

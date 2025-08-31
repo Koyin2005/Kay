@@ -468,27 +468,36 @@ impl<'source> Parser<'source> {
             span: start.combined(end),
         })
     }
-    fn unary_op(&mut self) -> Option<UnaryOp> {
+    fn prefix_unary_op(&mut self) -> Option<UnaryOp> {
         let start_token = self.current_token;
         if self.matches_current(TokenKind::Minus) {
             Some(UnaryOp {
                 node: UnaryOpKind::Negate,
                 span: start_token.span,
             })
-        } else if self.matches_current(TokenKind::Ref) {
-            let next_span = start_token.span;
-            if self.matches_current(TokenKind::Mut) {
-                Some(UnaryOp {
-                    node: UnaryOpKind::Ref(Mutable::Yes(next_span)),
-                    span: start_token.span.combined(next_span),
-                })
-            } else {
-                Some(UnaryOp {
-                    node: UnaryOpKind::Ref(Mutable::No),
-                    span: start_token.span,
-                })
-            }
         } else {
+            None
+        }
+    }
+    fn postfix_unary_op(&mut self) -> Option<UnaryOp> {
+        let start_token = self.current_token;
+        if self.matches_current(TokenKind::Ref) {
+            let mutable = if let Some(token) = self.match_current(TokenKind::Mut){
+                Mutable::Yes(token.span)
+            } else {
+                Mutable::No
+            };
+            Some(UnaryOp {
+                node: UnaryOpKind::Ref(mutable),
+                span: start_token.span,
+            })
+        } else if self.matches_current(TokenKind::Caret){
+            Some(UnaryOp{
+                node : UnaryOpKind::Deref,
+                span : start_token.span
+            })
+        } 
+        else {
             None
         }
     }
@@ -627,7 +636,7 @@ impl<'source> Parser<'source> {
             }
             TokenKind::Loop => self.parse_loop(),
             _ => {
-                let Some(op) = self.unary_op() else {
+                let Some(op) = self.prefix_unary_op() else {
                     self.error_at_current("Expected an expression.");
                     return Err(ParseError);
                 };
@@ -718,17 +727,14 @@ impl<'source> Parser<'source> {
                         kind: ExprKind::Ascribe(Box::new(lhs), Box::new(ty)),
                     }
                 }
-                TokenKind::Caret => {
-                    let caret_span = self.current_token.span;
-                    self.advance();
-                    Expr {
-                        id: self.new_id(),
-                        span: lhs.span.combined(caret_span),
-                        kind: ExprKind::Deref(caret_span, Box::new(lhs)),
-                    }
-                }
                 TokenKind::LeftBrace => self.parse_init_expr(Some(lhs))?,
-                _ => break Ok(lhs),
+                _ => if let Some(op) = self.postfix_unary_op(){
+                    Expr{
+                        id : self.new_id(),
+                        span : lhs.span.combined(op.span),
+                        kind : ExprKind::Unary(op, Box::new(lhs))
+                    }
+                } else { break Ok(lhs)},
             };
         }
     }

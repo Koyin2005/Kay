@@ -162,8 +162,7 @@ pub fn walk_expr(visitor: &mut impl Visitor, expr: &Expr) {
         }
         ExprKind::Grouped(expr)
         | ExprKind::Field(expr, _)
-        | ExprKind::Unary(_, expr)
-        | ExprKind::Deref(_, expr) => {
+        | ExprKind::Unary(_, expr) => {
             visitor.visit_expr(expr);
         }
         ExprKind::While(condition, block) => {

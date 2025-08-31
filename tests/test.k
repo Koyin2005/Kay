@@ -8,11 +8,13 @@ type Result[T,E] = | Ok(T) | Err(E)
 
 fun as_uint(x:uint) -> uint = x
 fun len[T](a : [T]) -> uint = loop end
+
+fun x[T](a : never) -> T = a
 fun main() = do
-    let (a,b) : (uint,uint) = (1,2);
+    let a = x(match return with end) : int;
+    let (mut a,b) : (uint,uint) = (1,2);
+    a ref mut ref^^ = 5;
     let mut i : uint = 50;
-    let mut a = return;
-    a : int = 5;
     for i in 0:uint .. 10:uint do
         println(i);
     end

@@ -227,6 +227,22 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     self.check_expr(operand, expected_ty)
                 };
                 Type::new_ref(ty, mutable.into())
+            },
+            UnaryOpKind::Deref => {
+                let operand_ty = self.check_expr(operand, None);
+                if let Type::Ref(pointee, _) = operand_ty {
+                    *pointee
+                } else if operand_ty.has_error() {
+                    Type::Err
+                } else {
+                    self.err(
+                        format!(
+                            "Expected a reference got '{}'.",
+                            self.format_ty(&operand_ty)
+                        ),
+                        operand.span,
+                    )
+                }
             }
         }
     }
@@ -448,22 +464,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
             Type::new_unit()
         }
     }
-    fn check_deref(&self, operand: &Expr) -> Type {
-        let operand_ty = self.check_expr(operand, None);
-        if let Type::Ref(pointee, _) = operand_ty {
-            *pointee
-        } else if operand_ty.has_error() {
-            Type::Err
-        } else {
-            self.err(
-                format!(
-                    "Expected a reference got '{}'.",
-                    self.format_ty(&operand_ty)
-                ),
-                operand.span,
-            )
-        }
-    }
     fn is_valid_assign_target(lhs: &Expr) -> bool {
         match lhs.kind {
             ExprKind::Err
@@ -471,8 +471,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 res: Resolution::Variable(_) | Resolution::Err,
                 ..
             })
-            | ExprKind::Field(..)
-            | ExprKind::Deref(..) => true,
+            | ExprKind::Field(..) => true,
+            ExprKind::Unary(op,..) if op.node == UnaryOpKind::Deref => true,
             ExprKind::Ascribe(ref expr,_) => Self::is_valid_assign_target(expr),
             ExprKind::Return(..)
             | ExprKind::Literal(..)
@@ -817,7 +817,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 ExprKind::Field(receiver, _) => {
                     check_mutable(this, receiver);
                 }
-                ExprKind::Deref(expr) => {
+                ExprKind::Unary(op,expr) if op.node == UnaryOpKind::Deref => {
                     let ty = &this.types.borrow()[&expr.id];
                     if let Type::Ref(_, IsMutable::No) = ty {
                         this.err("Cannot mutate through immutable reference.", expr.span);
@@ -876,7 +876,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
             ExprKind::Init(path, fields) => {
                 self.check_init(expr.span, path.as_ref(), fields, expected_ty)
             }
-            ExprKind::Deref(expr) => self.check_deref(expr),
             ExprKind::Call(callee, args) => self.check_call(expr.span, callee, args, expected_ty),
             ExprKind::Break(loop_target, operand) => {
                 self.check_break(expr.span, *loop_target, operand.as_deref())
