@@ -74,12 +74,14 @@ impl<'ctxt> TypeCheck<'ctxt> {
         Type::Err
     }
     fn invalid_negate_operand_err(&self, operand: Type, op_span: Span) -> Type {
-        self.err(
-            format!("Invalid operand '{}' for '-'.", self.format_ty(&operand)),
-            op_span,
-        );
+        if !operand.has_error(){
+            self.err(
+                format!("Invalid operand '{}' for '-'.", self.format_ty(&operand)),
+                op_span,
+            );
+        }
         match operand {
-            ty @ Type::Primitive(PrimitiveType::Int(IntType::Unsigned)) => ty,
+            ty @ Type::Primitive(PrimitiveType::Int(_)) => ty,
             _ => Type::Err,
         }
     }
@@ -206,22 +208,19 @@ impl<'ctxt> TypeCheck<'ctxt> {
     fn check_unary(&self, op: UnaryOp, operand: &Expr, expected_ty: Option<&Type>) -> Type {
         match op.node {
             UnaryOpKind::Negate => {
-                let expected_ty = expected_ty.and_then(|ty| match ty {
-                    Type::Primitive(PrimitiveType::Int(..)) => Some(ty),
-                    _ => None,
-                });
-                let operand = self.check_expr(operand, expected_ty.or(Some(&Type::new_int(IntType::Signed))));
+                let operand = self.check_expr_with_hint(operand, Some(&Type::new_int(IntType::Signed)));
                 match operand {
                     Type::Primitive(PrimitiveType::Int(IntType::Signed)) => operand,
                     operand_ty => self.invalid_negate_operand_err(operand_ty, op.span),
                 }
             }
             UnaryOpKind::Ref(mutable) => {
-                let expected_ty = if let Some(Type::Ref(ty, _)) = expected_ty {
-                    Some(&**ty)
-                } else {
-                    None
-                };
+                let expected_ty = expected_ty.and_then(|ty|{
+                    match ty {
+                        Type::Ref(ty, _) => Some(&**ty),
+                        _ => None
+                    }
+                });
                 let ty = if let Mutable::Yes(_) = mutable {
                     self.check_expr_is_mutable(operand, expected_ty)
                 } else {
@@ -465,7 +464,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             )
         }
     }
-    fn is_valid_assign_target(&self, lhs: &Expr) -> bool {
+    fn is_valid_assign_target(lhs: &Expr) -> bool {
         match lhs.kind {
             ExprKind::Err
             | ExprKind::Path(Path {
@@ -474,7 +473,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             })
             | ExprKind::Field(..)
             | ExprKind::Deref(..) => true,
-            ExprKind::Ascribe(ref expr,_) => self.is_valid_assign_target(expr),
+            ExprKind::Ascribe(ref expr,_) => Self::is_valid_assign_target(expr),
             ExprKind::Return(..)
             | ExprKind::Literal(..)
             | ExprKind::Loop(..)
@@ -498,7 +497,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn check_assign(&self, lhs: &Expr, rhs: &Expr) -> Type {
         let lhs_ty = self.check_expr_is_mutable(lhs, None);
-        if !self.is_valid_assign_target(lhs) {
+        if !Self::is_valid_assign_target(lhs) {
             self.err("Invalid assingment target.", lhs.span);
         }
         self.check_expr_coerces_to(rhs, &lhs_ty);
@@ -697,12 +696,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
             Ok(ty)
         }
         else{
-            Ok(match (ty, target) {
-                (ty, target) => match self.infer_ctxt.unify(ty, target) {
+            Ok(match self.infer_ctxt.unify(ty, target) {
                     Ok(ty) => ty,
                     Err(err) => return Err(CoerceError(err)),
-                },
-            })
+                })
         }
     }
     fn coerce_or_expect(&self, ty: &Type, target: &Type, span: Span) -> Type {
@@ -851,7 +848,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn check_ascribe_expr(&self, expr: &Expr, ty: &hir::Type) -> Type {
         let target_ty = TypeLower::new(self.context, Some(&self.infer_ctxt)).lower(ty);
-        self.check_expr_coerces_to(expr, &target_ty)
+        let _ = self.check_expr_coerces_to(expr, &target_ty);
+        target_ty
     }
     fn check_expr_kind(&self, expr: &Expr, expected_ty: Option<&Type>) -> Type {
         let Expr { kind, .. } = expr;
