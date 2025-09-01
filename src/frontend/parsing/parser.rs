@@ -475,13 +475,7 @@ impl<'source> Parser<'source> {
                 node: UnaryOpKind::Negate,
                 span: start_token.span,
             })
-        } else {
-            None
-        }
-    }
-    fn postfix_unary_op(&mut self) -> Option<UnaryOp> {
-        let start_token = self.current_token;
-        if self.matches_current(TokenKind::Ref) {
+        } else if self.matches_current(TokenKind::Ref) {
             let mutable = if let Some(token) = self.match_current(TokenKind::Mut){
                 Mutable::Yes(token.span)
             } else {
@@ -491,7 +485,13 @@ impl<'source> Parser<'source> {
                 node: UnaryOpKind::Ref(mutable),
                 span: start_token.span,
             })
-        } else if self.matches_current(TokenKind::Caret){
+        } else  {
+            None
+        }
+    }
+    fn postfix_unary_op(&mut self) -> Option<UnaryOp> {
+        let start_token = self.current_token;
+        if self.matches_current(TokenKind::Caret){
             Some(UnaryOp{
                 node : UnaryOpKind::Deref,
                 span : start_token.span

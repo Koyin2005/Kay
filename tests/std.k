@@ -7,6 +7,12 @@ type Result[T,E] =
     | Err(E)
 
 
+fun panic(txt: ref string) -> never = do println(txt); loop end end 
+fun unwrap_option[T](self: Option[T]) -> T = match self with
+    Option.Some(x) => x,
+    Option.None => panic("unwrapped empty option")
+end
+
 fun map[T,U](self : Option[T], f: fun(T) -> U) -> Option[U] = 
     match self with
         Option.Some(x) => Option.Some(f(x)),
