@@ -172,13 +172,13 @@ impl<'source> Parser<'source> {
     fn parse_literal(&mut self, literal: Literal) -> ParseResult<(Span, LiteralKind)> {
         let span = self.current_token.span;
         let kind = match literal {
-            Literal::Int(value) => LiteralKind::Int(match value.as_str().parse() {
-                Ok(value) => value,
-                Err(err) => {
-                    self.error_at_current(err.to_string());
-                    return Err(ParseError);
+            Literal::Int(value) => match value.as_str().parse() {
+                Ok(value) => LiteralKind::Int(value),
+                Err(_) => {
+                    self.error_at_current(format!("Int literal '{}' too large.",value.as_str()));
+                    LiteralKind::IntErr
                 }
-            }),
+            },
             Literal::True => LiteralKind::Bool(true),
             Literal::False => LiteralKind::Bool(false),
             Literal::String(string, complete) => {
@@ -344,7 +344,6 @@ impl<'source> Parser<'source> {
         Ok((fields, start.combined(end_span)))
     }
     fn parse_field_expr(&mut self, lhs: Expr) -> ParseResult<Expr> {
-        self.advance();
         let (field_name, is_int) =
             if let TokenKind::Literal(Literal::Int(field)) = self.current_token.kind {
                 let span = self.current_token.span;
@@ -717,7 +716,24 @@ impl<'source> Parser<'source> {
         loop {
             lhs = match self.current_token.kind {
                 TokenKind::LeftParen => self.parse_call(lhs)?,
-                TokenKind::Dot => self.parse_field_expr(lhs)?,
+                TokenKind::Dot => {
+                    self.advance();
+                    if let Some(token) = self.match_current(TokenKind::LeftBracket){
+                        let start_span = token.span;
+                        let index = self.parse_expr(0)?;
+                        let end_span = self.current_token.span;
+                        let _ = self.expect_at(TokenKind::RightBracket, "Expected ']'.",start_span.combined(index.span));
+                        Expr{
+                            id : self.new_id(),
+                            span : start_span.combined(end_span),
+                            kind : ExprKind::Index(Box::new(lhs),Box::new(index))
+                        }
+                    }
+                    else{
+                        self.parse_field_expr(lhs)?
+                    }
+                    
+                },
                 TokenKind::Colon => {
                     self.advance();
                     let ty = self.parse_type()?;

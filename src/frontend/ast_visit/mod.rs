@@ -169,7 +169,7 @@ pub fn walk_expr(visitor: &mut impl Visitor, expr: &Expr) {
             visitor.visit_expr(condition);
             visitor.visit_block(block);
         }
-        ExprKind::Binary(_, first, last) | ExprKind::Assign(first, last, _) => {
+        ExprKind::Binary(_, first, last) |ExprKind::Index(first, last)| ExprKind::Assign(first, last, _) => {
             visitor.visit_expr(first);
             visitor.visit_expr(last);
         }

@@ -35,6 +35,10 @@ enum Callee {
     Normal(Type),
     Builtin(BuiltinFunction),
 }
+pub struct TypeCheckResults{
+    types : FxHashMap<HirId,Type>,
+    had_error : bool
+}
 pub struct TypeCheck<'ctxt> {
     context: CtxtRef<'ctxt>,
     body: &'ctxt Body,
@@ -43,7 +47,7 @@ pub struct TypeCheck<'ctxt> {
     infer_ctxt: TypeInfer,
     loop_expectation: RefCell<Option<Type>>,
     locals: RefCell<FxHashMap<HirId, LocalInfo>>,
-    types: RefCell<FxHashMap<HirId, Type>>,
+    results : RefCell<TypeCheckResults>
 }
 impl<'ctxt> TypeCheck<'ctxt> {
     pub fn new(context: CtxtRef<'ctxt>, id: DefId) -> Option<Self> {
@@ -57,20 +61,24 @@ impl<'ctxt> TypeCheck<'ctxt> {
             return_type: return_ty,
             loop_expectation: RefCell::new(None),
             locals: RefCell::new(FxHashMap::default()),
-            types: RefCell::new(FxHashMap::default()),
+            results: RefCell::new(TypeCheckResults { 
+                types: FxHashMap::default(),
+                had_error : false
+            }),
         })
     }
     fn fresh_ty_var(&self, span: Span) -> Type {
         Type::Infer(self.infer_ctxt.fresh_var(span))
     }
     fn write_type(&self, id: HirId, ty: Type) {
-        self.types.borrow_mut().insert(id, ty);
+        self.results.borrow_mut().types.insert(id, ty);
     }
     fn local_ty(&self, id: HirId) -> Type {
         self.locals.borrow()[&id].ty.clone()
     }
     fn err(&self, msg: impl IntoDiagnosticMessage, span: Span) -> Type {
         self.diag().emit_diag(msg, span);
+        self.results.borrow_mut().had_error = true;
         Type::Err
     }
     fn invalid_negate_operand_err(&self, operand: Type, op_span: Span) -> Type {
@@ -94,10 +102,27 @@ impl<'ctxt> TypeCheck<'ctxt> {
     {
         self.context.diag()
     }
+    fn check_index(&self, base: &Expr, index: &Expr, span: Span) -> Type{
+        let base = self.check_expr(base, None);
+        let index = self.check_expr(index, Some(&Type::new_int(IntType::Unsigned)));
+        match (base,index){
+            (Type::Array(element_ty),Type::Primitive(PrimitiveType::Int(IntType::Unsigned))) => {
+                *element_ty
+            },
+            (base,index) => {
+                if base.has_error() || index.has_error(){
+                    Type::Err
+                }
+                else{
+                    self.err(format!("Cannot index into '{}' with '{}'.",self.format_ty(&base),self.format_ty(&index)),span)
+                }
+            }
+        }
+    }
     fn check_lit(&self, literal: LiteralKind, expected_ty: Option<&Type>) -> Type {
         match literal {
             LiteralKind::Bool(_) => Type::new_bool(),
-            LiteralKind::Int(_) => Type::new_int(
+            LiteralKind::Int(_) | LiteralKind::IntErr => Type::new_int(
                 match expected_ty{
                     Some(Type::Primitive(PrimitiveType::Int(sign))) => {
                         *sign
@@ -471,7 +496,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 res: Resolution::Variable(_) | Resolution::Err,
                 ..
             })
-            | ExprKind::Field(..) => true,
+            | ExprKind::Field(..) 
+            | ExprKind::Index(..)=> true,
             ExprKind::Unary(op,..) if op.node == UnaryOpKind::Deref => true,
             ExprKind::Ascribe(ref expr,_) => Self::is_valid_assign_target(expr),
             ExprKind::Return(..)
@@ -814,11 +840,14 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     hir::Resolution::Def(..) => (),
                     hir::Resolution::Err => (),
                 },
+                ExprKind::Index(base, _) => {
+                    check_mutable(this,base);
+                }
                 ExprKind::Field(receiver, _) => {
                     check_mutable(this, receiver);
                 }
                 ExprKind::Unary(op,expr) if op.node == UnaryOpKind::Deref => {
-                    let ty = &this.types.borrow()[&expr.id];
+                    let ty = &this.results.borrow().types[&expr.id];
                     if let Type::Ref(_, IsMutable::No) = ty {
                         this.err("Cannot mutate through immutable reference.", expr.span);
                     }
@@ -854,6 +883,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
     fn check_expr_kind(&self, expr: &Expr, expected_ty: Option<&Type>) -> Type {
         let Expr { kind, .. } = expr;
         let ty = match kind {
+            ExprKind::Index(base,index) => self.check_index(base,index,expr.span),
             &ExprKind::Literal(literal) => self.check_lit(literal, expected_ty),
             &ExprKind::Field(ref reciever, field) => self.check_field(reciever, field),
             ExprKind::Tuple(elements) => self.check_tuple(elements, expected_ty),
@@ -959,7 +989,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 )
             }
             PatternKind::Literal(lit) => match lit {
-                LiteralKind::Int(_) => match expected_ty {
+                LiteralKind::Int(_) | LiteralKind::IntErr => match expected_ty {
                     Some(ty @ Type::Primitive(PrimitiveType::Int(..))) => ty.clone(),
                     _ => Type::new_int(IntType::Signed),
                 },

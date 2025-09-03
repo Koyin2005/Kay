@@ -11,13 +11,11 @@ fun as_uint(x:uint) -> uint = x
 fun len[T](a : [T]) -> uint = loop end
 fun x[T](a : never) -> T = a
 fun main() = do
-    let a = x(match return with end) : int;
     let (mut a,b) : (uint,uint) = (1,2);
-    (ref mut a)^ = 5;
+    let mut a = "Hello world";
+    (ref mut a)^ = "Yo";
     let mut i : uint = 50;
-    for i in [1,2,3,4,5] do
-        println(i);
-    end
-
-    
+    let mut a : [uint] = [1,2,3,4,5,6,7,8,9,10];
+    let v = a.[0];
+    a.[v] = 5;
 end
