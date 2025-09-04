@@ -2,74 +2,10 @@ use std::rc::Rc;
 
 use pl5::{
     Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, TypeCheck,
-    config::{Config, ConfigError, KAE_EXTENSION, KAE_EXTENSION_WITH_DOT, PathKind},
+    config::{Config, ConfigError, SourceError},
     diagnostics::DiagnosticReporter,
 };
 
-enum SourceError {
-    ReadFileFailed,
-    InvalidFile(String),
-}
-fn get_source(config: &Config) -> Result<Box<[(String, String)]>, SourceError> {
-    fn find_files_with_kae_extension(path: &str) -> Result<Box<[(String, String)]>, SourceError> {
-        let dir = std::fs::read_dir(path).expect("Already checked its a directory");
-        dir.filter_map(|entry| entry.ok())
-            .map(|entry| {
-                let path = entry.path();
-                if path
-                    .extension()
-                    .is_some_and(|ext| ext.to_string_lossy().matches(KAE_EXTENSION).any(|_| true))
-                    && path.file_name().is_some_and(|name| {
-                        let name = name.to_string_lossy().into_owned();
-                        let mut with_no_extensions = name.split_terminator(KAE_EXTENSION_WITH_DOT);
-                        let file_name = with_no_extensions
-                            .next()
-                            .expect("Already checked if it has it.");
-                        !file_name.chars().all(|c| c == '_')
-                            && file_name.char_indices().all(|(i, c)| {
-                                if i == 0 {
-                                    c.is_ascii_alphabetic() || c == '_'
-                                } else {
-                                    c.is_ascii_alphanumeric() || c == '_'
-                                }
-                            })
-                    })
-                {
-                    read_file_source(&entry.path().to_string_lossy())
-                        .map(|src| (entry.file_name().to_string_lossy().into_owned(), src))
-                } else {
-                    Err(SourceError::InvalidFile(
-                        path.to_string_lossy().into_owned(),
-                    ))
-                }
-            })
-            .collect()
-    }
-
-    fn read_file_source(path: &str) -> Result<String, SourceError> {
-        match std::fs::read_to_string(path) {
-            Ok(source) => Ok(source),
-            Err(error) => {
-                match error.kind() {
-                    std::io::ErrorKind::NotFound => {
-                        eprintln!("No file or path at {}.", path)
-                    }
-                    _ => eprintln!("An error occurred : {error}."),
-                }
-                Err(SourceError::ReadFileFailed)
-            }
-        }
-    }
-
-    let source_files = match config.path_kind() {
-        PathKind::Folder => find_files_with_kae_extension(config.path_str())?,
-        PathKind::Source => {
-            let source = read_file_source(config.path_str())?;
-            Box::new([(config.file_name(), source)])
-        }
-    };
-    Ok(source_files)
-}
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
     let config = match Config::new(&args) {
@@ -84,18 +20,21 @@ fn main() {
                 );
                 return;
             }
+            ConfigError::FileDoesNotExist(name) => {
+                eprintln!("'{name}' does not exist.");
+                return;
+            }
             ConfigError::InvalidFile => {
                 eprintln!("Invalid file.");
                 return;
             }
         },
     };
-    let source_files = match get_source(&config) {
+    let source_files = match config.get_all_source_files() {
         Ok(source_files) => source_files,
         Err(error) => match error {
-            SourceError::ReadFileFailed => return,
-            SourceError::InvalidFile(file) => {
-                eprintln!("Invalid file '{}'.", file);
+            SourceError::ReadFileFailed(error) => {
+                eprintln!("Error occured : {}", error);
                 return;
             }
         },

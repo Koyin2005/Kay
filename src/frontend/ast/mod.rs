@@ -110,7 +110,7 @@ impl std::fmt::Display for BinaryOpKind {
         f.write_str(self.as_str())
     }
 }
-#[derive(Clone, Debug, Copy,PartialEq, Eq)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub enum UnaryOpKind {
     Negate,
     Ref(Mutable),
@@ -156,7 +156,7 @@ pub enum LiteralKind {
     Int(i64),
     Bool(bool),
     String(Symbol),
-    IntErr
+    IntErr,
 }
 
 #[derive(Clone, Debug)]
@@ -195,7 +195,7 @@ pub enum ExprKind {
     Loop(Block),
     Tuple(Vec<Expr>),
     Block(Block),
-    Index(Box<Expr>,Box<Expr>),
+    Index(Box<Expr>, Box<Expr>),
     Match(Box<Expr>, Box<[MatchArm]>),
     If(Box<Expr>, Box<Block>, Option<Box<Expr>>),
     Assign(Box<Expr>, Box<Expr>, Span),
@@ -223,7 +223,7 @@ pub struct Pattern {
     pub id: NodeId,
 }
 
-#[derive(Clone, Debug, Copy,PartialEq, Eq)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub enum Mutable {
     Yes(Span),
     No,

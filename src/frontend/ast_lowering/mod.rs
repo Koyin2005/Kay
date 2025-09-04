@@ -236,7 +236,9 @@ impl<'diag> AstLower<'diag> {
     }
     fn lower_literal(&mut self, span: Span, literal: ast::LiteralKind) -> ast::LiteralKind {
         match literal {
-            ast::LiteralKind::Bool(_) | ast::LiteralKind::Int(_) | ast::LiteralKind::IntErr => literal,
+            ast::LiteralKind::Bool(_) | ast::LiteralKind::Int(_) | ast::LiteralKind::IntErr => {
+                literal
+            }
             ast::LiteralKind::String(string) => {
                 let content = string.as_str();
                 if content.contains('\\') {
@@ -418,10 +420,13 @@ impl<'diag> AstLower<'diag> {
                         })
                         .collect()
                 ))
-            },
-            ast::ExprKind::Index(array,index) => {
-                lower_expr!(hir::ExprKind::Index(Box::new(self.lower_expr(array)), Box::new(self.lower_expr(index))))
-            },
+            }
+            ast::ExprKind::Index(array, index) => {
+                lower_expr!(hir::ExprKind::Index(
+                    Box::new(self.lower_expr(array)),
+                    Box::new(self.lower_expr(index))
+                ))
+            }
             ast::ExprKind::Ascribe(expr, ty) => {
                 lower_expr!(hir::ExprKind::Ascribe(
                     Box::new(self.lower_expr(expr)),

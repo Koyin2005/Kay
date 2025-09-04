@@ -90,8 +90,11 @@ pub enum Type {
     Err,
 }
 impl Type {
-    pub fn is_never(&self) -> bool{
-        matches!(self,Type::Primitive(hir::PrimitiveType::Never))
+    pub fn is_unit(&self) -> bool{
+        matches!(self,Type::Tuple(elements) if elements.is_empty())
+    }
+    pub fn is_never(&self) -> bool {
+        matches!(self, Type::Primitive(hir::PrimitiveType::Never))
     }
     pub fn new_array(element: Self) -> Self {
         Self::Array(Box::new(element))
@@ -128,15 +131,12 @@ impl Type {
                 }
                 if let &Type::Infer(_) = ty {
                     self.found = true;
-                }
-                else {
+                } else {
                     walk_ty(self, ty);
                 }
             }
         }
-        let mut has_infer = HasInfer {
-            found: false,
-        };
+        let mut has_infer = HasInfer { found: false };
         has_infer.visit_ty(self);
         has_infer.found
     }

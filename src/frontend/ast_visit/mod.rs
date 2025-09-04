@@ -160,16 +160,16 @@ pub fn walk_expr(visitor: &mut impl Visitor, expr: &Expr) {
             walk_iterator(visitor, iter);
             visitor.visit_block(body);
         }
-        ExprKind::Grouped(expr)
-        | ExprKind::Field(expr, _)
-        | ExprKind::Unary(_, expr) => {
+        ExprKind::Grouped(expr) | ExprKind::Field(expr, _) | ExprKind::Unary(_, expr) => {
             visitor.visit_expr(expr);
         }
         ExprKind::While(condition, block) => {
             visitor.visit_expr(condition);
             visitor.visit_block(block);
         }
-        ExprKind::Binary(_, first, last) |ExprKind::Index(first, last)| ExprKind::Assign(first, last, _) => {
+        ExprKind::Binary(_, first, last)
+        | ExprKind::Index(first, last)
+        | ExprKind::Assign(first, last, _) => {
             visitor.visit_expr(first);
             visitor.visit_expr(last);
         }

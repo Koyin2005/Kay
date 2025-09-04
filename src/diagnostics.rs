@@ -34,7 +34,10 @@ impl DiagnosticReporter {
             let end = source_info.location_at(span_info.end_offset);
             eprintln!(
                 "Error on line {}, column {} in {}:\n {}",
-                start.line, start.column,source_info.name(), diagnostic.message
+                start.line,
+                start.column,
+                source_info.name(),
+                diagnostic.message
             );
             let lines = &source_info.line_info()[start.line as usize - 1..end.line as usize];
 

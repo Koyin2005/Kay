@@ -8,7 +8,7 @@ use std::{
 
 use indexmap::IndexSet;
 
-use crate::config::KAE_EXTENSION;
+use crate::config::{KAE_EXTENSION, SourceFile};
 
 pub mod symbol;
 
@@ -294,20 +294,23 @@ pub struct SourceFiles {
     info: Box<[Rc<SourceInfo>]>,
 }
 impl SourceFiles {
-    pub fn new(
-        sources: impl IntoIterator<Item = (String, String)>,
-    ) -> Result<Self, SourceTooLarge> {
+    pub fn new(sources: impl IntoIterator<Item = SourceFile>) -> Result<Self, SourceTooLarge> {
         sources
             .into_iter()
-            .map(|(mut name, source)| {
-                if let Some(index) = name
-                    .rfind(KAE_EXTENSION)
-                    .and_then(|x| usize::checked_sub(x, 1))
-                {
-                    name.drain(index..);
-                };
-                SourceInfo::new(name, source)
-            })
+            .map(
+                |SourceFile {
+                     mut name,
+                     data: source,
+                 }| {
+                    if let Some(index) = name
+                        .rfind(KAE_EXTENSION)
+                        .and_then(|x| usize::checked_sub(x, 1))
+                    {
+                        name.drain(index..);
+                    };
+                    SourceInfo::new(name, source)
+                },
+            )
             .collect::<Result<Box<[_]>, _>>()
             .map(|info| Self {
                 info: info.into_iter().map(Rc::new).collect(),

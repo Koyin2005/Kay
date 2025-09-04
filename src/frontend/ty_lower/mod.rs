@@ -48,13 +48,10 @@ impl<'a> TypeLower<'a> {
     pub fn lower(&self, ty: &hir::Type) -> Type {
         match &ty.kind {
             hir::TypeKind::Infer => {
-                if let Some(infer) = self.infer{
+                if let Some(infer) = self.infer {
                     Type::Infer(infer.fresh_var(ty.span))
-                }
-                else{
-                    self.ctxt
-                        .diag()
-                        .emit_diag("Cannot use '_' here.", ty.span);
+                } else {
+                    self.ctxt.diag().emit_diag("Cannot use '_' here.", ty.span);
                     Type::Err
                 }
             }

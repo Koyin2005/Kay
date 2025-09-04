@@ -9,11 +9,11 @@ use crate::{
 #[derive(Debug)]
 struct TypeVar {
     current_ty: Option<Type>,
-    source: Span
+    source: Span,
 }
-#[derive(Clone, Copy,Debug,PartialEq, Eq,Hash,PartialOrd, Ord)]
-pub struct InferVar{
-    index : u32,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct InferVar {
+    index: u32,
 }
 pub type InferResult<T> = Result<T, InferError>;
 #[derive(Debug)]
@@ -46,13 +46,13 @@ impl TypeInfer {
         self.vars.borrow()[var.index as usize].source
     }
     pub fn vars(&self) -> impl ExactSizeIterator<Item = InferVar> {
-        (0u32..self.vars
+        (0u32..self
+            .vars
             .borrow()
             .len()
             .try_into()
             .expect("Shouldn't have more than u32::MAX type vars"))
-        .map(|i| InferVar { index: i })
-            
+            .map(|i| InferVar { index: i })
     }
     pub fn normalize(&self, ty: &Type) -> Type {
         struct Normalizer<'infer> {
@@ -100,10 +100,7 @@ impl TypeInfer {
                         }
                     }
                 }
-                let mut occurs = OccursCheck {
-                    var,
-                    found: false,
-                };
+                let mut occurs = OccursCheck { var, found: false };
                 occurs.visit_ty(&ty);
                 let var_info = &mut self.vars.borrow_mut()[var.index as usize];
                 if occurs.found {

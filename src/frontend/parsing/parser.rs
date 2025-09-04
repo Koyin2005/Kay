@@ -175,7 +175,7 @@ impl<'source> Parser<'source> {
             Literal::Int(value) => match value.as_str().parse() {
                 Ok(value) => LiteralKind::Int(value),
                 Err(_) => {
-                    self.error_at_current(format!("Int literal '{}' too large.",value.as_str()));
+                    self.error_at_current(format!("Int literal '{}' too large.", value.as_str()));
                     LiteralKind::IntErr
                 }
             },
@@ -475,7 +475,7 @@ impl<'source> Parser<'source> {
                 span: start_token.span,
             })
         } else if self.matches_current(TokenKind::Ref) {
-            let mutable = if let Some(token) = self.match_current(TokenKind::Mut){
+            let mutable = if let Some(token) = self.match_current(TokenKind::Mut) {
                 Mutable::Yes(token.span)
             } else {
                 Mutable::No
@@ -484,19 +484,18 @@ impl<'source> Parser<'source> {
                 node: UnaryOpKind::Ref(mutable),
                 span: start_token.span,
             })
-        } else  {
+        } else {
             None
         }
     }
     fn postfix_unary_op(&mut self) -> Option<UnaryOp> {
         let start_token = self.current_token;
-        if self.matches_current(TokenKind::Caret){
-            Some(UnaryOp{
-                node : UnaryOpKind::Deref,
-                span : start_token.span
+        if self.matches_current(TokenKind::Caret) {
+            Some(UnaryOp {
+                node: UnaryOpKind::Deref,
+                span: start_token.span,
             })
-        } 
-        else {
+        } else {
             None
         }
     }
@@ -718,22 +717,24 @@ impl<'source> Parser<'source> {
                 TokenKind::LeftParen => self.parse_call(lhs)?,
                 TokenKind::Dot => {
                     self.advance();
-                    if let Some(token) = self.match_current(TokenKind::LeftBracket){
+                    if let Some(token) = self.match_current(TokenKind::LeftBracket) {
                         let start_span = token.span;
                         let index = self.parse_expr(0)?;
                         let end_span = self.current_token.span;
-                        let _ = self.expect_at(TokenKind::RightBracket, "Expected ']'.",start_span.combined(index.span));
-                        Expr{
-                            id : self.new_id(),
-                            span : start_span.combined(end_span),
-                            kind : ExprKind::Index(Box::new(lhs),Box::new(index))
+                        let _ = self.expect_at(
+                            TokenKind::RightBracket,
+                            "Expected ']'.",
+                            start_span.combined(index.span),
+                        );
+                        Expr {
+                            id: self.new_id(),
+                            span: start_span.combined(end_span),
+                            kind: ExprKind::Index(Box::new(lhs), Box::new(index)),
                         }
-                    }
-                    else{
+                    } else {
                         self.parse_field_expr(lhs)?
                     }
-                    
-                },
+                }
                 TokenKind::Colon => {
                     self.advance();
                     let ty = self.parse_type()?;
@@ -744,13 +745,17 @@ impl<'source> Parser<'source> {
                     }
                 }
                 TokenKind::LeftBrace => self.parse_init_expr(Some(lhs))?,
-                _ => if let Some(op) = self.postfix_unary_op(){
-                    Expr{
-                        id : self.new_id(),
-                        span : lhs.span.combined(op.span),
-                        kind : ExprKind::Unary(op, Box::new(lhs))
+                _ => {
+                    if let Some(op) = self.postfix_unary_op() {
+                        Expr {
+                            id: self.new_id(),
+                            span: lhs.span.combined(op.span),
+                            kind: ExprKind::Unary(op, Box::new(lhs)),
+                        }
+                    } else {
+                        break Ok(lhs);
                     }
-                } else { break Ok(lhs)},
+                }
             };
         }
     }
