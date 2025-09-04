@@ -352,3 +352,8 @@ impl TypeScheme {
         result
     }
 }
+impl From<Type> for TypeScheme{
+    fn from(value: Type) -> Self {
+        Self { ty: value, arg_count: 0 }
+    }
+}

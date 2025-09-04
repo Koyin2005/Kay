@@ -168,8 +168,10 @@ impl<'hir> GlobalContext<'hir> {
                 Builtin::Option
                 | Builtin::OptionNone
                 | Builtin::OptionSome
-                | Builtin::OptionSomeField => 1,
-                Builtin::Println => 0,
+                | Builtin::OptionSomeField
+                | Builtin::Len => 1,
+                Builtin::Println
+                | Builtin::Panic => 0,
             },
             Definition::Def(def) => match self.kind(def) {
                 DefKind::VariantCase => {
@@ -279,7 +281,9 @@ impl<'hir> GlobalContext<'hir> {
             )
         };
         match builtin {
-            Builtin::Println => TypeScheme::new(Type::Err, 0),
+            Builtin::Len => TypeScheme::new(Type::new_function([Type::new_array(t_param())],Type::new_int(hir::IntType::Unsigned)),1),
+            Builtin::Panic => Type::new_function([Type::new_ref_str()], Type::new_never()).into(),
+            Builtin::Println => Type::Err.into(),
             Builtin::Option => TypeScheme::new(option_ty(), 1),
             Builtin::OptionNone => TypeScheme::new(option_ty(), 1),
             Builtin::OptionSome => TypeScheme::new(Type::new_function([t_param()], option_ty()), 1),

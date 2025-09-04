@@ -95,7 +95,7 @@ impl Ident {
     }
 }
 
-const ALL_SYMBOLS: &[&str] = &["iter", "println", "Some", "None", "Option", "main"];
+const ALL_SYMBOLS: &[&str] = &["iter", "println", "Some", "None", "Option", "len","panic"];
 
 pub mod symbols {
     use crate::span::symbol::{ALL_SYMBOLS, Symbol};
@@ -115,5 +115,6 @@ pub mod symbols {
     pub const NONE: Symbol = Symbol::new(find_symbol_index("None"));
     pub const OPTION: Symbol = Symbol::new(find_symbol_index("Option"));
     pub const PRINTLN: Symbol = Symbol::new(find_symbol_index("println"));
-    pub const MAIN: Symbol = Symbol::new(find_symbol_index("main"));
+    pub const LEN: Symbol = Symbol::new(find_symbol_index("len"));
+    pub const PANIC : Symbol = Symbol::new(find_symbol_index("panic"));
 }

@@ -7,7 +7,35 @@ type Result[T,E] =
     | Err(E)
 
 
-fun panic(txt: ref string) -> never = do println(txt); loop end end 
+fun array_ref_at[T](self: ref [T], index: uint) -> ref T = ref self^.[index]
+
+fun array_ref_mut_at[T](self: ref mut [T], index: uint) -> ref mut T = ref mut self^.[index]
+
+fun try_array_at_ref[T](self: [T], index: uint) -> Option[ref T] = 
+    if index < len(self) then
+        Option.Some(ref self.[index])
+    else
+        Option.None
+    end
+
+
+fun try_array_at_ref_mut[T](mut self: [T], index: uint) -> Option[ref mut T] = 
+    if index < len(self) then
+        Option.Some(ref mut self.[index])
+    else
+        Option.None
+    end
+
+
+fun try_array_at[T](self: [T], index: uint) -> Option[T] = 
+    if index < len(self) then
+        Option.Some(self.[index])
+    else
+        Option.None
+    end
+
+
+
 fun unwrap_option[T](self: Option[T]) -> T = match self with
     Option.Some(x) => x,
     Option.None => panic("unwrapped empty option")

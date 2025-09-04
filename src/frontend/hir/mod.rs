@@ -81,6 +81,8 @@ pub enum Builtin {
     OptionSome,
     OptionNone,
     Println,
+    Len,
+    Panic,
 }
 impl Builtin {
     pub fn expect_parent(&self) -> Builtin {
@@ -89,6 +91,8 @@ impl Builtin {
             Self::OptionNone | Self::OptionSome => Self::Option,
             Self::Option => Self::Option,
             Self::Println => Self::Println,
+            Self::Len => Self::Len,
+            Self::Panic => Self::Panic,
         }
     }
     pub fn as_symbol(&self) -> Symbol {
@@ -107,6 +111,8 @@ impl Builtin {
             Self::OptionNone => "None",
             Self::OptionSome => "Some",
             Self::OptionSomeField => "0",
+            Self::Len => "len",
+            Self::Panic => "panic"
         }
     }
 }

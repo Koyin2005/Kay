@@ -437,7 +437,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     format!("Cannot use '{}' without parameters.", builtin.as_str()),
                     span,
                     );
-            }
+            },
             hir::Resolution::Builtin(builtin @ (Builtin::Option | Builtin::OptionSomeField)) => {
                 return self.err(format!("Cannot use '{}' as value.", builtin.as_str()), span);
             }
@@ -460,7 +460,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 );
             }
             hir::Resolution::Variable(var) => return self.local_ty(var),
-            hir::Resolution::Builtin(builtin @ (Builtin::OptionSome | Builtin::OptionNone)) => {
+            hir::Resolution::Builtin(builtin @ (Builtin::OptionSome | Builtin::OptionNone | Builtin::Len | Builtin::Panic)) => {
                 hir::Definition::Builtin(builtin)
             }
             hir::Resolution::Def(id, DefKind::VariantCase | DefKind::Function) => {

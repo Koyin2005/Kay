@@ -49,6 +49,8 @@ impl<'a, 'b> NameRes<'a, 'b> {
             bindings: [
                 (symbols::PRINTLN, Resolution::Builtin(Builtin::Println)),
                 (symbols::OPTION, Resolution::Builtin(Builtin::Option)),
+                (symbols::LEN, Resolution::Builtin(Builtin::Len)),
+                (symbols::PANIC, Resolution::Builtin(Builtin::Panic)),
             ]
             .into_iter()
             .collect(),
