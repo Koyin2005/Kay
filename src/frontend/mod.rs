@@ -8,3 +8,5 @@ pub mod resolution;
 pub(super) mod ty_infer;
 pub(super) mod ty_lower;
 pub mod typecheck;
+pub(super) mod thir;
+pub mod thir_build;

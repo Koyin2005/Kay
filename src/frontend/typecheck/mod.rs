@@ -21,7 +21,6 @@ use crate::{
     },
     types::{GenericArg, GenericArgs, IsMutable, Type},
 };
-struct CoerceError(InferError);
 #[derive(Clone, PartialEq, Eq)]
 pub struct LocalInfo {
     pub ty: Type,
@@ -35,9 +34,36 @@ enum Callee {
     Normal(Type),
     Builtin(BuiltinFunction),
 }
+pub enum Coercion {
+    NeverToAny(Type)
+}
 pub struct TypeCheckResults {
+    owner : DefId,
     types: FxHashMap<HirId, Type>,
+    coercions : FxHashMap<HirId,Coercion>,
+    resolutions : FxHashMap<HirId,Resolution>,
+    generic_args : FxHashMap<HirId,GenericArgs>,
     had_error: bool,
+}
+impl TypeCheckResults{
+    pub fn had_error(&self) -> bool{
+        self.had_error
+    }
+    pub fn owner(&self) -> DefId{
+        self.owner
+    }
+    pub fn type_of(&self, id : HirId) -> Type{
+        self.types.get(&id).expect("Expected an id").clone()
+    }
+    pub fn get_coercion(&self, id : HirId) -> Option<&Coercion>{
+        self.coercions.get(&id)
+    }
+    pub fn get_res(&self, id : HirId) -> Option<&Resolution>{
+        self.resolutions.get(&id)
+    }
+    pub fn get_generic_args(&self, id : HirId) -> Option<&GenericArgs>{
+        self.generic_args.get(&id)
+    }
 }
 pub struct TypeCheck<'ctxt> {
     context: CtxtRef<'ctxt>,
@@ -62,7 +88,11 @@ impl<'ctxt> TypeCheck<'ctxt> {
             loop_expectation: RefCell::new(None),
             locals: RefCell::new(FxHashMap::default()),
             results: RefCell::new(TypeCheckResults {
+                owner : id,
                 types: FxHashMap::default(),
+                coercions : FxHashMap::default(),
+                resolutions : FxHashMap::default(),
+                generic_args : FxHashMap::default(),
                 had_error: false,
             }),
         })
@@ -372,17 +402,18 @@ impl<'ctxt> TypeCheck<'ctxt> {
         expected_ty: Option<&Type>,
     ) -> Type {
         self.check_expr(condition, Some(&Type::new_bool()));
-        let then_branch = self.check_expr_with_hint(then_branch, expected_ty);
+        let then_branch_ty = self.check_expr_with_hint(then_branch, expected_ty);
         if let Some(else_branch) = else_branch {
-            let else_branch = self.check_expr_with_hint(else_branch, expected_ty);
-            if let Some(ty) = self.coerce_to_lub(&else_branch, &then_branch) {
+            let else_branch_ty = self.check_expr_with_hint(else_branch, expected_ty);
+
+            if let Some(ty) = self.coerce_to_lub(&else_branch_ty, &then_branch_ty) {
                 ty
-            } else if !then_branch.has_error() && !else_branch.has_error() {
+            } else if !then_branch_ty.has_error() && !else_branch_ty.has_error() {
                 self.err(
                     format!(
                         "Incompatible types for 'if' '{}' and '{}'.",
-                        self.format_ty(&then_branch),
-                        self.format_ty(&else_branch)
+                        self.format_ty(&then_branch_ty),
+                        self.format_ty(&else_branch_ty)
                     ),
                     span,
                 )
@@ -390,25 +421,26 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 Type::Err
             }
         } else {
-            match self.try_coerce(&then_branch, &Type::new_unit()) {
-                Ok(_) => Type::new_unit(),
+            match self.try_coerce(then_branch,&then_branch_ty, &Type::new_unit()) {
+                Ok(ty) => ty,
                 Err(_) => {
-                    if !then_branch.has_error() {
+                    if !then_branch_ty.has_error() {
                         self.err(
                             format!(
                                 "'if' of type '{}' missing else branch.",
-                                self.format_ty(&then_branch)
+                                self.format_ty(&then_branch_ty)
                             ),
                             span,
                         );
                     }
-                    then_branch
+                    then_branch_ty
                 }
             }
         }
     }
     fn instantiate_generic_def(
         &self,
+        id: HirId,
         generic_arg_count: u32,
         definition: Definition,
         expected_ty: Option<&Type>,
@@ -418,10 +450,12 @@ impl<'ctxt> TypeCheck<'ctxt> {
         if generic_arg_count == 0 {
             return scheme.skip_instantiate();
         }
-        let ty = scheme.instantiate(
-            (0..generic_arg_count)
+        let generic_args = (0..generic_arg_count)
                 .map(|_| GenericArg(self.fresh_ty_var(span)))
-                .collect(),
+                .collect::<GenericArgs>();
+        self.results.borrow_mut().generic_args.insert(id,generic_args.clone());
+        let ty = scheme.instantiate(
+            generic_args,
         );
         if let Some(expected) = expected_ty {
             //We use the type of the definition as the 'base'
@@ -431,7 +465,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
     }
     fn check_path(&self, path: &hir::Path, span: Span, expected_ty: Option<&Type>) -> Type {
-        let def = match path.res {
+        let (def,res) = match path.res {
             hir::Resolution::Builtin(builtin @ Builtin::Println) => {
                 return self.err(
                     format!("Cannot use '{}' without parameters.", builtin.as_str()),
@@ -459,16 +493,20 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     span,
                 );
             }
-            hir::Resolution::Variable(var) => return self.local_ty(var),
+            hir::Resolution::Variable(var) => {
+                self.results.borrow_mut().resolutions.insert(var, Resolution::Variable(var));
+                return self.local_ty(var)
+            },
             hir::Resolution::Builtin(builtin @ (Builtin::OptionSome | Builtin::OptionNone | Builtin::Len | Builtin::Panic)) => {
-                hir::Definition::Builtin(builtin)
+                (hir::Definition::Builtin(builtin),Resolution::Builtin(builtin))
             }
-            hir::Resolution::Def(id, DefKind::VariantCase | DefKind::Function) => {
-                hir::Definition::Def(id)
+            hir::Resolution::Def(id, kind @ (DefKind::VariantCase | DefKind::Function)) => {
+                (hir::Definition::Def(id),Resolution::Def(id, kind))
             }
         };
+        self.results.borrow_mut().resolutions.insert(path.id, res);
         let generic_count = self.context.generic_arg_count(def);
-        self.instantiate_generic_def(generic_count, def, expected_ty, span)
+        self.instantiate_generic_def(path.id,generic_count, def, expected_ty, span)
     }
     fn check_loop(
         &self,
@@ -619,7 +657,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
             &ExprKind::Path(hir::Path {
                 id: _,
                 res: Resolution::Builtin(Builtin::Println),
-            }) => Callee::Builtin(BuiltinFunction::Println),
+            }) => {
+                self.results.borrow_mut().resolutions.insert(callee.id, Resolution::Builtin(Builtin::Println));
+                Callee::Builtin(BuiltinFunction::Println)
+            },
             _ => Callee::Normal(self.check_expr(callee, None)),
         }
     }
@@ -659,7 +700,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         for (i, arg) in args.iter().enumerate() {
             let param_ty = param_types.get(i);
             match param_ty.map(|ty| self.infer_ctxt.normalize(ty)) {
-                Some(ref ty) => self.check_expr_coerces_to(arg, ty),
+                Some(ref ty) => self.check_expr_coerces_to(arg, ty).into(),
                 None => self.check_expr(arg, None),
             };
         }
@@ -713,7 +754,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
         self.check_block(body, Some(&Type::new_unit()));
         Type::new_unit()
     }
-
     fn coerce_to_lub(&self, a: &Type, b: &Type) -> Option<Type> {
         self.try_coerce_no_unify(a, b)
             .or_else(|| self.try_coerce_no_unify(b, a))
@@ -725,20 +765,15 @@ impl<'ctxt> TypeCheck<'ctxt> {
             _ => None,
         }
     }
-    fn try_coerce(&self, ty: &Type, target: &Type) -> Result<Type, CoerceError> {
-        if let Some(ty) = self.try_coerce_no_unify(ty, target) {
-            Ok(ty)
-        } else {
-            Ok(match self.infer_ctxt.unify(ty, target) {
-                Ok(ty) => ty,
-                Err(err) => return Err(CoerceError(err)),
-            })
-        }
-    }
-    fn coerce_or_expect(&self, ty: &Type, target: &Type, span: Span) -> Type {
-        match self.try_coerce(ty, target) {
-            Ok(ty) => ty,
-            Err(infer_error) => self.expected_ty_error(infer_error.0, target, ty, span),
+    fn try_coerce(&self,expr: &Expr, ty: &Type, target: &Type) -> Result<Type, InferError> {
+        match (ty,target){
+            (Type::Primitive(PrimitiveType::Never),target) => {
+                if !ty.is_never(){
+                    self.results.borrow_mut().coercions.insert(expr.id, Coercion::NeverToAny(ty.clone()));
+                }
+                Ok(target.clone())
+            },
+            (ty,target) => self.infer_ctxt.unify(ty, target)
         }
     }
     fn expected_ty_error(
@@ -926,7 +961,13 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn check_expr_coerces_to(&self, expr: &Expr, expected_ty: &Type) -> Type {
         let ty = self.check_expr_with_hint(expr, Some(expected_ty));
-        self.coerce_or_expect(&ty, expected_ty, expr.span)
+        match self.try_coerce(expr,&ty, expected_ty){
+            Ok(ty) => ty,
+            Err(err) => {
+                self.expected_ty_error(err, &expected_ty,&ty ,expr.span);
+                expected_ty.clone()
+            }
+        }
     }
     fn check_expr_with_hint(&self, expr: &Expr, ty: Option<&Type>) -> Type {
         self.check_expr_kind(expr, ty)
@@ -1020,6 +1061,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                             (
                                 case,
                                 self.instantiate_generic_def(
+                                    pat.id,
                                     self.context.generic_arg_count(parent),
                                     parent,
                                     expected_ty,
@@ -1093,7 +1135,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             ty
         }
     }
-    pub fn check(self) {
+    pub fn check(self) -> TypeCheckResults{
         for (param, ty) in self.body.params.iter().zip(self.param_types.iter()) {
             self.check_pattern(&param.pat, Some(ty));
         }
@@ -1107,8 +1149,24 @@ impl<'ctxt> TypeCheck<'ctxt> {
             vars.sort();
             vars
         };
-        for var in incomplete_vars {
-            self.err("Type annotations needed.", self.infer_ctxt.span(var));
+        if !incomplete_vars.is_empty(){
+            for var in incomplete_vars {
+                self.err("Type annotations needed.", self.infer_ctxt.span(var));
+            }
+            return self.results.into_inner();
         }
+        let mut results = self.results.into_inner();
+        for ty in results.types.values_mut(){
+            *ty = self.infer_ctxt.normalize(&ty);
+        }
+        for args in results.generic_args.values_mut(){
+            *args = args.iter().map(|arg| GenericArg(self.infer_ctxt.normalize(&arg.0))).collect();
+        }
+        for coercion in results.coercions.values_mut(){
+            let Coercion::NeverToAny(ty) = coercion;
+            *ty = self.infer_ctxt.normalize(ty);
+            
+        }
+        results
     }
 }
