@@ -24,9 +24,6 @@ impl<'a> TypeLower<'a> {
     }
     pub fn lower_ty_path(&self, path: &hir::Path) -> Result<TypeScheme, NotAType> {
         let def = match path.res {
-            hir::Resolution::Builtin(builtin @ hir::Builtin::Option) => {
-                hir::Definition::Builtin(builtin)
-            }
             hir::Resolution::Def(
                 id,
                 hir::DefKind::Struct | hir::DefKind::Variant | hir::DefKind::GenericParam,

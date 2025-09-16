@@ -48,22 +48,13 @@ impl<'a, 'b> NameRes<'a, 'b> {
             kind: ScopeKind::Root,
             bindings: [
                 (symbols::PRINTLN, Resolution::Builtin(Builtin::Println)),
-                (symbols::OPTION, Resolution::Builtin(Builtin::Option)),
                 (symbols::LEN, Resolution::Builtin(Builtin::Len)),
                 (symbols::PANIC, Resolution::Builtin(Builtin::Panic)),
             ]
             .into_iter()
             .collect(),
         };
-        let namespaces = [(
-            Definition::Builtin(Builtin::Option),
-            Namespace {
-                children: vec![
-                    (symbols::SOME, Definition::Builtin(Builtin::OptionSome)),
-                    (symbols::NONE, Definition::Builtin(Builtin::OptionNone)),
-                ],
-            },
-        )];
+        let namespaces = [];
         Self {
             resolver,
             current_module: None,

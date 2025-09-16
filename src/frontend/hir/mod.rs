@@ -76,10 +76,6 @@ impl DefKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Builtin {
-    Option,
-    OptionSomeField,
-    OptionSome,
-    OptionNone,
     Println,
     Len,
     Panic,
@@ -87,9 +83,6 @@ pub enum Builtin {
 impl Builtin {
     pub fn expect_parent(&self) -> Builtin {
         match self {
-            Self::OptionSomeField => Self::OptionSome,
-            Self::OptionNone | Self::OptionSome => Self::Option,
-            Self::Option => Self::Option,
             Self::Println => Self::Println,
             Self::Len => Self::Len,
             Self::Panic => Self::Panic,
@@ -99,18 +92,14 @@ impl Builtin {
         Symbol::intern(self.as_str())
     }
     pub const fn is_variant(self) -> bool {
-        matches!(self, Self::OptionSome | Self::OptionNone)
+        false
     }
     pub const fn is_type(self) -> bool {
-        matches!(self, Self::Option)
+        false
     }
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Option => "Option",
             Self::Println => "println",
-            Self::OptionNone => "None",
-            Self::OptionSome => "Some",
-            Self::OptionSomeField => "0",
             Self::Len => "len",
             Self::Panic => "panic"
         }

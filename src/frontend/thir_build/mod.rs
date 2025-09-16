@@ -1,5 +1,3 @@
-use fxhash::FxHashMap;
-
 use crate::{context::CtxtRef, frontend::{hir::{self, Builtin, DefId, DefKind, HirId, Resolution}, thir::{Body, Expr, ExprId, ExprKind, Param, Pattern, PatternKind, Thir}, typecheck::{Coercion, TypeCheckResults}}, indexvec::IndexVec};
 
 pub struct ThirBuild<'ctxt>{
@@ -19,7 +17,6 @@ impl<'ctxt> ThirBuild<'ctxt>{
         self.bodies.push(body);
     }
     pub fn finish(self) -> Thir{
-        
         Thir { bodies: self.bodies.into_boxed_slice()}
     }
 }

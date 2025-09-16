@@ -472,9 +472,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     span,
                     );
             },
-            hir::Resolution::Builtin(builtin @ (Builtin::Option | Builtin::OptionSomeField)) => {
-                return self.err(format!("Cannot use '{}' as value.", builtin.as_str()), span);
-            }
             hir::Resolution::Err => return Type::Err,
             hir::Resolution::Def(
                 id,
@@ -497,7 +494,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 self.results.borrow_mut().resolutions.insert(var, Resolution::Variable(var));
                 return self.local_ty(var)
             },
-            hir::Resolution::Builtin(builtin @ (Builtin::OptionSome | Builtin::OptionNone | Builtin::Len | Builtin::Panic)) => {
+            hir::Resolution::Builtin(builtin @ (Builtin::Len | Builtin::Panic)) => {
                 (hir::Definition::Builtin(builtin),Resolution::Builtin(builtin))
             }
             hir::Resolution::Def(id, kind @ (DefKind::VariantCase | DefKind::Function)) => {

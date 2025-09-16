@@ -165,11 +165,7 @@ impl<'hir> GlobalContext<'hir> {
     pub fn generic_arg_count(&self, def: Definition) -> u32 {
         match def {
             Definition::Builtin(builtin) => match builtin {
-                Builtin::Option
-                | Builtin::OptionNone
-                | Builtin::OptionSome
-                | Builtin::OptionSomeField
-                | Builtin::Len => 1,
+                Builtin::Len => 1,
                 Builtin::Println
                 | Builtin::Panic => 0,
             },
@@ -187,31 +183,6 @@ impl<'hir> GlobalContext<'hir> {
     pub fn type_def(&self, def: Definition) -> &TypeDef {
         let type_def = match def {
             Definition::Builtin(builtin) => match builtin {
-                Builtin::Option => TypeDef {
-                    kind: TypeDefKind::Variant(
-                        [
-                            (
-                                Definition::Builtin(Builtin::OptionSome),
-                                TypeDefCase {
-                                    fields: [FieldDef {
-                                        id: Definition::Builtin(Builtin::OptionSomeField),
-                                        name: Symbol::intern("0"),
-                                    }]
-                                    .into_iter()
-                                    .collect(),
-                                },
-                            ),
-                            (
-                                Definition::Builtin(Builtin::OptionNone),
-                                TypeDefCase {
-                                    fields: IndexVec::new(),
-                                },
-                            ),
-                        ]
-                        .into_iter()
-                        .collect(),
-                    ),
-                },
                 _ => panic!("Invalid for type_def {}.", builtin.as_str()),
             },
             Definition::Def(id) => {
@@ -274,20 +245,10 @@ impl<'hir> GlobalContext<'hir> {
     }
     pub fn type_of_builtin(&self, builtin: Builtin) -> TypeScheme {
         let t_param = || Type::Generic(Symbol::intern("T"), 0);
-        let option_ty = || {
-            Type::new_nominal_with_args(
-                Definition::Builtin(Builtin::Option),
-                [GenericArg(t_param())],
-            )
-        };
         match builtin {
             Builtin::Len => TypeScheme::new(Type::new_function([Type::new_array(t_param())],Type::new_int(hir::IntType::Unsigned)),1),
             Builtin::Panic => Type::new_function([Type::new_ref_str()], Type::new_never()).into(),
             Builtin::Println => Type::Err.into(),
-            Builtin::Option => TypeScheme::new(option_ty(), 1),
-            Builtin::OptionNone => TypeScheme::new(option_ty(), 1),
-            Builtin::OptionSome => TypeScheme::new(Type::new_function([t_param()], option_ty()), 1),
-            Builtin::OptionSomeField => TypeScheme::new(t_param(), 1),
         }
     }
     pub fn expect_node(&self, id: DefId) -> &NodeInfo<'_> {
