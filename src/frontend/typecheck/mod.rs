@@ -27,13 +27,6 @@ pub struct LocalInfo {
     pub name: Symbol,
     pub is_mutable: IsMutable,
 }
-enum BuiltinFunction {
-    Println,
-}
-enum Callee {
-    Normal(Type),
-    Builtin(BuiltinFunction),
-}
 pub enum Coercion {
     NeverToAny(Type)
 }
@@ -466,12 +459,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn check_path(&self, path: &hir::Path, span: Span, expected_ty: Option<&Type>) -> Type {
         let (def,res) = match path.res {
-            hir::Resolution::Builtin(builtin @ Builtin::Println) => {
-                return self.err(
-                    format!("Cannot use '{}' without parameters.", builtin.as_str()),
-                    span,
-                    );
-            },
             hir::Resolution::Err => return Type::Err,
             hir::Resolution::Def(
                 id,
@@ -494,7 +481,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 self.results.borrow_mut().resolutions.insert(var, Resolution::Variable(var));
                 return self.local_ty(var)
             },
-            hir::Resolution::Builtin(builtin @ (Builtin::Len | Builtin::Panic)) => {
+            hir::Resolution::Builtin(builtin @ (Builtin::Len | Builtin::Panic | Builtin::Println)) => {
                 (hir::Definition::Builtin(builtin),Resolution::Builtin(builtin))
             }
             hir::Resolution::Def(id, kind @ (DefKind::VariantCase | DefKind::Function)) => {
@@ -649,18 +636,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
         Type::new_nominal_with_args(def, args)
     }
-    fn check_callee(&self, callee: &Expr) -> Callee {
-        match &callee.kind {
-            &ExprKind::Path(hir::Path {
-                id: _,
-                res: Resolution::Builtin(Builtin::Println),
-            }) => {
-                self.results.borrow_mut().resolutions.insert(callee.id, Resolution::Builtin(Builtin::Println));
-                Callee::Builtin(BuiltinFunction::Println)
-            },
-            _ => Callee::Normal(self.check_expr(callee, None)),
-        }
-    }
     fn check_call(
         &self,
         span: Span,
@@ -668,9 +643,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
         args: &[Expr],
         expected_ty: Option<&Type>,
     ) -> Type {
-        let callee_kind = self.check_callee(callee);
-        let (param_types, expected_param_count, return_ty) = match callee_kind {
-            Callee::Normal(ref ty) => match ty {
+        let callee_ty = self.check_expr(callee, None);
+        let (param_types, expected_param_count, return_ty) = match &callee_ty {
                 Type::Function(params, return_ty) => {
                     (params, Some(params.len()), Some(return_ty.as_ref()))
                 }
@@ -683,8 +657,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     }
                     (&Vec::new(), None, expected_ty)
                 }
-            },
-            Callee::Builtin(BuiltinFunction::Println) => (&vec![], None, Some(&Type::new_unit())),
         };
         if let Some(expected_params) = expected_param_count
             && expected_params != args.len()

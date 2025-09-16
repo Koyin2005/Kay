@@ -248,7 +248,7 @@ impl<'hir> GlobalContext<'hir> {
         match builtin {
             Builtin::Len => TypeScheme::new(Type::new_function([Type::new_array(t_param())],Type::new_int(hir::IntType::Unsigned)),1),
             Builtin::Panic => Type::new_function([Type::new_ref_str()], Type::new_never()).into(),
-            Builtin::Println => Type::Err.into(),
+            Builtin::Println => Type::new_function([Type::new_ref_str()], Type::new_unit()).into(),
         }
     }
     pub fn expect_node(&self, id: DefId) -> &NodeInfo<'_> {

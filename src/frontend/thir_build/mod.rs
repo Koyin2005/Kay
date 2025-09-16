@@ -60,26 +60,21 @@ impl<'ctxt> ThirBuilder<'ctxt>{
                 ExprKind::Binary(*op, self.lower_expr(&left), self.lower_expr(right))
             },
             hir::ExprKind::Call(callee, args) => {
-                match &callee.kind{
+                let variant_case = match &callee.kind{
                     hir::ExprKind::Path(path) => {
                         let Some(res) = self.get_res(path.id) else {
                             panic!("Resolution not finished")
                         };
                         match res{
-                            Resolution::Builtin(Builtin::Println) => {
-                                    
-                            },
                             Resolution::Def(id, DefKind::VariantCase) => {
-
+                                Some(id)
                             },
-                            res => {
-
-                            }
+                            _ => None
                         }
-                        todo!()
                     },
-                    _ => todo!("OTHER CALLS")
-                }
+                    _ => None
+                };
+                todo!("ACTUAL CALLS")
             },
             _ => todo!("OTHER EXPRS")
 
