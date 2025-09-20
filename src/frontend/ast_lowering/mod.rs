@@ -120,31 +120,6 @@ impl<'diag> AstLower<'diag> {
                 ast::TypeKind::Tuple(elements) => {
                     hir::TypeKind::Tuple(elements.iter().map(|ty| self.lower_ty(ty)).collect())
                 }
-                ast::TypeKind::Struct(struct_) => hir::TypeKind::Struct(
-                    struct_
-                        .fields
-                        .iter()
-                        .map(|field| hir::StructTypeField {
-                            name: field.name,
-                            ty: self.lower_ty(&field.ty),
-                        })
-                        .collect(),
-                ),
-                ast::TypeKind::Variant(variant) => hir::TypeKind::Variant(
-                    variant
-                        .cases
-                        .iter()
-                        .map(|case| hir::VariantTypeCase {
-                            name: case.name,
-                            fields: case.fields.as_ref().map(|fields| {
-                                fields
-                                    .iter()
-                                    .map(|field| self.lower_ty(&field.ty))
-                                    .collect()
-                            }),
-                        })
-                        .collect(),
-                ),
                 ast::TypeKind::Named(name, args) => hir::TypeKind::Path(
                     self.lower_path(name),
                     args.as_ref().map(|args| self.lower_generic_args(args)),

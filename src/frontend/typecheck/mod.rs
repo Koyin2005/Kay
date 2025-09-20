@@ -16,10 +16,9 @@ use crate::{
         ty_lower::TypeLower,
     },
     span::{
-        Span,
-        symbol::{Ident, Symbol},
+        symbol::{Ident, Symbol}, Span
     },
-    types::{GenericArg, GenericArgs, IsMutable, Type},
+    types::{FieldIndex, GenericArg, GenericArgs, IsMutable, Type},
 };
 #[derive(Clone, PartialEq, Eq)]
 pub struct LocalInfo {
@@ -36,6 +35,7 @@ pub struct TypeCheckResults {
     coercions : FxHashMap<HirId,Coercion>,
     resolutions : FxHashMap<HirId,Resolution>,
     generic_args : FxHashMap<HirId,GenericArgs>,
+    fields : FxHashMap<HirId,FieldIndex>,
     had_error: bool,
 }
 impl TypeCheckResults{
@@ -48,11 +48,18 @@ impl TypeCheckResults{
     pub fn type_of(&self, id : HirId) -> Type{
         self.types.get(&id).expect("Expected an id").clone()
     }
+    pub fn expect_field(&self, id : HirId) -> FieldIndex{
+        self.fields.get(&id).copied().expect("Expected a field")
+    }
     pub fn get_coercion(&self, id : HirId) -> Option<&Coercion>{
         self.coercions.get(&id)
     }
     pub fn get_res(&self, id : HirId) -> Option<&Resolution>{
         self.resolutions.get(&id)
+    }
+    pub fn get_generic_args_or_empty(&self, id : HirId) -> &GenericArgs{
+        static  EMPTY : GenericArgs = GenericArgs::empty();
+        self.generic_args.get(&id).unwrap_or(&EMPTY)
     }
     pub fn get_generic_args(&self, id : HirId) -> Option<&GenericArgs>{
         self.generic_args.get(&id)
@@ -86,6 +93,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 coercions : FxHashMap::default(),
                 resolutions : FxHashMap::default(),
                 generic_args : FxHashMap::default(),
+                fields : FxHashMap::default(),
                 had_error: false,
             }),
         })
@@ -158,24 +166,27 @@ impl<'ctxt> TypeCheck<'ctxt> {
             LiteralKind::String(_) => Type::new_ref_str(),
         }
     }
-    fn check_field(&self, receiver: &Expr, field: Ident) -> Type {
+    fn check_field(&self,expr : &Expr, receiver: &Expr, field: Ident) -> Type {
         let receiver_ty = self.check_expr(receiver, None);
         let Some(field_ty) = (match &receiver_ty {
-            Type::Struct(fields) => fields.iter().find_map(|receiver_field| {
-                (receiver_field.name == field.symbol).then(|| receiver_field.ty.clone())
-            }),
             Type::Tuple(fields) => {
                 if let Ok(index) = field.symbol.as_str().parse::<usize>() {
-                    fields.get(index).cloned()
+                    fields.get(index).cloned().map(|field_ty|{
+                        self.results.borrow_mut().fields.insert(expr.id, FieldIndex::new(index));
+                        field_ty
+                    })
                 } else {
                     None
                 }
             }
             &Type::Nominal(def, ref args) => {
                 self.context.type_def(def).as_struct().and_then(|case| {
-                    case.fields.iter().find_map(|field_def| {
+                    case.fields.iter_enumerated().find_map(|(field_index,field_def)| {
                         (field_def.name == field.symbol)
-                            .then(|| self.context.type_of(field_def.id).instantiate(args.clone()))
+                            .then(|| {
+                                self.results.borrow_mut().fields.insert(expr.id, field_index);
+                                self.context.type_of(field_def.id).instantiate(args.clone())
+                            })
                     })
                 })
             }
@@ -896,7 +907,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         let ty = match kind {
             ExprKind::Index(base, index) => self.check_index(base, index, expr.span),
             &ExprKind::Literal(literal) => self.check_lit(literal, expected_ty),
-            &ExprKind::Field(ref reciever, field) => self.check_field(reciever, field),
+            &ExprKind::Field(ref reciever, field) => self.check_field(expr,reciever, field),
             ExprKind::Tuple(elements) => self.check_tuple(elements, expected_ty),
             ExprKind::Ascribe(expr, ty) => self.check_ascribe_expr(expr, ty),
             ExprKind::Block(block) => self.check_block(block, expected_ty),

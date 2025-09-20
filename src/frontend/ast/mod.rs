@@ -297,8 +297,6 @@ pub enum TypeKind {
     Never,
     String,
     Underscore,
-    Variant(Box<Variant>),
-    Struct(Box<Struct>),
     Array(Box<Type>),
     Grouped(Box<Type>),
     Tuple(Vec<Type>),

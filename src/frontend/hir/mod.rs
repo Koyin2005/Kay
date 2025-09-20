@@ -217,16 +217,6 @@ pub struct Param {
     pub pat: Pattern,
 }
 #[derive(Debug)]
-pub struct StructTypeField {
-    pub name: Ident,
-    pub ty: Type,
-}
-#[derive(Debug)]
-pub struct VariantTypeCase {
-    pub name: Ident,
-    pub fields: Option<Vec<Type>>,
-}
-#[derive(Debug)]
 pub struct GenericArg {
     pub ty: Type,
 }
@@ -240,8 +230,6 @@ pub enum TypeKind {
     Tuple(Vec<Type>),
     Path(Path, Option<GenericArgs>),
     Infer,
-    Variant(Vec<VariantTypeCase>),
-    Struct(Vec<StructTypeField>),
     Array(Box<Type>),
     Ref(Mutable, Box<Type>),
     Primitive(PrimitiveType),

@@ -73,22 +73,6 @@ impl<'a> TypeFormat<'a> {
                 PrimitiveType::String => "string",
             }
             .to_string(),
-            Type::Struct(fields) => format!(
-                "struct{{{}}}",
-                self.format_multiple(fields, &|field| {
-                    format!("{}:{}", field.name.as_str(), self.format_type(&field.ty))
-                })
-            ),
-            Type::Variant(cases) => format!(
-                "variant{{{}}}",
-                self.format_multiple(cases, &|case| {
-                    format!(
-                        "{}({})",
-                        case.name.as_str(),
-                        self.format_types(&case.fields)
-                    )
-                })
-            ),
         }
     }
 }

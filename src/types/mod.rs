@@ -1,12 +1,9 @@
+use std::fmt::Debug;
+
 use fxhash::FxHashSet;
 
 use crate::{
-    context::CtxtRef,
-    define_id,
-    frontend::{ast, hir, ty_infer::InferVar},
-    indexvec::IndexVec,
-    span::symbol::{self, Symbol},
-    types::format::TypeFormat,
+    context::CtxtRef, define_id, frontend::{ast, hir, ty_infer::InferVar}, span::symbol::Symbol, types::format::TypeFormat
 };
 
 pub mod format;
@@ -32,17 +29,7 @@ impl From<ast::Mutable> for IsMutable {
     }
 }
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct FieldType {
-    pub name: Symbol,
-    pub ty: Type,
-}
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct GenericArg(pub Type);
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct VariantCase {
-    pub name: Symbol,
-    pub fields: Vec<Type>,
-}
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct GenericArgs {
     pub args: Vec<GenericArg>,
@@ -75,18 +62,17 @@ impl FromIterator<GenericArg> for GenericArgs {
         }
     }
 }
+pub type CompleteType = Type<std::convert::Infallible>;
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum Type {
+pub enum Type<I : Clone + Debug = InferVar> {
     Primitive(hir::PrimitiveType),
     Nominal(hir::Definition, GenericArgs),
-    Struct(IndexVec<FieldIndex, FieldType>),
-    Variant(IndexVec<VariantCaseIndex, VariantCase>),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
     Ref(Box<Type>, IsMutable),
-    Generic(symbol::Symbol, u32),
+    Generic(Symbol, u32),
     Array(Box<Type>),
-    Infer(InferVar),
+    Infer(I),
     Err,
 }
 impl Type {
@@ -209,18 +195,6 @@ impl Type {
             },
         )
     }
-    pub fn new_struct(fields: impl IntoIterator<Item = (Symbol, Type)>) -> Self {
-        Self::Struct(IndexVec::from_iter(
-            fields.into_iter().map(|(name, ty)| FieldType { name, ty }),
-        ))
-    }
-    pub fn new_variants(cases: impl IntoIterator<Item = (Symbol, Vec<Type>)>) -> Self {
-        Self::Variant(IndexVec::from_iter(
-            cases
-                .into_iter()
-                .map(|(name, fields)| VariantCase { name, fields }),
-        ))
-    }
     pub fn new_tuple_from_iter(iter: impl IntoIterator<Item = Type>) -> Self {
         Self::Tuple(iter.into_iter().collect())
     }
@@ -233,10 +207,6 @@ pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
     match ty {
         Type::Array(ty) => v.visit_ty(ty),
         Type::Tuple(fields) => fields.iter().for_each(|ty| v.visit_ty(ty)),
-        Type::Struct(fields) => fields.iter().for_each(|field| v.visit_ty(&field.ty)),
-        Type::Variant(cases) => cases
-            .iter()
-            .for_each(|case| case.fields.iter().for_each(|field| v.visit_ty(field))),
         Type::Function(params, return_ty) => params
             .iter()
             .chain(std::iter::once(&**return_ty))
@@ -269,26 +239,6 @@ pub fn super_map_ty<M: TypeMapper>(mapper: &M, ty: &Type) -> Result<Type, M::Err
                 .collect::<Result<Vec<_>, _>>()?,
         ),
         Type::Generic(name, index) => Type::Generic(*name, *index),
-        Type::Variant(cases) => Type::new_variants(
-            cases
-                .iter()
-                .map(|case| {
-                    Ok((
-                        case.name,
-                        case.fields
-                            .iter()
-                            .map(|field| mapper.map_ty(field))
-                            .collect::<Result<Vec<_>, _>>()?,
-                    ))
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
-        Type::Struct(fields) => Type::new_struct(
-            fields
-                .iter()
-                .map(|field| Ok((field.name, mapper.map_ty(&field.ty)?)))
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
         Type::Nominal(def, args) => Type::Nominal(*def, mapper.map_generic_args(args)?),
         Type::Err => Type::Err,
     })

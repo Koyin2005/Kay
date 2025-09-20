@@ -57,21 +57,6 @@ impl<'a> TypeLower<'a> {
             hir::TypeKind::Tuple(elements) => {
                 Type::new_tuple_from_iter(elements.iter().map(|ty| self.lower(ty)))
             }
-            hir::TypeKind::Struct(fields) => Type::new_struct(
-                fields
-                    .iter()
-                    .map(|field| (field.name.symbol, self.lower(&field.ty))),
-            ),
-            hir::TypeKind::Variant(cases) => Type::new_variants(cases.iter().map(|case| {
-                (
-                    case.name.symbol,
-                    case.fields
-                        .iter()
-                        .flatten()
-                        .map(|ty| self.lower(ty))
-                        .collect(),
-                )
-            })),
             &hir::TypeKind::Primitive(primative) => Type::new_primative(primative),
             hir::TypeKind::Path(path, args) => {
                 let Ok(scheme) = self.lower_ty_path(path) else {

@@ -1140,16 +1140,6 @@ impl<'source> Parser<'source> {
                 );
                 (TypeKind::Array(Box::new(ty)), start_span.combined(end_span))
             }
-            TokenKind::Pipe => {
-                let variant = self.parse_variant_def()?;
-                let span = variant.span;
-                (TypeKind::Variant(Box::new(variant)), span)
-            }
-            TokenKind::LeftBrace => {
-                let struct_def = self.parse_struct_def()?;
-                let span = struct_def.span;
-                (TypeKind::Struct(Box::new(struct_def)), span)
-            }
             TokenKind::Ident(_) => {
                 let name = self.parse_qual_name()?;
                 let name_span = name.span;

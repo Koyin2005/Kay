@@ -114,18 +114,6 @@ pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
             }
         }
         TypeKind::Grouped(ty) | TypeKind::Ref(_, ty) => visitor.visit_ty(ty),
-        TypeKind::Variant(variant) => {
-            for case in variant.cases.iter() {
-                for field in case.fields.iter().flatten() {
-                    visitor.visit_ty(&field.ty);
-                }
-            }
-        }
-        TypeKind::Struct(struct_def) => {
-            for field in struct_def.fields.iter() {
-                visitor.visit_ty(&field.ty);
-            }
-        }
         TypeKind::Named(_, Some(generic_args)) => {
             for arg in generic_args.args.iter() {
                 visitor.visit_ty(&arg.ty);

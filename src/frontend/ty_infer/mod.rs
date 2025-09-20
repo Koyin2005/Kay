@@ -1,7 +1,5 @@
 use std::cell::RefCell;
 
-use fxhash::FxHashSet;
-
 use crate::{
     span::Span,
     types::{GenericArg, Type, TypeMapper, TypeVisitor, super_map_ty, walk_ty},
@@ -144,55 +142,6 @@ impl TypeInfer {
                 if mutable == other_mutable =>
             {
                 Ok(Type::new_ref(self.unify(&ty, &other_ty)?, mutable))
-            }
-            (Type::Struct(fields), Type::Struct(other_fields))
-                if fields.len() == other_fields.len() && {
-                    let all_fields = FxHashSet::from_iter(fields.iter().map(|field| field.name));
-                    other_fields
-                        .iter()
-                        .all(|field| all_fields.contains(&field.name))
-                } =>
-            {
-                Ok(Type::new_struct(
-                    fields
-                        .iter()
-                        .zip(other_fields)
-                        .map(|(field, other_field)| {
-                            self.unify(&field.ty, &other_field.ty)
-                                .map(|ty| (field.name, ty))
-                        })
-                        .collect::<InferResult<Vec<_>>>()?,
-                ))
-            }
-            (Type::Variant(cases), Type::Variant(other_cases))
-                if cases.len() == other_cases.len()
-                    && cases
-                        .iter()
-                        .zip(other_cases.iter())
-                        .all(|(case, other_case)| case.fields.len() == other_case.fields.len())
-                    && {
-                        let all_cases = FxHashSet::from_iter(cases.iter().map(|case| case.name));
-                        other_cases
-                            .iter()
-                            .all(|other_case| all_cases.contains(&other_case.name))
-                    } =>
-            {
-                Ok(Type::new_variants(
-                    cases
-                        .iter()
-                        .zip(other_cases)
-                        .map(|(case, other_case)| {
-                            Ok((
-                                case.name,
-                                case.fields
-                                    .iter()
-                                    .zip(other_case.fields.iter())
-                                    .map(|(field, other_field)| self.unify(field, other_field))
-                                    .collect::<InferResult<Vec<_>>>()?,
-                            ))
-                        })
-                        .collect::<InferResult<Vec<_>>>()?,
-                ))
             }
             (Type::Nominal(def, generic_args), Type::Nominal(other_def, other_generic_args))
                 if def == other_def && generic_args.len() == other_generic_args.len() =>

@@ -1,4 +1,4 @@
-use crate::{context::CtxtRef, frontend::{hir::{self, Builtin, DefId, DefKind, HirId, Resolution}, thir::{Body, Expr, ExprId, ExprKind, Param, Pattern, PatternKind, Thir}, typecheck::{Coercion, TypeCheckResults}}, indexvec::IndexVec};
+use crate::{context::CtxtRef, frontend::{hir::{self, DefId, DefKind, Definition, HirId, Resolution}, thir::{Arm, Body, Expr, ExprId, ExprKind, Param, Pattern, PatternKind, Thir}, typecheck::{Coercion, TypeCheckResults}}, indexvec::IndexVec, types::Type};
 
 pub struct ThirBuild<'ctxt>{
     ctxt : CtxtRef<'ctxt>,
@@ -53,11 +53,36 @@ impl<'ctxt> ThirBuilder<'ctxt>{
     fn make_expr(&mut self, expr: &hir::Expr) -> Expr{
         let kind = match &expr.kind{
             hir::ExprKind::Err => unreachable!("Can't use an ExprKind::Err in thir"),
+            hir::ExprKind::Ascribe(expr, _) => {
+                return self.make_expr(expr)
+            },
+            hir::ExprKind::Literal(literal) => {
+                ExprKind::Literal(*literal)
+            },
             hir::ExprKind::Tuple( elements) => {
                 ExprKind::Tuple(self.lower_exprs(elements))
             },
+            hir::ExprKind::Array(elements) => ExprKind::Array(self.lower_exprs(elements)),
             hir::ExprKind::Binary(op,left,right) => {
                 ExprKind::Binary(*op, self.lower_expr(&left), self.lower_expr(right))
+            },
+            hir::ExprKind::Unary(op, operand) => {
+                ExprKind::Unary(*op, self.lower_expr(operand))
+            },
+            hir::ExprKind::Index(_,_) => todo!("Index"),
+            hir::ExprKind::Return(_) => todo!("RETURNS"),
+            hir::ExprKind::Init(_,_) => todo!("INIT"),
+            hir::ExprKind::Break(_,_) => todo!("BREAK"),
+            hir::ExprKind::For(_,_,_) => todo!("FOR"),
+
+            hir::ExprKind::Match(scrutinee,arms) => {
+                ExprKind::Match(self.lower_expr(scrutinee), arms.iter().map(|arm|{
+                    let arm = Arm{
+                        pattern : self.lower_pattern(&arm.pat),
+                        body : self.lower_expr(&arm.body)
+                    };
+                    self.body.arms.push(arm)
+                }).collect())
             },
             hir::ExprKind::Call(callee, args) => {
                 let variant_case = match &callee.kind{
@@ -67,17 +92,54 @@ impl<'ctxt> ThirBuilder<'ctxt>{
                         };
                         match res{
                             Resolution::Def(id, DefKind::VariantCase) => {
-                                Some(id)
+                                Some((id,self.results.get_generic_args_or_empty(callee.id)))
                             },
                             _ => None
                         }
                     },
                     _ => None
                 };
-                todo!("ACTUAL CALLS")
+                if let Some((id,generic_args)) = variant_case{
+                    ExprKind::VariantCase{case_id:id, generic_args:generic_args.clone(), fields:self.lower_exprs(args)}
+                }
+                else{
+                    ExprKind::Call(self.lower_expr(callee),self.lower_exprs(args))
+                }
             },
-            _ => todo!("OTHER EXPRS")
-
+            hir::ExprKind::Field(recevier,field) => {
+                let field_index = self.results.expect_field(expr.id);
+                ExprKind::Field { receiver: self.lower_expr(recevier), field: field_index, field_span:field.span }
+            },
+            hir::ExprKind::Assign(_,lhs,rhs) => {
+                ExprKind::Assign(self.lower_expr(lhs),self.lower_expr(rhs))
+            },
+            hir::ExprKind::If(condition,then_branch,else_branch) => {
+                let condition = self.lower_expr(condition);
+                let then_branch = self.lower_expr(then_branch);
+                let else_branch = else_branch.as_ref().map(|else_branch| self.lower_expr(else_branch));
+                ExprKind::If(condition, then_branch, else_branch)
+            },
+            hir::ExprKind::Path(path) => 'a : {
+                let def = match self.get_res(path.id).expect("There should be a resolution"){
+                    Resolution::Builtin(builtin) => {
+                        Definition::Builtin(builtin)
+                    },
+                    Resolution::Variable(var) => {
+                        break 'a ExprKind::Var(var)
+                    },
+                    Resolution::Def(id,kind) => {
+                        Definition::Def(id)
+                    },
+                    Resolution::Err => unreachable!("Can't have err resolutions for path")
+                };
+                let generic_args = self.results.get_generic_args_or_empty(path.id).clone();
+                ExprKind::Constant(def, generic_args)
+            },
+            hir::ExprKind::Loop(_,_) => {
+                todo!("LOOPS")
+            },
+            hir::ExprKind::Block(_) => todo!("BLOCKS"),
+            
         };
         Expr { ty: self.results.type_of(expr.id), span: expr.span, kind }
     }
