@@ -2,23 +2,19 @@ use fxhash::{FxHashMap, FxHashSet};
 use indexmap::{IndexMap, map::Entry};
 
 use crate::{
-    Resolver,
     frontend::{
         ast::{
             self, Ast, Block, Expr, ExprKind, FunctionDef, GenericParams, Item, ItemKind, Module,
             NodeId, PathSegment, Pattern, PatternKind, QualifiedName, StmtKind, Type, TypeDef,
-            TypeDefKind,
+            TypeDefKind, TypeKind,
         },
         ast_visit::{
-            Visitor, walk_ast, walk_block, walk_expr, walk_iterator, walk_module, walk_pat,
-            walk_type,
+            walk_ast, walk_block, walk_expr, walk_iterator, walk_module, walk_pat, walk_type, Visitor
         },
         hir::{Builtin, DefId, DefKind, Definition, Resolution},
-    },
-    span::{
-        Span,
-        symbol::{Ident, Symbol, symbols},
-    },
+    }, span::{
+        symbol::{symbols, Ident, Symbol}, Span
+    }, Resolver
 };
 #[derive(Debug, PartialEq, Eq)]
 enum ScopeKind {
@@ -219,7 +215,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
         &mut self,
         id: NodeId,
         head: PathSegment,
-        segments: impl Iterator<Item = PathSegment>,
+        segments: impl IntoIterator<Item = PathSegment>,
     ) -> Option<Resolution<NodeId>> {
         let mut current = self.resolve_name_in_current_scope(head.id, head.name)?;
         for next_seg in segments {
@@ -413,8 +409,15 @@ impl<'a, 'b> NameRes<'a, 'b> {
     }
     fn resolve_type(&mut self, ty: &Type) {
         use crate::frontend::ast::TypeKind;
-        if let TypeKind::Named(name, _) = &ty.kind {
+        match &ty.kind{
+            TypeKind::Named(name, _) => {
+                
             self.resolve_path(name.id, name.head, name.tail.iter().copied());
+            },
+            TypeKind::Ref(_,Some(origin),_) => {
+                self.resolve_name_in_current_scope(origin.id, origin.name);
+            },
+            _ => ()
         }
         walk_type(self, ty)
     }

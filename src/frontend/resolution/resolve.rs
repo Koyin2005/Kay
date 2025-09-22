@@ -11,6 +11,7 @@ use crate::{
     indexvec::IndexVec,
     span::Span,
 };
+#[derive(Debug)]
 pub struct ResolveResults {
     resolutions: FxHashMap<NodeId, Resolution<NodeId>>,
     info: IndexVec<DefId, DefInfo>,

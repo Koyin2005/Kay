@@ -1,7 +1,7 @@
 use crate::{
     context::CtxtRef,
     frontend::{hir, ty_infer::TypeInfer},
-    types::{GenericArg, GenericArgs, Type, TypeScheme},
+    types::{GenericArg, GenericArgs, Origin, Type, TypeScheme},
 };
 
 pub struct NotAType;
@@ -53,7 +53,13 @@ impl<'a> TypeLower<'a> {
                 }
             }
             hir::TypeKind::Array(element_ty) => Type::new_array(self.lower(element_ty)),
-            &hir::TypeKind::Ref(mutable, ref ty) => Type::new_ref(self.lower(ty), mutable.into()),
+            &hir::TypeKind::Ref(mutable,origin, ref ty) => {
+                    Type::new_ref(self.lower(ty),
+                    origin.map(|origin|{
+                        Origin(origin.name.symbol, origin.id)
+                    }), 
+                    mutable.into())
+            },
             hir::TypeKind::Tuple(elements) => {
                 Type::new_tuple_from_iter(elements.iter().map(|ty| self.lower(ty)))
             }

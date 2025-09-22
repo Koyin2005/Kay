@@ -18,7 +18,7 @@ use crate::{
     span::{
         symbol::{Ident, Symbol}, Span
     },
-    types::{FieldIndex, GenericArg, GenericArgs, IsMutable, Type},
+    types::{FieldIndex, GenericArg, GenericArgs, IsMutable, Origin, Type},
 };
 #[derive(Clone, PartialEq, Eq)]
 pub struct LocalInfo {
@@ -262,6 +262,17 @@ impl<'ctxt> TypeCheck<'ctxt> {
             Type::new_unit()
         }
     }
+    fn get_origin(&self, pointee : &Expr) -> Option<Origin>{
+        match &pointee.kind{
+            &ExprKind::Path(Path { id:_, res:Resolution::Variable(id) }) => {
+                Some(Origin(self.locals.borrow()[&id].name, id))
+            },
+            ExprKind::Field(expr, _) |ExprKind::Index(expr, _) | ExprKind::Ascribe(expr, _) => self.get_origin(expr),
+            _ => {
+                None
+            }
+        }
+    }
     fn check_unary(&self, op: UnaryOp, operand: &Expr, expected_ty: Option<&Type>) -> Type {
         match op.node {
             UnaryOpKind::Negate => {
@@ -274,7 +285,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             }
             UnaryOpKind::Ref(mutable) => {
                 let expected_ty = expected_ty.and_then(|ty| match ty {
-                    Type::Ref(ty, _) => Some(&**ty),
+                    Type::Ref(ty, ..) => Some(&**ty),
                     _ => None,
                 });
                 let ty = if let Mutable::Yes(_) = mutable {
@@ -282,11 +293,12 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 } else {
                     self.check_expr(operand, expected_ty)
                 };
-                Type::new_ref(ty, mutable.into())
+                let origin = self.get_origin(operand);
+                Type::new_ref(ty,origin,mutable.into())
             }
             UnaryOpKind::Deref => {
                 let operand_ty = self.check_expr(operand, None);
-                if let Type::Ref(pointee, _) = operand_ty {
+                if let Type::Ref(pointee,..) = operand_ty {
                     *pointee
                 } else if operand_ty.has_error() {
                     Type::Err
@@ -875,7 +887,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 }
                 ExprKind::Unary(op, expr) if op.node == UnaryOpKind::Deref => {
                     let ty = &this.results.borrow().types[&expr.id];
-                    if let Type::Ref(_, IsMutable::No) = ty {
+                    if let Type::Ref(_,_, IsMutable::No) = ty {
                         this.err("Cannot mutate through immutable reference.", expr.span);
                     }
                 }
@@ -1100,7 +1112,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             PatternKind::Deref(ref_pat) => {
                 let (expected_ty, is_mutable) = expected_ty
                     .and_then(|ty| {
-                        if let Type::Ref(ty, mutable) = ty {
+                        if let Type::Ref(ty,_, mutable) = ty {
                             Some((&**ty, mutable))
                         } else {
                             None
@@ -1108,7 +1120,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     })
                     .unzip();
                 let ty = self.check_pattern(ref_pat, expected_ty);
-                Type::new_ref(ty, is_mutable.copied().unwrap_or(IsMutable::No))
+                Type::new_ref(ty,None,is_mutable.copied().unwrap_or(IsMutable::No))
             }
         };
         self.write_type(pat.id, ty.clone());
@@ -1125,6 +1137,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             self.check_pattern(&param.pat, Some(ty));
         }
         self.check_expr_coerces_to(&self.body.value, &self.return_type);
+
         let mut incomplete_vars = FxHashSet::default();
         for var in self.infer_ctxt.vars() {
             incomplete_vars.extend(self.infer_ctxt.normalize(&Type::Infer(var)).infer_vars());

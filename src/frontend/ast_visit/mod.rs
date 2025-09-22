@@ -113,7 +113,7 @@ pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
                 visitor.visit_ty(element);
             }
         }
-        TypeKind::Grouped(ty) | TypeKind::Ref(_, ty) => visitor.visit_ty(ty),
+        TypeKind::Grouped(ty) | TypeKind::Ref(_,_, ty) => visitor.visit_ty(ty),
         TypeKind::Named(_, Some(generic_args)) => {
             for arg in generic_args.args.iter() {
                 visitor.visit_ty(&arg.ty);

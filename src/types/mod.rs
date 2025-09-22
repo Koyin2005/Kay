@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use fxhash::FxHashSet;
 
 use crate::{
-    context::CtxtRef, define_id, frontend::{ast, hir, ty_infer::InferVar}, span::symbol::Symbol, types::format::TypeFormat
+    context::CtxtRef, define_id, frontend::{ast, hir::{self, HirId}, ty_infer::InferVar}, span::symbol::Symbol, types::format::TypeFormat
 };
 
 pub mod format;
@@ -62,13 +62,15 @@ impl FromIterator<GenericArg> for GenericArgs {
         }
     }
 }
+#[derive(Clone, Hash, PartialEq, Eq, Debug,Copy)]
+pub struct Origin(pub Symbol,pub HirId);
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum Type {
     Primitive(hir::PrimitiveType),
     Nominal(hir::Definition, GenericArgs),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
-    Ref(Box<Type>, IsMutable),
+    Ref(Box<Type>,Option<Origin>, IsMutable),
     Generic(Symbol, u32),
     Array(Box<Type>),
     Infer(InferVar),
@@ -150,14 +152,14 @@ impl Type {
     pub fn new_ref_str() -> Self {
         Self::new_ref_immutable(Self::new_primative(hir::PrimitiveType::String))
     }
-    pub fn new_ref(ty: Type, mutable: IsMutable) -> Self {
-        Self::Ref(Box::new(ty), mutable)
+    pub fn new_ref(ty: Type, origin : impl Into<Option<Origin>>, mutable: IsMutable) -> Self {
+        Self::Ref(Box::new(ty),origin.into(), mutable)
     }
     pub fn new_ref_immutable(ty: Type) -> Self {
-        Self::Ref(Box::new(ty), IsMutable::No)
+        Self::Ref(Box::new(ty),None, IsMutable::No)
     }
     pub fn new_ref_mut(ty: Type) -> Self {
-        Self::Ref(Box::new(ty), IsMutable::Yes)
+        Self::Ref(Box::new(ty),None, IsMutable::Yes)
     }
     pub const fn new_str() -> Self {
         Self::Tuple(Vec::new())
@@ -211,7 +213,7 @@ pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
             .chain(std::iter::once(&**return_ty))
             .for_each(|ty| v.visit_ty(ty)),
         Type::Nominal(_, args) => args.iter().for_each(|GenericArg(ty)| v.visit_ty(ty)),
-        Type::Ref(ty, _) => v.visit_ty(ty),
+        Type::Ref(ty,_, _) => v.visit_ty(ty),
         Type::Generic(..) => (),
         Type::Infer(..) => (),
         Type::Err | Type::Primitive(_) => (),
@@ -222,7 +224,7 @@ pub fn super_map_ty<M: TypeMapper>(mapper: &M, ty: &Type) -> Result<Type, M::Err
     Ok(match ty {
         &Type::Infer(var) => Type::Infer(var),
         Type::Array(ty) => Type::new_array(mapper.map_ty(ty)?),
-        &Type::Ref(ref ty, mutable) => Type::new_ref(mapper.map_ty(ty)?, mutable),
+        &Type::Ref(ref ty,origin, mutable) => Type::new_ref(mapper.map_ty(ty)?, origin,mutable),
         Type::Function(params, return_ty) => Type::new_function(
             params
                 .iter()

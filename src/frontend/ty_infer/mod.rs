@@ -138,10 +138,10 @@ impl TypeInfer {
                     self.unify(&return_ty, &other_return_ty)?,
                 ))
             }
-            (Type::Ref(ty, mutable), Type::Ref(other_ty, other_mutable))
-                if mutable == other_mutable =>
+            (Type::Ref(ty,origin, mutable), Type::Ref(other_ty,other_origin, other_mutable))
+                if mutable == other_mutable && origin == other_origin =>
             {
-                Ok(Type::new_ref(self.unify(&ty, &other_ty)?, mutable))
+                Ok(Type::new_ref(self.unify(&ty, &other_ty)?,origin, mutable))
             }
             (Type::Nominal(def, generic_args), Type::Nominal(other_def, other_generic_args))
                 if def == other_def && generic_args.len() == other_generic_args.len() =>

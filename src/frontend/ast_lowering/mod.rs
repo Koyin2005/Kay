@@ -113,8 +113,14 @@ impl<'diag> AstLower<'diag> {
                     hir::TypeKind::Primitive(hir::PrimitiveType::Int(hir::IntType::Signed))
                 }
                 ast::TypeKind::String => hir::TypeKind::Primitive(hir::PrimitiveType::String),
-                ast::TypeKind::Ref(mutable, ty) => {
-                    hir::TypeKind::Ref(*mutable, Box::new(self.lower_ty(ty)))
+                ast::TypeKind::Ref(mutable,origin, ty) => {
+                    hir::TypeKind::Ref(*mutable,origin.as_ref().and_then(|origin|{
+                        self.map_res(origin.id).and_then(|res|{
+                            res.as_var()
+                        }).map(|var|{
+                            hir::Origin { name: origin.name, id: var }
+                        })
+                    }), Box::new(self.lower_ty(ty)))
                 }
                 ast::TypeKind::Array(ty) => hir::TypeKind::Array(Box::new(self.lower_ty(ty))),
                 ast::TypeKind::Tuple(elements) => {
