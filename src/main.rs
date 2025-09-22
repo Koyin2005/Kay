@@ -84,6 +84,6 @@ fn main() {
         let body = context.expect_body_for(results.owner());
         thir_build.build(results.owner(), body, results);
     }
-    let thir = thir_build.finish();
+    let _thir = thir_build.finish();
     global_diagnostics.emit();
 }

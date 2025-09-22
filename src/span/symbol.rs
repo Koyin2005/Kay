@@ -111,9 +111,6 @@ pub mod symbols {
         }
         panic!("Found an unknown symbol.")
     }
-    pub const SOME: Symbol = Symbol::new(find_symbol_index("Some"));
-    pub const NONE: Symbol = Symbol::new(find_symbol_index("None"));
-    pub const OPTION: Symbol = Symbol::new(find_symbol_index("Option"));
     pub const PRINTLN: Symbol = Symbol::new(find_symbol_index("println"));
     pub const LEN: Symbol = Symbol::new(find_symbol_index("len"));
     pub const PANIC : Symbol = Symbol::new(find_symbol_index("panic"));

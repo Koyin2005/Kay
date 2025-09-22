@@ -1,6 +1,6 @@
 use std::{borrow::Cow, cell::RefCell};
 
-use crate::span::{SourceFilesRef, Span};
+use crate::span::{SourceFilesRef, SourceLocation, Span};
 
 pub struct DiagnosticReporter(RefCell<DiagnosticReporterInner>);
 struct DiagnosticReporterInner {
@@ -23,6 +23,14 @@ impl DiagnosticReporter {
     }
     pub fn add(&self, message: Diagnostic) {
         self.0.borrow_mut().all_diagnostics.push(message);
+    }
+    pub fn span_info(&self, span: Span) -> (SourceLocation,SourceLocation){
+        let span = span.info();
+        let inner = self.0.borrow();
+        let info = inner.source_info.get_source_files()[span.file as usize].as_ref();
+        let start = info.location_at(span.start_offset);
+        let end = info.location_at(span.end_offset);
+        (start,end)
     }
     pub fn emit(&self) {
         let mut inner = self.0.borrow_mut();

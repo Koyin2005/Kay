@@ -91,9 +91,6 @@ impl Builtin {
     pub fn as_symbol(&self) -> Symbol {
         Symbol::intern(self.as_str())
     }
-    pub const fn is_variant(self) -> bool {
-        false
-    }
     pub const fn is_type(self) -> bool {
         false
     }

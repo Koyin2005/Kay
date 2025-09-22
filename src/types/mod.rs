@@ -62,9 +62,8 @@ impl FromIterator<GenericArg> for GenericArgs {
         }
     }
 }
-pub type CompleteType = Type<std::convert::Infallible>;
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum Type<I : Clone + Debug = InferVar> {
+pub enum Type {
     Primitive(hir::PrimitiveType),
     Nominal(hir::Definition, GenericArgs),
     Tuple(Vec<Type>),
@@ -72,7 +71,7 @@ pub enum Type<I : Clone + Debug = InferVar> {
     Ref(Box<Type>, IsMutable),
     Generic(Symbol, u32),
     Array(Box<Type>),
-    Infer(I),
+    Infer(InferVar),
     Err,
 }
 impl Type {

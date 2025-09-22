@@ -26,9 +26,11 @@ pub struct LocalInfo {
     pub name: Symbol,
     pub is_mutable: IsMutable,
 }
+#[derive(Debug)]
 pub enum Coercion {
     NeverToAny(Type)
 }
+#[derive(Debug)]
 pub struct TypeCheckResults {
     owner : DefId,
     types: FxHashMap<HirId, Type>,
@@ -54,8 +56,8 @@ impl TypeCheckResults{
     pub fn get_coercion(&self, id : HirId) -> Option<&Coercion>{
         self.coercions.get(&id)
     }
-    pub fn get_res(&self, id : HirId) -> Option<&Resolution>{
-        self.resolutions.get(&id)
+    pub fn get_res(&self, id : HirId) -> Option<Resolution>{
+        self.resolutions.get(&id).copied()
     }
     pub fn get_generic_args_or_empty(&self, id : HirId) -> &GenericArgs{
         static  EMPTY : GenericArgs = GenericArgs::empty();
@@ -470,7 +472,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn check_path(&self, path: &hir::Path, span: Span, expected_ty: Option<&Type>) -> Type {
         let (def,res) = match path.res {
-            hir::Resolution::Err => return Type::Err,
+            hir::Resolution::Err => {
+                self.results.borrow_mut().had_error = true;
+                return Type::Err
+            },
             hir::Resolution::Def(
                 id,
                 kind @ (DefKind::Field
@@ -489,7 +494,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 );
             }
             hir::Resolution::Variable(var) => {
-                self.results.borrow_mut().resolutions.insert(var, Resolution::Variable(var));
+                self.results.borrow_mut().resolutions.insert(path.id, Resolution::Variable(var));
                 return self.local_ty(var)
             },
             hir::Resolution::Builtin(builtin @ (Builtin::Len | Builtin::Panic | Builtin::Println)) => {
@@ -1026,10 +1031,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
             },
             PatternKind::Case(res, fields) => {
                 let case_def = match res {
-                    Resolution::Def(id, DefKind::VariantCase) => Some(Definition::Def(*id)),
-                    Resolution::Builtin(builtin) if builtin.is_variant() => {
-                        Some(Definition::Builtin(*builtin))
-                    }
+                    Resolution::Def(id, DefKind::VariantCase) => {
+                        self.results.borrow_mut().resolutions.insert(pat.id, Resolution::Def(*id, DefKind::VariantCase));
+                        Some(Definition::Def(*id))
+                    },
                     _ => None,
                 };
                 let case_and_variant_ty = case_def.and_then(|case_def| {

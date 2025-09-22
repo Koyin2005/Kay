@@ -1,4 +1,6 @@
-use crate::{context::CtxtRef, frontend::{hir::{self, DefId, DefKind, Definition, HirId, Resolution}, thir::{Arm, Body, Expr, ExprId, ExprKind, Param, Pattern, PatternKind, Thir}, typecheck::{Coercion, TypeCheckResults}}, indexvec::IndexVec, types::Type};
+use crate::{context::CtxtRef, 
+    frontend::{hir::{self, DefId, DefKind, Definition, HirId, Resolution}, thir::{Arm, Body, Expr, ExprId, ExprKind, LocalVar, Param, Pattern, PatternKind, Stmt, StmtKind, Thir}, 
+    typecheck::{Coercion, TypeCheckResults}}, indexvec::IndexVec};
 
 pub struct ThirBuild<'ctxt>{
     ctxt : CtxtRef<'ctxt>,
@@ -28,7 +30,7 @@ struct ThirBuilder<'ctxt>{
 }
 impl<'ctxt> ThirBuilder<'ctxt>{
     pub fn new(ctxt: CtxtRef<'ctxt>,owner : DefId, results: TypeCheckResults) -> Self{
-        Self { ctxt, body: Body { owner, params: Vec::new(), arms: IndexVec::new(), exprs: IndexVec::new() }, results }
+        Self { ctxt, body: Body { owner, params: Vec::new(), arms: IndexVec::new(), exprs: IndexVec::new() , stmts : IndexVec::new()}, results }
     }
     fn lower_expr(&mut self, expr: &hir::Expr) -> ExprId{
         let id = expr.id;
@@ -45,7 +47,7 @@ impl<'ctxt> ThirBuilder<'ctxt>{
         self.body.exprs.push(expr)
     }
     fn get_res(&self, id: HirId) -> Option<Resolution>{
-        self.results.get_res(id).copied()
+        self.results.get_res(id)
     }
     fn lower_exprs<'a>(&mut self, exprs: impl IntoIterator<Item = &'a hir::Expr>) -> Box<[ExprId]>{
         exprs.into_iter().map(|expr| self.lower_expr(expr)).collect()
@@ -69,8 +71,14 @@ impl<'ctxt> ThirBuilder<'ctxt>{
             hir::ExprKind::Unary(op, operand) => {
                 ExprKind::Unary(*op, self.lower_expr(operand))
             },
-            hir::ExprKind::Index(_,_) => todo!("Index"),
-            hir::ExprKind::Return(_) => todo!("RETURNS"),
+            hir::ExprKind::Index(receiver,index) => {
+                let reciever = self.lower_expr(receiver);
+                let index = self.lower_expr(index);
+                ExprKind::Index(reciever, index)
+            },
+            hir::ExprKind::Return(expr) => {
+                ExprKind::Return(expr.as_ref().map(|expr|{ self.lower_expr(expr)}))
+            },
             hir::ExprKind::Init(_,_) => todo!("INIT"),
             hir::ExprKind::Break(_,_) => todo!("BREAK"),
             hir::ExprKind::For(_,_,_) => todo!("FOR"),
@@ -120,14 +128,17 @@ impl<'ctxt> ThirBuilder<'ctxt>{
                 ExprKind::If(condition, then_branch, else_branch)
             },
             hir::ExprKind::Path(path) => 'a : {
-                let def = match self.get_res(path.id).expect("There should be a resolution"){
+                let def = match self.get_res(path.id).unwrap_or_else(||{
+                    println!("{:?}",self.results);
+                    panic!("There should be a resolution for {:?} at {:?}.",path,self.ctxt.diag().span_info(expr.span))
+                }){
                     Resolution::Builtin(builtin) => {
                         Definition::Builtin(builtin)
                     },
                     Resolution::Variable(var) => {
-                        break 'a ExprKind::Var(var)
+                        break 'a ExprKind::Var(LocalVar(var))
                     },
-                    Resolution::Def(id,kind) => {
+                    Resolution::Def(id,_) => {
                         Definition::Def(id)
                     },
                     Resolution::Err => unreachable!("Can't have err resolutions for path")
@@ -138,7 +149,21 @@ impl<'ctxt> ThirBuilder<'ctxt>{
             hir::ExprKind::Loop(_,_) => {
                 todo!("LOOPS")
             },
-            hir::ExprKind::Block(_) => todo!("BLOCKS"),
+            hir::ExprKind::Block(block) => {
+                let stmts = block.stmts.iter().filter_map(|stmt|{
+                    let stmt = match &stmt.kind{
+                        hir::StmtKind::Expr(expr) | hir::StmtKind::ExprWithSemi(expr) => {
+                            Stmt{ kind: StmtKind::Expr(self.lower_expr(expr))}
+                        },
+                        hir::StmtKind::Let(pattern,_,expr) => {
+                            Stmt{ kind: StmtKind::Let(Box::new(self.lower_pattern(pattern)), self.lower_expr(expr))}
+                        },
+                        hir::StmtKind::Item(_) => return None
+                    };
+                    Some(self.body.stmts.push(stmt))
+                }).collect();
+                ExprKind::Block { stmts, result: block.result.as_ref().map(|expr|{ self.lower_expr(expr)}) }
+            },
             
         };
         Expr { ty: self.results.type_of(expr.id), span: expr.span, kind }
@@ -149,7 +174,20 @@ impl<'ctxt> ThirBuilder<'ctxt>{
             hir::PatternKind::Binding(id,name,is_mut,by_ref) => {
                 PatternKind::Binding(id,name,by_ref, is_mut)
             },
-            hir::PatternKind::Case(..) => todo!("CASE PATTERNS"),
+            hir::PatternKind::Case(res,ref fields) => {
+                let id = match self.results.get_res(pattern.id).unwrap_or_else(||
+                    panic!("There should be a resolution for this pattern {} at {:?}.",res.as_str(),self.ctxt.diag().span_info(pattern.span))) {
+                    Resolution::Def(id,DefKind::VariantCase) => {
+                        id
+                    },
+                    Resolution::Def(_, _) |
+                    Resolution::Builtin(_) | Resolution::Err | Resolution::Variable(..) => unreachable!("This can only be a variant case")
+                };
+                let generic_args = self.results.get_generic_args_or_empty(pattern.id).clone();
+                PatternKind::Case(id, generic_args, fields.iter().map(|field|{
+                    self.lower_pattern(field)
+                }).collect())
+            },
             hir::PatternKind::Wildcard => PatternKind::Wilcard,
             hir::PatternKind::Deref(..) => todo!("DEREF PATTERNS"),
             hir::PatternKind::Literal(..) => todo!("LITERAL PATTERNS"),
