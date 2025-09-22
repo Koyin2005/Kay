@@ -1,14 +1,24 @@
 use std::{cell::Cell, vec};
 
 use crate::{
-    diagnostics::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage}, frontend::{
+    Lexer,
+    diagnostics::{Diagnostic, DiagnosticReporter, IntoDiagnosticMessage},
+    frontend::{
         ast::{
-            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef, GenericArg, GenericArgs, GenericParam, GenericParams, Item, ItemKind, IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Origin, Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase, VariantField
+            BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef,
+            GenericArg, GenericArgs, GenericParam, GenericParams, Item, ItemKind, IteratorExpr,
+            IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Origin, Param,
+            PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField,
+            Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase,
+            VariantField,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
-    }, indexvec::Idx, span::{
-        symbol::{Ident, Symbol}, Span
-    }, Lexer
+    },
+    indexvec::Idx,
+    span::{
+        Span,
+        symbol::{Ident, Symbol},
+    },
 };
 #[derive(Clone, Copy)]
 enum BlockKind {
@@ -1116,22 +1126,23 @@ impl<'source> Parser<'source> {
                 } else {
                     Mutable::No
                 };
-                let origin = if self.matches_current(TokenKind::LeftBracket){
-                    if self.matches_current(TokenKind::RightBracket){
+                let origin = if self.matches_current(TokenKind::LeftBracket) {
+                    if self.matches_current(TokenKind::RightBracket) {
                         None
-                    }
-                    else{ 
+                    } else {
                         let origin = self.expect_ident("Expected an origin.")?;
                         let _ = self.expect(TokenKind::RightBracket, "Expected ']'.");
-                        Some(Origin{ id : self.new_id(), name :origin})
+                        Some(Origin {
+                            id: self.new_id(),
+                            name: origin,
+                        })
                     }
-                }
-                else{
+                } else {
                     None
                 };
                 let ty = self.parse_type()?;
                 let span = start_span.combined(ty.span);
-                (TypeKind::Ref(mutable,origin, Box::new(ty)), span)
+                (TypeKind::Ref(mutable, origin, Box::new(ty)), span)
             }
             TokenKind::LeftBracket => {
                 self.advance();

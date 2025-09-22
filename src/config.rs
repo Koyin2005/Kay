@@ -65,7 +65,8 @@ impl Config {
             } else {
                 PathKind::Folder({
                     let dir = std::fs::read_dir(path).expect("Should be a valid file.");
-                    let files = dir.filter_map(|entry| entry.ok())
+                    let files = dir
+                        .filter_map(|entry| entry.ok())
                         .filter_map(|dir| try_as_file_path(&dir.path()))
                         .collect();
                     files
@@ -80,18 +81,16 @@ impl Config {
                 data: std::fs::read_to_string(&self.file_path.path)
                     .map_err(SourceError::ReadFileFailed)?,
             }])),
-            PathKind::Folder(files) => {
-                Ok(files
-                    .iter()
-                    .map(|file| {
-                        Ok(SourceFile {
-                            name: file.name.to_string(),
-                            data: std::fs::read_to_string(&file.path)
-                                .map_err(SourceError::ReadFileFailed)?,
-                        })
+            PathKind::Folder(files) => Ok(files
+                .iter()
+                .map(|file| {
+                    Ok(SourceFile {
+                        name: file.name.to_string(),
+                        data: std::fs::read_to_string(&file.path)
+                            .map_err(SourceError::ReadFileFailed)?,
                     })
-                    .collect::<Result<Box<[_]>, _>>()?)
-            }
+                })
+                .collect::<Result<Box<[_]>, _>>()?),
         }
     }
 }

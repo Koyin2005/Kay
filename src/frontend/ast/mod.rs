@@ -287,10 +287,10 @@ pub struct QualifiedName {
     pub head: PathSegment,
     pub tail: Vec<PathSegment>,
 }
-#[derive(Clone,Debug)]
-pub struct Origin{
-    pub id : NodeId,
-    pub name : Ident
+#[derive(Clone, Debug)]
+pub struct Origin {
+    pub id: NodeId,
+    pub name: Ident,
 }
 #[derive(Clone, Debug)]
 pub enum TypeKind {
@@ -304,7 +304,7 @@ pub enum TypeKind {
     Array(Box<Type>),
     Grouped(Box<Type>),
     Tuple(Vec<Type>),
-    Ref(Mutable,Option<Origin>, Box<Type>),
+    Ref(Mutable, Option<Origin>, Box<Type>),
     Fun(Vec<Type>, Option<Box<Type>>),
 }
 define_id! {

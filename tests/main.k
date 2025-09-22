@@ -3,6 +3,7 @@
     println("Hey ");
 end
 */
-fun this_is_fun(c: int) -> ref[c] int = do
-    ref c
+fun this_is_fun(c: int) -> ref string = do
+    let a : ref[c] int = ref c;
+    "Hey"
 end

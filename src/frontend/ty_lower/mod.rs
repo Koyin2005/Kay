@@ -53,13 +53,11 @@ impl<'a> TypeLower<'a> {
                 }
             }
             hir::TypeKind::Array(element_ty) => Type::new_array(self.lower(element_ty)),
-            &hir::TypeKind::Ref(mutable,origin, ref ty) => {
-                    Type::new_ref(self.lower(ty),
-                    origin.map(|origin|{
-                        Origin(origin.name.symbol, origin.id)
-                    }), 
-                    mutable.into())
-            },
+            &hir::TypeKind::Ref(mutable, origin, ref ty) => Type::new_ref(
+                self.lower(ty),
+                origin.map(|origin| Origin(origin.name.symbol, origin.id)),
+                mutable.into(),
+            ),
             hir::TypeKind::Tuple(elements) => {
                 Type::new_tuple_from_iter(elements.iter().map(|ty| self.lower(ty)))
             }

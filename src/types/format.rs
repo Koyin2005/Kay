@@ -36,17 +36,16 @@ impl<'a> TypeFormat<'a> {
             Type::Generic(name, _) => name.as_str().to_string(),
             Type::Array(element) => format!("[{}]", self.format_type(element)),
             Type::Err => "{unknown}".to_string(),
-            Type::Ref(ty,origin, is_mutable) => format!(
+            Type::Ref(ty, origin, is_mutable) => format!(
                 "ref{} [{}] {}",
                 if let IsMutable::Yes = is_mutable {
                     " mut"
                 } else {
                     ""
                 },
-                if let Some(origin) = origin{
+                if let Some(origin) = origin {
                     origin.0.as_str()
-                }
-                else{
+                } else {
                     "static"
                 },
                 self.format_type(ty)

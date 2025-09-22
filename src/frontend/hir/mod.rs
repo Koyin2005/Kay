@@ -98,7 +98,7 @@ impl Builtin {
         match self {
             Self::Println => "println",
             Self::Len => "len",
-            Self::Panic => "panic"
+            Self::Panic => "panic",
         }
     }
 }
@@ -110,10 +110,10 @@ pub enum Resolution<VarId = HirId> {
     Err,
 }
 impl<Id> Resolution<Id> {
-    pub fn as_var(self) -> Option<Id>{
+    pub fn as_var(self) -> Option<Id> {
         match self {
             Self::Variable(id) => Some(id),
-            _ => None
+            _ => None,
         }
     }
     pub fn as_str(&self) -> &str {
@@ -228,10 +228,10 @@ pub struct GenericArgs {
     pub span: Span,
     pub args: Vec<GenericArg>,
 }
-#[derive(Debug,Clone, Copy)]
-pub struct Origin{
-    pub name : Ident,
-    pub id : HirId
+#[derive(Debug, Clone, Copy)]
+pub struct Origin {
+    pub name: Ident,
+    pub id: HirId,
 }
 #[derive(Debug)]
 pub enum TypeKind {
@@ -239,7 +239,7 @@ pub enum TypeKind {
     Path(Path, Option<GenericArgs>),
     Infer,
     Array(Box<Type>),
-    Ref(Mutable,Option<Origin>, Box<Type>),
+    Ref(Mutable, Option<Origin>, Box<Type>),
     Primitive(PrimitiveType),
     Fun(Vec<Type>, Option<Box<Type>>),
 }

@@ -2,19 +2,23 @@ use fxhash::{FxHashMap, FxHashSet};
 use indexmap::{IndexMap, map::Entry};
 
 use crate::{
+    Resolver,
     frontend::{
         ast::{
             self, Ast, Block, Expr, ExprKind, FunctionDef, GenericParams, Item, ItemKind, Module,
             NodeId, PathSegment, Pattern, PatternKind, QualifiedName, StmtKind, Type, TypeDef,
-            TypeDefKind, TypeKind,
+            TypeDefKind,
         },
         ast_visit::{
-            walk_ast, walk_block, walk_expr, walk_iterator, walk_module, walk_pat, walk_type, Visitor
+            Visitor, walk_ast, walk_block, walk_expr, walk_iterator, walk_module, walk_pat,
+            walk_type,
         },
         hir::{Builtin, DefId, DefKind, Definition, Resolution},
-    }, span::{
-        symbol::{symbols, Ident, Symbol}, Span
-    }, Resolver
+    },
+    span::{
+        Span,
+        symbol::{Ident, Symbol, symbols},
+    },
 };
 #[derive(Debug, PartialEq, Eq)]
 enum ScopeKind {
@@ -409,15 +413,14 @@ impl<'a, 'b> NameRes<'a, 'b> {
     }
     fn resolve_type(&mut self, ty: &Type) {
         use crate::frontend::ast::TypeKind;
-        match &ty.kind{
+        match &ty.kind {
             TypeKind::Named(name, _) => {
-                
-            self.resolve_path(name.id, name.head, name.tail.iter().copied());
-            },
-            TypeKind::Ref(_,Some(origin),_) => {
+                self.resolve_path(name.id, name.head, name.tail.iter().copied());
+            }
+            TypeKind::Ref(_, Some(origin), _) => {
                 self.resolve_name_in_current_scope(origin.id, origin.name);
-            },
-            _ => ()
+            }
+            _ => (),
         }
         walk_type(self, ty)
     }

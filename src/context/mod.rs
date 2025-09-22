@@ -120,6 +120,12 @@ impl<'hir> GlobalContext<'hir> {
     {
         self.diag
     }
+    pub fn expect_sig_of(&self, id: DefId) -> &hir::FunctionSig {
+        let hir::ItemKind::Function(function_def) = &self.expect_item(id).kind else {
+            unreachable!("Expected a function for item")
+        };
+        &function_def.sig
+    }
     pub fn expect_item(&self, id: DefId) -> &hir::Item {
         &self.hir.items[&id]
     }
@@ -166,8 +172,7 @@ impl<'hir> GlobalContext<'hir> {
         match def {
             Definition::Builtin(builtin) => match builtin {
                 Builtin::Len => 1,
-                Builtin::Println
-                | Builtin::Panic => 0,
+                Builtin::Println | Builtin::Panic => 0,
             },
             Definition::Def(def) => match self.kind(def) {
                 DefKind::VariantCase => {
@@ -246,7 +251,13 @@ impl<'hir> GlobalContext<'hir> {
     pub fn type_of_builtin(&self, builtin: Builtin) -> TypeScheme {
         let t_param = || Type::Generic(Symbol::intern("T"), 0);
         match builtin {
-            Builtin::Len => TypeScheme::new(Type::new_function([Type::new_array(t_param())],Type::new_int(hir::IntType::Unsigned)),1),
+            Builtin::Len => TypeScheme::new(
+                Type::new_function(
+                    [Type::new_array(t_param())],
+                    Type::new_int(hir::IntType::Unsigned),
+                ),
+                1,
+            ),
             Builtin::Panic => Type::new_function([Type::new_ref_str()], Type::new_never()).into(),
             Builtin::Println => Type::new_function([Type::new_ref_str()], Type::new_unit()).into(),
         }

@@ -9,10 +9,10 @@ pub(crate) mod types;
 pub use frontend::ast::Ast;
 pub use frontend::ast::NodeId;
 pub use frontend::parsing::{lexing::Lexer, parser::Parser};
+pub use frontend::thir_build::ThirBuild;
 pub use frontend::{
     ast_lowering::AstLower, item_collect::ItemCollect, resolution::resolve::Resolver,
-    typecheck::TypeCheck,
+    typecheck::function::TypeCheck,
 };
 pub use span::SourceFiles;
 pub use span::SourceInfo;
-pub use frontend::thir_build::ThirBuild;

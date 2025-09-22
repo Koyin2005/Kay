@@ -1,7 +1,9 @@
 use std::rc::Rc;
 
 use pl5::{
-    config::{Config, ConfigError, SourceError}, diagnostics::DiagnosticReporter, Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, ThirBuild, TypeCheck
+    Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, ThirBuild, TypeCheck,
+    config::{Config, ConfigError, SourceError},
+    diagnostics::DiagnosticReporter,
 };
 
 fn main() {
@@ -68,19 +70,18 @@ fn main() {
     let global_diagnostics = DiagnosticReporter::new(source_files.clone());
     let context = ItemCollect::new(&global_diagnostics).collect(&hir);
     let context_ref = &context;
-    let type_check_results = hir.items.iter().filter_map(|(_,item)|{
-        
+    let type_check_results = hir.items.iter().filter_map(|(_, item)| {
         let Some(typeck) = TypeCheck::new(context_ref, item.id) else {
             return None;
         };
         Some(typeck.check())
     });
-    if global_diagnostics.had_error(){
+    if global_diagnostics.had_error() {
         global_diagnostics.emit();
-        return; 
+        return;
     }
     let mut thir_build = ThirBuild::new(context_ref);
-    for results in type_check_results{
+    for results in type_check_results {
         let body = context.expect_body_for(results.owner());
         thir_build.build(results.owner(), body, results);
     }
