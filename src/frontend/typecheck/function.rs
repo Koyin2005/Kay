@@ -972,10 +972,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 };
                 let (local_ty, mutable) = match (by_ref, mutable) {
                     (ByRef::Yes(_), IsMutable::Yes) => {
-                        (Type::new_ref_mut(ty.clone()), IsMutable::No)
+                        (Type::new_ref(ty.clone(),Some(Origin(name, id)),IsMutable::Yes), IsMutable::Yes)
                     }
                     (ByRef::Yes(_), IsMutable::No) => {
-                        (Type::new_ref_immutable(ty.clone()), IsMutable::No)
+                        (Type::new_ref(ty.clone(),Some(Origin(name, id)),IsMutable::No), IsMutable::No)
                     }
                     (ByRef::No, mutable) => (ty.clone(), mutable),
                 };

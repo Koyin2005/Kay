@@ -158,19 +158,10 @@ impl Type {
         matches!(self, Type::Err)
     }
     pub fn new_ref_str() -> Self {
-        Self::new_ref_immutable(Self::new_primative(hir::PrimitiveType::String))
+        Self::new_ref(Self::new_primative(hir::PrimitiveType::String),None,IsMutable::No)
     }
     pub fn new_ref(ty: Type, origin: impl Into<Option<Origin>>, mutable: IsMutable) -> Self {
         Self::Ref(Box::new(ty), origin.into(), mutable)
-    }
-    pub fn new_ref_immutable(ty: Type) -> Self {
-        Self::Ref(Box::new(ty), None, IsMutable::No)
-    }
-    pub fn new_ref_mut(ty: Type) -> Self {
-        Self::Ref(Box::new(ty), None, IsMutable::Yes)
-    }
-    pub const fn new_str() -> Self {
-        Self::Tuple(Vec::new())
     }
     pub const fn new_int(signed: hir::IntType) -> Self {
         Self::new_primative(hir::PrimitiveType::Int(signed))
