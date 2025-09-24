@@ -60,9 +60,9 @@ impl<'a> TypeFormat<'a> {
                 "{}{}",
                 self.context.symbol(def).as_str(),
                 if args.is_empty() {
-                    ""
+                    String::new()
                 } else {
-                    &format!(
+                    format!(
                         "[{}]",
                         self.format_types(args.args.iter().map(|arg| &arg.0))
                     )
