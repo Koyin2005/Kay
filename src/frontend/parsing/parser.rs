@@ -6,11 +6,11 @@ use crate::{
     frontend::{
         ast::{
             BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef,
-            GenericArg, GenericArgs, GenericParam, GenericParams, Item, ItemKind, IteratorExpr,
-            IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Origin, Param,
-            PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct, StructField,
-            Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant, VariantCase,
-            VariantField,
+            GenericArg, GenericArgs, GenericParam, GenericParamKind, GenericParams, Item, ItemKind,
+            IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Origin,
+            Param, PathSegment, Pattern, PatternKind, Place, QualifiedName, Stmt, StmtKind, Struct,
+            StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant,
+            VariantCase, VariantField,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
     },
@@ -735,6 +735,14 @@ impl<'source> Parser<'source> {
                         self.parse_field_expr(lhs)?
                     }
                 }
+                TokenKind::LeftBracket => {
+                    let args = self.parse_generic_args()?;
+                    Expr {
+                        id: self.new_id(),
+                        span: lhs.span.combined(args.span.end()),
+                        kind: ExprKind::Instantiate(Box::new(lhs), args),
+                    }
+                }
                 TokenKind::Colon => {
                     self.advance();
                     let ty = self.parse_type()?;
@@ -1057,8 +1065,11 @@ impl<'source> Parser<'source> {
         self.advance();
         let args: Vec<_> = self
             .parse_delimited_by(TokenKind::RightBracket, |this| {
-                let ty = this.parse_type()?;
-                Ok(GenericArg { ty })
+                Ok(if this.matches_current(TokenKind::Static) {
+                    GenericArg::Static
+                } else {
+                    GenericArg::Type(this.parse_type()?)
+                })
             })?
             .into();
         let end_span = self.current_token.span;
@@ -1127,14 +1138,22 @@ impl<'source> Parser<'source> {
                     Mutable::No
                 };
                 let origin = if self.matches_current(TokenKind::LeftBracket) {
-                    if self.matches_current(TokenKind::RightBracket) {
+                    let places: Vec<_> = self
+                        .parse_delimited_by(TokenKind::RightBracket, |this| {
+                            let name = this.expect_ident("Expected an origin.")?;
+                            Ok(Place {
+                                id: this.new_id(),
+                                name,
+                            })
+                        })?
+                        .into();
+                    let _ = self.expect(TokenKind::RightBracket, "Expected ']'.");
+                    if places.is_empty() {
                         None
                     } else {
-                        let origin = self.expect_ident("Expected an origin.")?;
-                        let _ = self.expect(TokenKind::RightBracket, "Expected ']'.");
                         Some(Origin {
                             id: self.new_id(),
-                            name: origin,
+                            places,
                         })
                     }
                 } else {
@@ -1359,10 +1378,16 @@ impl<'source> Parser<'source> {
         let start_span = self.current_token.span;
         self.advance();
         let params = Vec::from(self.parse_delimited_by(TokenKind::RightBracket, |this| {
+            let kind = if this.matches_current(TokenKind::Origin) {
+                GenericParamKind::Origin
+            } else {
+                GenericParamKind::Type
+            };
             let name = this.expect_ident("Expected a type param.")?;
             Ok(GenericParam {
                 id: this.new_id(),
                 name,
+                kind,
             })
         })?);
         let end_span = self.current_token.span;

@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use crate::{
     diagnostics::DiagnosticReporter,
     frontend::{
-        ast::{self, ItemKind, NodeId},
+        ast::{self, GenericParamKind, ItemKind, NodeId},
         hir::{self, Body, DefId, Hir, HirId},
         resolution::resolve::ResolveResults,
     },
@@ -44,7 +44,6 @@ impl<'diag> AstLower<'diag> {
                         .copied()
                         .expect("There should always be a hir id for a variable"),
                 ),
-                hir::Resolution::Builtin(builtin) => hir::Resolution::Builtin(builtin),
                 hir::Resolution::Def(id, kind) => hir::Resolution::Def(id, kind),
                 hir::Resolution::Err => hir::Resolution::Err,
             })
@@ -85,8 +84,45 @@ impl<'diag> AstLower<'diag> {
             args: args
                 .args
                 .iter()
-                .map(|arg| hir::GenericArg {
-                    ty: self.lower_ty(&arg.ty),
+                .map(|arg| {
+                    let ty = match arg {
+                        ast::GenericArg::Type(ty) => ty,
+                        ast::GenericArg::Static => {
+                            return hir::GenericArg::Origin(hir::Origin { places: Vec::new() });
+                        }
+                    };
+
+                    match &ty.kind {
+                        ast::TypeKind::Named(name, args) => {
+                            let path = self.lower_path(&name);
+                            if let hir::Resolution::Variable(var) = path.res {
+                                if args.is_some() {
+                                    self.diag.emit_diag(
+                                        "Cannot have generic arguments here.",
+                                        name.span,
+                                    );
+                                }
+                                hir::GenericArg::Origin(hir::Origin {
+                                    places: vec![hir::Place::Var(name.head.name, var)],
+                                })
+                            } else if let hir::Resolution::Def(id, hir::DefKind::OriginParam) =
+                                path.res
+                            {
+                                if args.is_some() {
+                                    self.diag.emit_diag(
+                                        "Cannot have generic arguments here.",
+                                        name.span,
+                                    );
+                                }
+                                hir::GenericArg::Origin(hir::Origin {
+                                    places: vec![hir::Place::Param(name.head.name, id)],
+                                })
+                            } else {
+                                hir::GenericArg::Type(self.lower_ty(ty))
+                            }
+                        }
+                        _ => hir::GenericArg::Type(self.lower_ty(ty)),
+                    }
                 })
                 .collect(),
         }
@@ -115,13 +151,26 @@ impl<'diag> AstLower<'diag> {
                 ast::TypeKind::String => hir::TypeKind::Primitive(hir::PrimitiveType::String),
                 ast::TypeKind::Ref(mutable, origin, ty) => hir::TypeKind::Ref(
                     *mutable,
-                    origin.as_ref().and_then(|origin| {
-                        self.map_res(origin.id)
-                            .and_then(|res| res.as_var())
-                            .map(|var| hir::Origin {
-                                name: origin.name,
-                                id: var,
+                    origin.as_ref().map(|origin| {
+                        let places = origin
+                            .places
+                            .iter()
+                            .filter_map(|origin| {
+                                self.map_res(origin.id).map(|res| match res {
+                                    hir::Resolution::Variable(var) => {
+                                        hir::Place::Var(origin.name, var)
+                                    }
+                                    hir::Resolution::Def(id, hir::DefKind::OriginParam) => {
+                                        hir::Place::Param(origin.name, id)
+                                    }
+                                    _ => {
+                                        self.diag.emit_diag("Invalid origin", origin.name.span);
+                                        hir::Place::Err
+                                    }
+                                })
                             })
+                            .collect();
+                        hir::Origin { places }
                     }),
                     Box::new(self.lower_ty(ty)),
                 ),
@@ -293,6 +342,21 @@ impl<'diag> AstLower<'diag> {
             };
         }
         match &expr.kind {
+            ast::ExprKind::Instantiate(base, args) => {
+                let base = self.lower_expr(base);
+                let kind = if let hir::ExprKind::Path(name, None) = base.kind {
+                    hir::ExprKind::Path(name, Some(self.lower_generic_args(args)))
+                } else {
+                    self.diag
+                        .emit_diag("Can't have generic arguments here.", args.span);
+                    hir::ExprKind::Err
+                };
+                hir::Expr {
+                    id: self.next_hir_id(),
+                    span: expr.span,
+                    kind,
+                }
+            }
             ast::ExprKind::Loop(loop_block) => {
                 let hir_id = self.next_hir_id();
                 let block = self.with_loop_label(hir_id, |this| this.lower_block(loop_block));
@@ -334,10 +398,13 @@ impl<'diag> AstLower<'diag> {
                 lower_expr!(hir::ExprKind::Break(id, expr))
             }
             ast::ExprKind::Ident(_) => {
-                lower_expr!(hir::ExprKind::Path(hir::Path {
-                    id: self.next_hir_id(),
-                    res: self.map_res(expr.id).unwrap_or(hir::Resolution::Err)
-                }))
+                lower_expr!(hir::ExprKind::Path(
+                    hir::Path {
+                        id: self.next_hir_id(),
+                        res: self.map_res(expr.id).unwrap_or(hir::Resolution::Err)
+                    },
+                    None
+                ))
             }
             ast::ExprKind::Literal(literal) => {
                 lower_expr!(hir::ExprKind::Literal(
@@ -424,10 +491,13 @@ impl<'diag> AstLower<'diag> {
                         let var = hir::Expr {
                             id: self.next_hir_id(),
                             span: path.head.span,
-                            kind: hir::ExprKind::Path(hir::Path {
-                                id: self.next_hir_id(),
-                                res: hir::Resolution::Variable(id),
-                            }),
+                            kind: hir::ExprKind::Path(
+                                hir::Path {
+                                    id: self.next_hir_id(),
+                                    res: hir::Resolution::Variable(id),
+                                },
+                                None,
+                            ),
                         };
                         path.tail.iter().fold(var, |curr, field| hir::Expr {
                             id: self.next_hir_id(),
@@ -438,10 +508,13 @@ impl<'diag> AstLower<'diag> {
                     _ => hir::Expr {
                         id: self.next_hir_id(),
                         span: expr.span,
-                        kind: hir::ExprKind::Path(hir::Path {
-                            id: self.next_hir_id(),
-                            res: self.map_res(path.id).unwrap_or(hir::Resolution::Err),
-                        }),
+                        kind: hir::ExprKind::Path(
+                            hir::Path {
+                                id: self.next_hir_id(),
+                                res: self.map_res(path.id).unwrap_or(hir::Resolution::Err),
+                            },
+                            None,
+                        ),
                     },
                 }
             }
@@ -615,6 +688,10 @@ impl<'diag> AstLower<'diag> {
                     .map(|param| hir::GenericParam {
                         def_id: self.expect_def_id(param.id),
                         name: param.name,
+                        kind: match param.kind {
+                            GenericParamKind::Type => hir::GenericParamKind::Type,
+                            GenericParamKind::Origin => hir::GenericParamKind::Origin,
+                        },
                     })
                     .collect(),
             }

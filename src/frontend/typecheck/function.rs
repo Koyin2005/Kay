@@ -8,19 +8,22 @@ use crate::{
     frontend::{
         ast::{BinaryOp, BinaryOpKind, ByRef, LiteralKind, Mutable, UnaryOp, UnaryOpKind},
         hir::{
-            self, Block, Body, Builtin, DefId, DefKind, Definition, Expr, ExprField, ExprKind,
-            HirId, IntType, LoopSource, MatchArm, OutsideLoop, Path, Pattern, PatternKind,
-            PrimitiveType, Resolution, Stmt, StmtKind,
+            self, Block, Body, DefId, DefKind, Definition, Expr, ExprField, ExprKind, HirId,
+            IntType, LoopSource, MatchArm, OutsideLoop, Path, Pattern, PatternKind, PrimitiveType,
+            Resolution, Stmt, StmtKind,
         },
         ty_infer::{InferError, TypeInfer},
         ty_lower::TypeLower,
-        typecheck::{Coercion, LocalSource, TypeCheckResults, well_formed::WellFormed},
+        typecheck::{
+            Coercion, LocalSource, coercion::Coerce, results::TypeCheckResults,
+            well_formed::WellFormed,
+        },
     },
     span::{
         Span,
         symbol::{Ident, Symbol},
     },
-    types::{FieldIndex, GenericArg, GenericArgs, IsMutable, Origin, Type},
+    types::{FieldIndex, GenericArg, GenericArgs, IsMutable, Origin, Place, Type},
 };
 #[derive(Clone, PartialEq, Eq)]
 pub struct LocalInfo {
@@ -35,7 +38,7 @@ pub struct TypeCheck<'ctxt> {
     param_types: Vec<Type>,
     return_type: Type,
     infer_ctxt: TypeInfer,
-    loop_expectation: RefCell<Option<Type>>,
+    loop_coerce: RefCell<Option<Coerce>>,
     locals: RefCell<FxHashMap<HirId, LocalInfo>>,
     well_formed: WellFormed<'ctxt>,
     results: RefCell<TypeCheckResults>,
@@ -51,7 +54,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             infer_ctxt: TypeInfer::new(),
             param_types: params,
             return_type: return_ty,
-            loop_expectation: RefCell::new(None),
+            loop_coerce: RefCell::new(None),
             locals: RefCell::new(FxHashMap::default()),
             results: RefCell::new(TypeCheckResults {
                 owner: id,
@@ -64,8 +67,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
             }),
         })
     }
-    fn fresh_ty_var(&self, span: Span) -> Type {
-        Type::Infer(self.infer_ctxt.fresh_var(span))
+    pub fn infer_ctxt(&self) -> &TypeInfer {
+        &self.infer_ctxt
     }
     fn write_type(&self, id: HirId, ty: Type) {
         self.results.borrow_mut().types.insert(id, ty);
@@ -235,12 +238,23 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn get_origin(&self, pointee: &Expr) -> Option<Origin> {
         match &pointee.kind {
-            &ExprKind::Path(Path {
-                id: _,
-                res: Resolution::Variable(id),
-            }) => Some(Origin(self.locals.borrow()[&id].name, id)),
+            &ExprKind::Path(
+                Path {
+                    id: _,
+                    res: Resolution::Variable(id),
+                },
+                _,
+            ) => Some(Origin::from(Place::Var(self.locals.borrow()[&id].name, id))),
             ExprKind::Field(expr, _) | ExprKind::Index(expr, _) | ExprKind::Ascribe(expr, _) => {
                 self.get_origin(expr)
+            }
+            ExprKind::Unary(op, expr) if op.node == UnaryOpKind::Deref => {
+                let ty = self.results.borrow().type_of(expr.id);
+                if let Type::Ref(_, origin, _) = ty {
+                    Some(origin)
+                } else {
+                    None
+                }
             }
             _ => None,
         }
@@ -265,7 +279,13 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 } else {
                     self.check_expr(operand, expected_ty)
                 };
-                let origin = self.get_origin(operand);
+                let origin = match self.get_origin(operand) {
+                    Some(origin) => origin,
+                    None => {
+                        self.err("Cannot take a reference.", operand.span);
+                        Origin::from(Place::Err)
+                    }
+                };
                 Type::new_ref(ty, origin, mutable.into())
             }
             UnaryOpKind::Deref => {
@@ -361,27 +381,13 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 None
             }
         });
-        let mut element_ty = expected_element_ty.cloned();
+        let mut coerce = Coerce::new(expected_element_ty.cloned());
         for element in elements {
-            let current_element_ty = self.check_expr(element, expected_element_ty);
-            if let Some(elem_ty) = element_ty.as_mut() {
-                if let Some(ty) = self.coerce_to_lub(&current_element_ty, elem_ty) {
-                    *elem_ty = ty;
-                } else {
-                    self.err(
-                        format!(
-                            "Expected '{}' got '{}'.",
-                            self.format_ty(elem_ty),
-                            self.format_ty(&current_element_ty)
-                        ),
-                        element.span,
-                    );
-                }
-            } else {
-                element_ty = Some(current_element_ty);
-            }
+            let element_ty = self.check_expr_with_hint(element, expected_element_ty);
+            coerce.add_expr_and_ty(element, element_ty, self);
         }
-        Type::new_array(element_ty.unwrap_or_else(|| self.err("Cannot infer type of array", span)))
+        let element_ty = self.complete_coercion(coerce, |_, _, _| false);
+        Type::new_array(element_ty.unwrap_or_else(|| self.err("Cannot infer type of array.", span)))
     }
     fn check_if(
         &self,
@@ -394,11 +400,11 @@ impl<'ctxt> TypeCheck<'ctxt> {
         self.check_expr(condition, Some(&Type::new_bool()));
         let then_branch_ty = self.check_expr_with_hint(then_branch, expected_ty);
         if let Some(else_branch) = else_branch {
+            let mut coerce = Coerce::new(expected_ty.cloned());
+            coerce.add_expr_and_ty(then_branch, then_branch_ty.clone(), self);
             let else_branch_ty = self.check_expr_with_hint(else_branch, expected_ty);
-
-            if let Some(ty) = self.coerce_to_lub(&else_branch_ty, &then_branch_ty) {
-                ty
-            } else if !then_branch_ty.has_error() && !else_branch_ty.has_error() {
+            coerce.add_expr_and_ty(else_branch, else_branch_ty.clone(), self);
+            if let Some(ty) = self.complete_coercion(coerce, |_, _, _| {
                 self.err(
                     format!(
                         "Incompatible types for 'if' '{}' and '{}'.",
@@ -406,12 +412,15 @@ impl<'ctxt> TypeCheck<'ctxt> {
                         self.format_ty(&else_branch_ty)
                     ),
                     span,
-                )
+                );
+                true
+            }) {
+                ty
             } else {
                 Type::Err
             }
         } else {
-            match self.try_coerce(then_branch, &then_branch_ty, &Type::new_unit()) {
+            match self.try_coerce(then_branch.id, &then_branch_ty, &Type::new_unit()) {
                 Ok(ty) => ty,
                 Err(_) => {
                     if !then_branch_ty.has_error() {
@@ -431,18 +440,21 @@ impl<'ctxt> TypeCheck<'ctxt> {
     fn instantiate_generic_def(
         &self,
         id: HirId,
-        generic_arg_count: u32,
+        generic_args: Option<&hir::GenericArgs>,
         definition: Definition,
         expected_ty: Option<&Type>,
         span: Span,
     ) -> Type {
+        let def_id = match definition {
+            Definition::Def(id) => id,
+        };
         let scheme = self.context.type_of(definition);
-        if generic_arg_count == 0 {
+        if scheme.arg_count() == 0 {
             return scheme.skip_instantiate();
         }
-        let generic_args = (0..generic_arg_count)
-            .map(|_| GenericArg(self.fresh_ty_var(span)))
-            .collect::<GenericArgs>();
+        let generic_args = TypeLower::new(self.context, Some(&self.infer_ctxt))
+            .lower_generic_args_for(def_id, generic_args, span);
+
         self.results
             .borrow_mut()
             .generic_args
@@ -455,7 +467,13 @@ impl<'ctxt> TypeCheck<'ctxt> {
             ty
         }
     }
-    fn check_path(&self, path: &hir::Path, span: Span, expected_ty: Option<&Type>) -> Type {
+    fn check_path(
+        &self,
+        path: &hir::Path,
+        args: Option<&hir::GenericArgs>,
+        span: Span,
+        expected_ty: Option<&Type>,
+    ) -> Type {
         let (def, res) = match path.res {
             hir::Resolution::Err => {
                 self.results.borrow_mut().had_error = true;
@@ -467,7 +485,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 | DefKind::Module
                 | DefKind::Struct
                 | DefKind::Variant
-                | DefKind::GenericParam),
+                | DefKind::TypeParam
+                | DefKind::OriginParam),
             ) => {
                 return self.err(
                     format!(
@@ -479,44 +498,71 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 );
             }
             hir::Resolution::Variable(var) => {
+                if args.is_some() {
+                    self.diag()
+                        .emit_diag("Cannot apply generic arguments to variable.", span);
+                }
                 self.results
                     .borrow_mut()
                     .resolutions
                     .insert(path.id, Resolution::Variable(var));
                 return self.local_ty(var);
             }
-            hir::Resolution::Builtin(
-                builtin @ (Builtin::Len | Builtin::Panic | Builtin::Println),
-            ) => (
-                hir::Definition::Builtin(builtin),
-                Resolution::Builtin(builtin),
-            ),
             hir::Resolution::Def(id, kind @ (DefKind::VariantCase | DefKind::Function)) => {
                 (hir::Definition::Def(id), Resolution::Def(id, kind))
             }
         };
         self.results.borrow_mut().resolutions.insert(path.id, res);
-        let generic_count = self.context.generic_arg_count(def);
-        self.instantiate_generic_def(path.id, generic_count, def, expected_ty, span)
+        self.instantiate_generic_def(path.id, args, def, expected_ty, span)
     }
+
+    fn check_break(
+        &self,
+        span: Span,
+        loop_target: Result<HirId, OutsideLoop>,
+        operand: Option<&Expr>,
+    ) -> Type {
+        let expected = self
+            .loop_coerce
+            .borrow()
+            .as_ref()
+            .and_then(|coerce| coerce.target_type());
+        if let Some(operand) = operand {
+            let operand_ty = self.check_expr(operand, expected.as_ref());
+            if let Ok(_) = loop_target
+                && let Some(coerce) = self.loop_coerce.borrow_mut().as_mut()
+            {
+                coerce.add_expr_and_ty(operand, operand_ty, self);
+            }
+        }
+        if loop_target.is_err() {
+            self.err("Cannot use break outside of a loop.", span);
+        }
+        Type::new_never()
+    }
+
     fn check_loop(
         &self,
         body: &Block,
         expected_ty: Option<&Type>,
         loop_source: LoopSource,
     ) -> Type {
-        let old_ty = std::mem::replace(
-            &mut *self.loop_expectation.borrow_mut(),
-            if loop_source != LoopSource::Explicit {
+        let old_coerce = std::mem::replace(
+            &mut *self.loop_coerce.borrow_mut(),
+            Some(Coerce::new(if loop_source != LoopSource::Explicit {
                 Some(Type::new_unit())
             } else {
                 expected_ty.cloned()
-            },
+            })),
         );
-        self.check_block(body, Some(&Type::new_unit()));
-        let current_ty = std::mem::replace(&mut *self.loop_expectation.borrow_mut(), old_ty);
+        let block_ty = self.check_block(body, Some(&Type::new_unit()));
+        self.write_type(body.id, block_ty);
+
+        let coerce = std::mem::replace(&mut *self.loop_coerce.borrow_mut(), old_coerce);
         if let LoopSource::Explicit = loop_source {
-            current_ty.unwrap_or_else(Type::new_never)
+            coerce
+                .and_then(|coerce| self.complete_coercion(coerce, |_, _, _| false))
+                .unwrap_or_else(Type::new_never)
         } else {
             Type::new_unit()
         }
@@ -524,10 +570,13 @@ impl<'ctxt> TypeCheck<'ctxt> {
     fn is_valid_assign_target(lhs: &Expr) -> bool {
         match lhs.kind {
             ExprKind::Err
-            | ExprKind::Path(Path {
-                res: Resolution::Variable(_) | Resolution::Err,
-                ..
-            })
+            | ExprKind::Path(
+                Path {
+                    res: Resolution::Variable(_) | Resolution::Err,
+                    ..
+                },
+                _,
+            )
             | ExprKind::Field(..)
             | ExprKind::Index(..) => true,
             ExprKind::Unary(op, ..) if op.node == UnaryOpKind::Deref => true,
@@ -540,10 +589,13 @@ impl<'ctxt> TypeCheck<'ctxt> {
             | ExprKind::Match(..)
             | ExprKind::Init(..)
             | ExprKind::If(..)
-            | ExprKind::Path(Path {
-                id: _,
-                res: Resolution::Builtin(..) | Resolution::Def(..),
-            })
+            | ExprKind::Path(
+                Path {
+                    id: _,
+                    res: Resolution::Def(..),
+                },
+                _,
+            )
             | ExprKind::Array(..)
             | ExprKind::Assign(..)
             | ExprKind::Unary(..)
@@ -570,14 +622,9 @@ impl<'ctxt> TypeCheck<'ctxt> {
     ) -> Type {
         let struct_def = if let Some(path) = path {
             let ty_lower = TypeLower::new(self.context, Some(&self.infer_ctxt));
-            match ty_lower.lower_ty_path(path) {
-                Ok(scheme) => {
-                    let arg_count = scheme.arg_count();
-                    let ty = scheme.instantiate(
-                        (0..arg_count)
-                            .map(|_| GenericArg(self.fresh_ty_var(span)))
-                            .collect(),
-                    );
+            match path.res {
+                Resolution::Def(_, DefKind::Struct) => {
+                    let ty = ty_lower.lower_ty_path(path, None, span);
                     if let Type::Nominal(def, args) = ty {
                         Ok(self
                             .context
@@ -590,7 +637,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
                         Ok(None)
                     }
                 }
-                Err(_) => Ok(None),
+                Resolution::Err => Err(()),
+                _ => Ok(None),
             }
         } else if let Some(Type::Nominal(def, args)) =
             expected_ty.map(|ty| self.infer_ctxt.normalize(ty))
@@ -730,27 +778,50 @@ impl<'ctxt> TypeCheck<'ctxt> {
         self.check_block(body, Some(&Type::new_unit()));
         Type::new_unit()
     }
-    fn coerce_to_lub(&self, a: &Type, b: &Type) -> Option<Type> {
-        self.try_coerce_no_unify(a, b)
-            .or_else(|| self.try_coerce_no_unify(b, a))
-            .or_else(|| self.infer_ctxt.unify(a, b).ok())
-    }
-    fn try_coerce_no_unify(&self, ty: &Type, target: &Type) -> Option<Type> {
-        match (ty, target) {
-            (Type::Primitive(PrimitiveType::Never), target) => Some(target.clone()),
-            _ => None,
+    fn complete_coercion(
+        &self,
+        coerce: Coerce,
+        handle_error: impl Fn(&InferError, &Type, &Type) -> bool,
+    ) -> Option<Type> {
+        let (final_ty, exprs_with_types) = coerce.complete();
+        for (expr, span, ty) in exprs_with_types {
+            if let Some(target) = final_ty.as_ref() {
+                if let Err(err) = self.try_coerce(expr, &ty, target) {
+                    if !handle_error(&err, &ty, target) {
+                        self.expected_ty_error(err, target, &ty, span);
+                    }
+                }
+            }
         }
+        final_ty
     }
-    fn try_coerce(&self, expr: &Expr, ty: &Type, target: &Type) -> Result<Type, InferError> {
+    fn try_coerce(&self, expr: HirId, ty: &Type, target: &Type) -> Result<Type, InferError> {
         match (ty, target) {
             (Type::Primitive(PrimitiveType::Never), target) => {
                 if !ty.is_never() {
                     self.results
                         .borrow_mut()
                         .coercions
-                        .insert(expr.id, Coercion::NeverToAny(ty.clone()));
+                        .insert(expr, Coercion::NeverToAny(ty.clone()));
                 }
                 Ok(target.clone())
+            }
+            (Type::Ref(ty, origin, is_mut), Type::Ref(target_ty, target_origin, target_mut)) => {
+                if is_mut == target_mut && origin.is_subset_of(target_origin) {
+                    if origin != target_origin {
+                        self.results
+                            .borrow_mut()
+                            .coercions
+                            .insert(expr, Coercion::RefCoercion(Box::new(target_origin.clone())));
+                    }
+                    Ok(Type::new_ref(
+                        self.infer_ctxt.unify(ty, target_ty)?,
+                        origin.superset_of(target_origin),
+                        *is_mut,
+                    ))
+                } else {
+                    Err(InferError::UnifyFailed)
+                }
             }
             (ty, target) => self.infer_ctxt.unify(ty, target),
         }
@@ -788,8 +859,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
 
     fn check_match(&self, scrutinee: &Expr, arms: &[MatchArm], expected_ty: Option<&Type>) -> Type {
-        let mut combined_ty = None;
         let scrut_ty = self.check_expr(scrutinee, None);
+        let mut coerce = Coerce::new(expected_ty.cloned());
         for MatchArm {
             id: _,
             span: _,
@@ -799,44 +870,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
         {
             self.check_pattern(pat, Some(&scrut_ty), false);
             let body_ty = self.check_expr_with_hint(body, expected_ty);
-            if let Some(ref mut combined_ty) = combined_ty {
-                if let Some(common_ty) = self.coerce_to_lub(&body_ty, combined_ty) {
-                    *combined_ty = common_ty;
-                } else if !combined_ty.has_error() && !body_ty.has_error() {
-                    self.err(
-                        format!(
-                            "Expected '{}' got '{}'.",
-                            self.format_ty(combined_ty),
-                            self.format_ty(&body_ty)
-                        ),
-                        body.span,
-                    );
-                }
-            } else if !matches!(body_ty, Type::Primitive(PrimitiveType::Never)) {
-                combined_ty = Some(body_ty);
-            }
+            coerce.add_expr_and_ty(body, body_ty, self);
         }
-        combined_ty.unwrap_or(Type::new_never())
-    }
-    fn check_break(
-        &self,
-        span: Span,
-        loop_target: Result<HirId, OutsideLoop>,
-        operand: Option<&Expr>,
-    ) -> Type {
-        let expected = self.loop_expectation.borrow().as_ref().map(|ty| ty.clone());
-        if let Some(operand) = operand {
-            let operand_ty = self.check_expr(operand, expected.as_ref());
-            if let Ok(_) = loop_target
-                && self.loop_expectation.borrow().is_none()
-            {
-                *self.loop_expectation.borrow_mut() = Some(operand_ty);
-            }
-        }
-        if loop_target.is_err() {
-            self.err("Cannot use break outside of a loop.", span);
-        }
-        Type::new_never()
+        self.complete_coercion(coerce, |_, _, _| false)
+            .unwrap_or(Type::new_never())
     }
     fn check_expr_is_mutable(&self, expr: &Expr, expected_ty: Option<&Type>) -> Type {
         let ty = self.check_expr(expr, expected_ty);
@@ -846,7 +883,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         check_mutable(self, expr);
         fn check_mutable(this: &TypeCheck, expr: &Expr) {
             match &expr.kind {
-                ExprKind::Path(path) => match path.res {
+                ExprKind::Path(path, _) => match path.res {
                     hir::Resolution::Variable(id) => {
                         let local_info = &this.locals.borrow()[&id];
                         let (name, is_mutable) = (local_info.name, local_info.is_mutable);
@@ -857,7 +894,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
                             );
                         }
                     }
-                    hir::Resolution::Builtin(..) => (),
                     hir::Resolution::Def(..) => (),
                     hir::Resolution::Err => (),
                 },
@@ -920,7 +956,9 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 else_branch.as_ref().map(|expr| &**expr),
                 expected_ty,
             ),
-            ExprKind::Path(path) => self.check_path(path, expr.span, expected_ty),
+            ExprKind::Path(path, args) => {
+                self.check_path(path, args.as_ref(), expr.span, expected_ty)
+            }
             ExprKind::Assign(_, lhs, rhs) => self.check_assign(lhs, rhs),
             &ExprKind::Loop(ref block, source) => self.check_loop(block, expected_ty, source),
             ExprKind::Return(expr) => self.check_return(expr.as_deref()),
@@ -940,7 +978,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn check_expr_coerces_to(&self, expr: &Expr, expected_ty: &Type) -> Type {
         let ty = self.check_expr_with_hint(expr, Some(expected_ty));
-        match self.try_coerce(expr, &ty, expected_ty) {
+        match self.try_coerce(expr.id, &ty, expected_ty) {
             Ok(ty) => ty,
             Err(err) => {
                 self.expected_ty_error(err, &expected_ty, &ty, expr.span);
@@ -971,12 +1009,22 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     )
                 };
                 let (local_ty, mutable) = match (by_ref, mutable) {
-                    (ByRef::Yes(_), IsMutable::Yes) => {
-                        (Type::new_ref(ty.clone(),Some(Origin(name, id)),IsMutable::Yes), IsMutable::Yes)
-                    }
-                    (ByRef::Yes(_), IsMutable::No) => {
-                        (Type::new_ref(ty.clone(),Some(Origin(name, id)),IsMutable::No), IsMutable::No)
-                    }
+                    (ByRef::Yes(_), IsMutable::Yes) => (
+                        Type::new_ref(
+                            ty.clone(),
+                            Origin::from(Place::Var(name, id)),
+                            IsMutable::Yes,
+                        ),
+                        IsMutable::Yes,
+                    ),
+                    (ByRef::Yes(_), IsMutable::No) => (
+                        Type::new_ref(
+                            ty.clone(),
+                            Origin::from(Place::Var(name, id)),
+                            IsMutable::No,
+                        ),
+                        IsMutable::No,
+                    ),
                     (ByRef::No, mutable) => (ty.clone(), mutable),
                 };
                 self.locals.borrow_mut().insert(
@@ -1046,7 +1094,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                                 case,
                                 self.instantiate_generic_def(
                                     pat.id,
-                                    self.context.generic_arg_count(parent),
+                                    None,
                                     parent,
                                     expected_ty,
                                     pat.span,
@@ -1098,17 +1146,23 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 case_and_variant_ty.map(|(_, ty)| ty).unwrap_or(Type::Err)
             }
             PatternKind::Deref(ref_pat) => {
-                let (expected_ty, is_mutable) = expected_ty
-                    .and_then(|ty| {
-                        if let Type::Ref(ty, _, mutable) = ty {
-                            Some((&**ty, mutable))
-                        } else {
-                            None
-                        }
-                    })
-                    .unzip();
+                let (expected_ty, origin, is_mutable) = match expected_ty.and_then(|ty| {
+                    if let Type::Ref(ty, origin, mutable) = ty {
+                        Some((&**ty, origin, mutable))
+                    } else {
+                        None
+                    }
+                }) {
+                    Some((ty, origin, mutable)) => (Some(ty), Some(origin), Some(mutable)),
+                    _ => (None, None, None),
+                };
+
                 let ty = self.check_pattern(ref_pat, expected_ty, from_param);
-                Type::new_ref(ty, None, is_mutable.copied().unwrap_or(IsMutable::No))
+                Type::new_ref(
+                    ty,
+                    origin.cloned().unwrap_or(Origin::STATIC),
+                    is_mutable.copied().unwrap_or(IsMutable::No),
+                )
             }
         };
         self.write_type(pat.id, ty.clone());
@@ -1149,14 +1203,17 @@ impl<'ctxt> TypeCheck<'ctxt> {
         for args in results.generic_args.values_mut() {
             *args = args
                 .iter()
-                .map(|arg| {
-                    let norm_ty = self.infer_ctxt.normalize(&arg.0);
-                    GenericArg(norm_ty)
+                .map(|arg| match arg {
+                    GenericArg::Type(ty) => GenericArg::Type(self.infer_ctxt.normalize(ty)),
+                    GenericArg::Origin(origin) => GenericArg::Origin(origin.clone()),
                 })
                 .collect();
         }
         for coercion in results.coercions.values_mut() {
-            let Coercion::NeverToAny(ty) = coercion;
+            let ty = match coercion {
+                Coercion::NeverToAny(ty) => ty,
+                Coercion::RefCoercion(_) => continue,
+            };
             let norm_ty = self.infer_ctxt.normalize(ty);
             *ty = norm_ty;
         }

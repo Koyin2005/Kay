@@ -1,6 +1,4 @@
-use std::fmt::Debug;
-
-use fxhash::FxHashSet;
+use std::{collections::BTreeSet, fmt::Debug, hash::Hash};
 
 use crate::{
     context::CtxtRef,
@@ -13,6 +11,8 @@ use crate::{
     span::symbol::Symbol,
     types::format::TypeFormat,
 };
+use fxhash::FxHashSet;
+use indexmap::IndexSet;
 
 pub mod format;
 define_id!(
@@ -36,13 +36,61 @@ impl From<ast::Mutable> for IsMutable {
         }
     }
 }
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct GenericArg(pub Type);
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum GenericArg {
+    Type(Type),
+    Origin(Origin),
+}
+impl GenericArg {
+    pub const fn new_ty(ty: Type) -> Self {
+        Self::Type(ty)
+    }
+    pub const fn new_origin(origin: Origin) -> Self {
+        Self::Origin(origin)
+    }
+    pub fn as_ty(&self) -> Option<&Type> {
+        let GenericArg::Type(ty) = self else {
+            return None;
+        };
+        Some(ty)
+    }
+    pub fn as_origin(&self) -> Option<&Origin> {
+        let GenericArg::Origin(origin) = self else {
+            return None;
+        };
+        Some(origin)
+    }
+    pub fn expect_type(&self) -> &Type {
+        let GenericArg::Type(ty) = self else {
+            panic!("Expected a type got '{:?}'.", self)
+        };
+        ty
+    }
+    pub fn expect_origin(&self) -> &Origin {
+        let GenericArg::Origin(origin) = self else {
+            panic!("Expected an origin got '{:?}'.", self)
+        };
+        origin
+    }
+}
+impl From<Origin> for GenericArg {
+    fn from(value: Origin) -> Self {
+        Self::Origin(value)
+    }
+}
+impl From<Type> for GenericArg {
+    fn from(value: Type) -> Self {
+        Self::Type(value)
+    }
+}
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct GenericArgs {
-    pub args: Vec<GenericArg>,
+    args: Vec<GenericArg>,
 }
 impl GenericArgs {
+    pub fn new(args: Vec<GenericArg>) -> Self {
+        Self { args }
+    }
     pub const fn empty() -> Self {
         Self { args: Vec::new() }
     }
@@ -63,6 +111,13 @@ impl IntoIterator for GenericArgs {
         self.args.into_iter()
     }
 }
+impl<'a> IntoIterator for &'a GenericArgs {
+    type IntoIter = std::slice::Iter<'a, GenericArg>;
+    type Item = &'a GenericArg;
+    fn into_iter(self) -> Self::IntoIter {
+        self.args.iter()
+    }
+}
 impl FromIterator<GenericArg> for GenericArgs {
     fn from_iter<T: IntoIterator<Item = GenericArg>>(iter: T) -> Self {
         Self {
@@ -70,15 +125,64 @@ impl FromIterator<GenericArg> for GenericArgs {
         }
     }
 }
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Copy)]
-pub struct Origin(pub Symbol, pub HirId);
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Copy, PartialOrd, Ord)]
+pub enum Place {
+    Var(Symbol, HirId),
+    Generic(Symbol, u32),
+    Err,
+}
+#[derive(Clone, Debug, Eq)]
+pub struct Origin(Vec<Place>, BTreeSet<Place>);
+
+impl Origin {
+    pub const STATIC: Self = Self(Vec::new(), BTreeSet::new());
+    pub const fn is_static(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn is_subset_of(&self, other: &Self) -> bool {
+        self.1.is_subset(&other.1)
+    }
+    pub fn superset_of(&self, other: &Self) -> Self {
+        let self_set = self.0.iter().collect::<IndexSet<_>>();
+        let other_set = other.0.iter().collect::<IndexSet<_>>();
+        self_set.union(&other_set).copied().copied().collect()
+    }
+    pub fn places(&self) -> impl Iterator<Item = &Place> {
+        self.0.iter()
+    }
+}
+impl FromIterator<Place> for Origin {
+    fn from_iter<T: IntoIterator<Item = Place>>(iter: T) -> Self {
+        let places = iter.into_iter().collect::<Vec<_>>();
+        let place_set = places.iter().copied().collect();
+        Self(places, place_set)
+    }
+}
+impl From<Place> for Origin {
+    fn from(value: Place) -> Self {
+        Origin(vec![value], [value].into_iter().collect())
+    }
+}
+impl PartialEq for Origin {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.iter().collect::<FxHashSet<_>>() == other.0.iter().collect()
+    }
+}
+impl Hash for Origin {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(self.0.len());
+        for elem in self.0.iter().collect::<FxHashSet<_>>() {
+            elem.hash(state);
+        }
+    }
+}
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Type {
     Primitive(hir::PrimitiveType),
     Nominal(hir::Definition, GenericArgs),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
-    Ref(Box<Type>, Option<Origin>, IsMutable),
+    Ref(Box<Type>, Origin, IsMutable),
     Generic(Symbol, u32),
     Array(Box<Type>),
     Infer(InferVar),
@@ -158,9 +262,13 @@ impl Type {
         matches!(self, Type::Err)
     }
     pub fn new_ref_str() -> Self {
-        Self::new_ref(Self::new_primative(hir::PrimitiveType::String),None,IsMutable::No)
+        Self::new_ref(
+            Self::new_primative(hir::PrimitiveType::String),
+            Origin::STATIC,
+            IsMutable::No,
+        )
     }
-    pub fn new_ref(ty: Type, origin: impl Into<Option<Origin>>, mutable: IsMutable) -> Self {
+    pub fn new_ref(ty: Type, origin: impl Into<Origin>, mutable: IsMutable) -> Self {
         Self::Ref(Box::new(ty), origin.into(), mutable)
     }
     pub const fn new_int(signed: hir::IntType) -> Self {
@@ -211,7 +319,10 @@ pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
             .iter()
             .chain(std::iter::once(&**return_ty))
             .for_each(|ty| v.visit_ty(ty)),
-        Type::Nominal(_, args) => args.iter().for_each(|GenericArg(ty)| v.visit_ty(ty)),
+        Type::Nominal(_, args) => args
+            .iter()
+            .filter_map(|arg| arg.as_ty())
+            .for_each(|ty| v.visit_ty(ty)),
         Type::Ref(ty, _, _) => v.visit_ty(ty),
         Type::Generic(..) => (),
         Type::Infer(..) => (),
@@ -223,7 +334,9 @@ pub fn super_map_ty<M: TypeMapper>(mapper: &M, ty: &Type) -> Result<Type, M::Err
     Ok(match ty {
         &Type::Infer(var) => Type::Infer(var),
         Type::Array(ty) => Type::new_array(mapper.map_ty(ty)?),
-        &Type::Ref(ref ty, origin, mutable) => Type::new_ref(mapper.map_ty(ty)?, origin, mutable),
+        &Type::Ref(ref ty, ref origin, mutable) => {
+            Type::new_ref(mapper.map_ty(ty)?, mapper.map_origin(origin)?, mutable)
+        }
         Type::Function(params, return_ty) => Type::new_function(
             params
                 .iter()
@@ -245,15 +358,25 @@ pub fn super_map_ty<M: TypeMapper>(mapper: &M, ty: &Type) -> Result<Type, M::Err
 }
 pub trait TypeMapper: Sized {
     type Error;
+    fn map_origin(&self, origin: &Origin) -> Result<Origin, Self::Error>;
+    fn map_generic_arg(&self, arg: &GenericArg) -> Result<GenericArg, Self::Error> {
+        match arg {
+            GenericArg::Origin(origin) => self.map_origin(&origin).map(GenericArg::Origin),
+            GenericArg::Type(ty) => self.map_ty(ty).map(GenericArg::Type),
+        }
+    }
     fn map_generic_args(&self, args: &GenericArgs) -> Result<GenericArgs, Self::Error> {
         args.iter()
-            .map(|arg| Ok(GenericArg(self.map_ty(&arg.0)?)))
+            .map(|arg| self.map_generic_arg(arg))
             .collect::<Result<_, _>>()
     }
     fn map_ty(&self, ty: &Type) -> Result<Type, Self::Error>;
 }
 impl<T: TypeMapper> TypeMapper for &T {
     type Error = T::Error;
+    fn map_origin(&self, origin: &Origin) -> Result<Origin, Self::Error> {
+        (*self).map_origin(origin)
+    }
     fn map_ty(&self, ty: &Type) -> Result<Type, <T as TypeMapper>::Error> {
         (*self).map_ty(ty)
     }
@@ -282,21 +405,43 @@ impl TypeScheme {
             return self.ty;
         }
         struct InstanceArgs {
-            args: Vec<Type>,
+            args: Vec<GenericArg>,
         }
 
         impl TypeMapper for InstanceArgs {
             type Error = InfallibleMap;
+            fn map_origin(&self, origin: &Origin) -> Result<Origin, Self::Error> {
+                let places = &origin.0;
+                Ok(places
+                    .iter()
+                    .map(|place| match place {
+                        place @ (Place::Err | Place::Var(..)) => vec![place],
+                        Place::Generic(_, index) => self
+                            .args
+                            .get(*index as usize)
+                            .and_then(|arg| arg.as_origin())
+                            .map(|origin| origin.0.iter().collect())
+                            .unwrap_or(Vec::new()),
+                    })
+                    .flatten()
+                    .cloned()
+                    .collect())
+            }
             fn map_ty(&self, ty: &Type) -> Result<Type, InfallibleMap> {
                 if let &Type::Generic(_, index) = ty {
-                    Ok(self.args.get(index as usize).cloned().unwrap_or(Type::Err))
+                    Ok(self
+                        .args
+                        .get(index as usize)
+                        .and_then(|arg| arg.as_ty())
+                        .cloned()
+                        .unwrap_or(Type::Err))
                 } else {
                     super_map_ty(self, ty)
                 }
             }
         }
         let Ok(result) = InstanceArgs {
-            args: args.args.into_iter().map(|GenericArg(ty)| ty).collect(),
+            args: args.into_iter().collect(),
         }
         .map_ty(&self.ty);
         result

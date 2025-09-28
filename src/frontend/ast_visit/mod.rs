@@ -1,6 +1,6 @@
 use crate::frontend::ast::{
-    Ast, Block, Expr, ExprKind, Item, ItemKind, IteratorExpr, IteratorExprKind, Module, Pattern,
-    PatternKind, Stmt, StmtKind, Type, TypeDefKind, TypeKind,
+    self, Ast, Block, Expr, ExprKind, Item, ItemKind, IteratorExpr, IteratorExprKind, Module,
+    Pattern, PatternKind, Stmt, StmtKind, Type, TypeDefKind, TypeKind,
 };
 
 pub trait Visitor: Sized {
@@ -116,7 +116,9 @@ pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
         TypeKind::Grouped(ty) | TypeKind::Ref(_, _, ty) => visitor.visit_ty(ty),
         TypeKind::Named(_, Some(generic_args)) => {
             for arg in generic_args.args.iter() {
-                visitor.visit_ty(&arg.ty);
+                if let ast::GenericArg::Type(ty) = arg {
+                    visitor.visit_ty(&ty);
+                }
             }
         }
         TypeKind::Int
@@ -139,6 +141,14 @@ pub fn walk_iterator(visitor: &mut impl Visitor, iterator: &IteratorExpr) {
 pub fn walk_expr(visitor: &mut impl Visitor, expr: &Expr) {
     match &expr.kind {
         ExprKind::Underscore => (),
+        ExprKind::Instantiate(expr, args) => {
+            visitor.visit_expr(expr);
+            for arg in args.args.iter() {
+                if let ast::GenericArg::Type(ty) = arg {
+                    visitor.visit_ty(&ty);
+                }
+            }
+        }
         ExprKind::Ascribe(expr, ty) => {
             visitor.visit_expr(expr);
             visitor.visit_ty(ty);

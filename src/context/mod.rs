@@ -1,12 +1,12 @@
 use crate::{
     diagnostics::DiagnosticReporter,
     frontend::{
-        hir::{self, Builtin, DefId, DefKind, Definition, Hir},
+        hir::{self, DefId, DefKind, Definition, Hir},
         ty_lower::TypeLower,
     },
     indexvec::IndexVec,
     span::symbol::{Ident, Symbol},
-    types::{self, FieldIndex, GenericArg, Type, TypeScheme, VariantCaseIndex},
+    types::{self, FieldIndex, GenericArg, Origin, Type, TypeScheme, VariantCaseIndex},
 };
 use indexmap::IndexMap;
 use typed_arena::Arena;
@@ -45,15 +45,22 @@ impl TypeDef {
         }
     }
 }
+#[derive(Clone, Copy)]
+pub struct GenericParamDef {
+    pub name: Symbol,
+    pub index: u32,
+    pub id: DefId,
+    pub kind: hir::GenericParamKind,
+}
 pub struct Generics {
-    pub owner: DefId,
-    pub params: Vec<hir::GenericParam>,
+    pub owner: Definition,
+    pub params: Vec<GenericParamDef>,
 }
 impl Generics {
     pub fn index_of(&self, param_name: Symbol) -> Option<u32> {
         self.params
             .iter()
-            .position(|param| param.name.symbol == param_name)
+            .position(|param| param.name == param_name)
             .map(|param| {
                 param
                     .try_into()
@@ -70,16 +77,25 @@ impl Generics {
             .try_into()
             .expect("Should have less than u32::MAX generic params.")
     }
+    pub fn params(&self) -> impl Iterator<Item = &GenericParamDef> {
+        self.params.iter()
+    }
     pub fn as_args(&self) -> types::GenericArgs {
         self.params
             .iter()
             .enumerate()
             .map(|(i, param)| {
-                GenericArg(Type::Generic(
-                    param.name.symbol,
-                    i.try_into()
-                        .expect("Should have less than u32::MAX generic params."),
-                ))
+                let index = i
+                    .try_into()
+                    .expect("Should have less than u32::MAX generic params.");
+                match param.kind {
+                    hir::GenericParamKind::Origin => {
+                        GenericArg::Origin(Origin::from(types::Place::Generic(param.name, index)))
+                    }
+                    hir::GenericParamKind::Type => {
+                        GenericArg::Type(Type::Generic(param.name, index))
+                    }
+                }
             })
             .collect()
     }
@@ -142,7 +158,6 @@ impl<'hir> GlobalContext<'hir> {
     }
     pub fn symbol(&self, def: Definition) -> Symbol {
         match def {
-            Definition::Builtin(builtin) => builtin.as_symbol(),
             Definition::Def(id) => self.ident(id).symbol,
         }
     }
@@ -170,26 +185,19 @@ impl<'hir> GlobalContext<'hir> {
     }
     pub fn generic_arg_count(&self, def: Definition) -> u32 {
         match def {
-            Definition::Builtin(builtin) => match builtin {
-                Builtin::Len => 1,
-                Builtin::Println | Builtin::Panic => 0,
-            },
             Definition::Def(def) => match self.kind(def) {
                 DefKind::VariantCase => {
                     self.generic_arg_count(self.expect_parent_of_def(def.into()))
                 }
-                DefKind::Field | DefKind::Module | DefKind::GenericParam => 0,
+                DefKind::Field | DefKind::Module | DefKind::TypeParam | DefKind::OriginParam => 0,
                 DefKind::Struct | DefKind::Function | DefKind::Variant => {
-                    self.generics_for(def).count()
+                    self.generics_for(def.into()).count()
                 }
             },
         }
     }
     pub fn type_def(&self, def: Definition) -> &TypeDef {
         let type_def = match def {
-            Definition::Builtin(builtin) => match builtin {
-                _ => panic!("Invalid for type_def {}.", builtin.as_str()),
-            },
             Definition::Def(id) => {
                 let hir::ItemKind::TypeDef(type_def) = &self.expect_item(id).kind else {
                     panic!("Expected type def for {:?}.", id)
@@ -241,25 +249,10 @@ impl<'hir> GlobalContext<'hir> {
     }
     pub fn expect_parent_of_def(&self, def: Definition) -> Definition {
         match def {
-            Definition::Builtin(builtin) => Definition::Builtin(builtin.expect_parent()),
             Definition::Def(id) => Definition::Def(
                 self.get_parent(id)
                     .unwrap_or_else(|| panic!("Expected a parent for {:?}.", id)),
             ),
-        }
-    }
-    pub fn type_of_builtin(&self, builtin: Builtin) -> TypeScheme {
-        let t_param = || Type::Generic(Symbol::intern("T"), 0);
-        match builtin {
-            Builtin::Len => TypeScheme::new(
-                Type::new_function(
-                    [Type::new_array(t_param())],
-                    Type::new_int(hir::IntType::Unsigned),
-                ),
-                1,
-            ),
-            Builtin::Panic => Type::new_function([Type::new_ref_str()], Type::new_never()).into(),
-            Builtin::Println => Type::new_function([Type::new_ref_str()], Type::new_unit()).into(),
         }
     }
     pub fn expect_node(&self, id: DefId) -> &NodeInfo<'_> {
@@ -271,27 +264,42 @@ impl<'hir> GlobalContext<'hir> {
         };
         case
     }
-    pub fn generics_for(&self, id: DefId) -> &Generics {
-        let generics = match &self.expect_item(id).kind {
-            hir::ItemKind::Function(function_def) => &function_def.generics,
-            hir::ItemKind::Module(_) => {
-                static GENERICS: &hir::Generics = &hir::Generics::empty();
-                GENERICS
-            }
-            hir::ItemKind::TypeDef(type_def) => &type_def.generics,
+    pub fn generics_for(&self, def: Definition) -> &Generics {
+        let generics = match def {
+            Definition::Def(id) => match self.nodes[&id] {
+                NodeInfo::Item(item) => match &item.kind {
+                    hir::ItemKind::Function(function) => &function.generics.params,
+                    hir::ItemKind::Module(_) => &Vec::new(),
+                    hir::ItemKind::TypeDef(type_def) => &type_def.generics.params,
+                },
+                NodeInfo::Field(_) => &Vec::new(),
+                NodeInfo::GenericParam(_) => &Vec::new(),
+                NodeInfo::VariantCase(case) => {
+                    return self.generics_for(self.expect_parent_of_def(case.id.into()));
+                }
+                NodeInfo::VariantField(_) => &Vec::new(),
+            },
         };
-        self.generics_arena.alloc(Generics {
-            owner: id,
-            params: generics.params.to_vec(),
-        })
+        let params = generics
+            .iter()
+            .enumerate()
+            .map(|(index, param)| GenericParamDef {
+                name: param.name.symbol,
+                index: index
+                    .try_into()
+                    .expect("Should have less than u32::MAX generic params"),
+                id: param.def_id,
+                kind: param.kind,
+            })
+            .collect();
+        self.generics_arena.alloc(Generics { owner: def, params })
     }
     pub fn type_of(&self, def: Definition) -> TypeScheme {
         let ty_lower = TypeLower::new(self, None);
         match def {
-            Definition::Builtin(builtin) => self.type_of_builtin(builtin),
             Definition::Def(id) => match self.nodes[&id] {
                 NodeInfo::GenericParam(param) => {
-                    let generics = self.generics_for(self.expect_parent(id));
+                    let generics = self.generics_for(self.expect_parent(id).into());
                     let param_index = generics.expect_index(param.name.symbol);
                     TypeScheme::new(Type::Generic(param.name.symbol, param_index), 0)
                 }
@@ -299,7 +307,7 @@ impl<'hir> GlobalContext<'hir> {
                 NodeInfo::VariantField(field) => TypeScheme::new(ty_lower.lower(&field.ty), 0),
                 NodeInfo::VariantCase(case) => {
                     let parent_id = self.expect_parent(case.id);
-                    let generics = self.generics_for(parent_id);
+                    let generics = self.generics_for(parent_id.into());
                     let variant_ty = self.type_of(parent_id.into()).skip_instantiate();
                     if let Some(ref fields) = case.fields {
                         TypeScheme::new(
@@ -314,7 +322,7 @@ impl<'hir> GlobalContext<'hir> {
                     }
                 }
                 NodeInfo::Item(item) => {
-                    let generics = self.generics_for(item.id);
+                    let generics = self.generics_for(item.id.into());
                     let ty = match &item.kind {
                         hir::ItemKind::Function(function) => {
                             let (params, return_ty) = ty_lower.lower_function_sig(&function.sig);
@@ -322,7 +330,7 @@ impl<'hir> GlobalContext<'hir> {
                         }
                         hir::ItemKind::TypeDef(..) => Type::new_nominal_with_args(
                             Definition::Def(id),
-                            self.generics_for(id).as_args(),
+                            self.generics_for(id.into()).as_args(),
                         ),
                         hir::ItemKind::Module(..) => Type::Err,
                     };

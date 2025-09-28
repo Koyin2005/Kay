@@ -1,18 +1,19 @@
 fun main() = do
-    println("Hello world it's me.");
-    println("Hey ");
+    let abc_0  = do 
+        let mut a = [true,return,false];
+        let mut c = [true,false,return];
+        let mut b = [true];
+        let a1 = if true then 
+                    ref mut a 
+                else  
+                    ref mut c
+                end;
+        let mut b2 = if true then ref mut a else ref mut b end;
+        let mut abc = if true then b2 else a1 end;
+        d[a,b,c](abc)
+    end;
+    abc_0^ = false;
 end
+fun d[origin a,origin b,origin c](x : ref mut [a,b,c] [bool]) -> ref mut [a,b,c] bool = ref mut x^.[0]
 
-type StrOrInt = | Str(ref string) | Int(int)
-
-fun this_is_fun(c: bool, d:bool) -> ref string = do
-    let mut x = StrOrInt.Str("Hello");
-    let y = ref mut x;
-    match x with
-        StrOrInt.Str(ref insides) => do
-            y^ = StrOrInt.Int(5);
-            let v : ref[insides] ref string = insides;
-        end
-    end
-    "Hey"
-end
+fun bool_to_int(b: bool) -> int = if b then 1 else 0 end

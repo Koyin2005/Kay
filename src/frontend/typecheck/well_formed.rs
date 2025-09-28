@@ -4,7 +4,7 @@ use crate::{
     context::CtxtRef,
     frontend::hir::HirId,
     span::Span,
-    types::{Type, TypeVisitor, walk_ty},
+    types::{Place, Type, TypeVisitor, walk_ty},
 };
 
 pub(super) struct WellFormed<'a> {
@@ -35,12 +35,16 @@ impl<'a> WellFormed<'a> {
             }
             impl<'a> TypeVisitor for ValidOrigins<'a> {
                 fn visit_ty(&mut self, ty: &Type) {
-                    if let &Type::Ref(_, Some(origin), _) = ty {
-                        if self.param_locals.contains(&origin.1) {
-                            self.ctxt.diag().emit_diag(
-                                format!("Cannot use '{}' as 'origin'.", origin.0.as_str()),
-                                self.source,
-                            );
+                    if let Type::Ref(_, origin, _) = ty {
+                        for &place in origin.places() {
+                            if let Place::Var(name, id) = place {
+                                if self.param_locals.contains(&id) {
+                                    self.ctxt.diag().emit_diag(
+                                        format!("Cannot use '{}' as 'origin'.", name.as_str()),
+                                        self.source,
+                                    );
+                                }
+                            }
                         }
                     }
                     walk_ty(self, ty);

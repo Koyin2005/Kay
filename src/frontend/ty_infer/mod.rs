@@ -58,6 +58,12 @@ impl TypeInfer {
         }
         impl TypeMapper for Normalizer<'_> {
             type Error = std::convert::Infallible;
+            fn map_origin(
+                &self,
+                origin: &crate::types::Origin,
+            ) -> Result<crate::types::Origin, Self::Error> {
+                Ok(origin.clone())
+            }
             fn map_ty(&self, ty: &Type) -> Result<Type, Self::Error> {
                 match ty {
                     &Type::Infer(var) => Ok(self
@@ -74,6 +80,21 @@ impl TypeInfer {
         }
         let Ok(ty) = Normalizer { infer: self }.map_ty(ty);
         ty
+    }
+    fn unfiy_generic_arg(
+        &self,
+        arg: &GenericArg,
+        expected: &GenericArg,
+    ) -> InferResult<GenericArg> {
+        match (arg, expected) {
+            (GenericArg::Type(ty), GenericArg::Type(expected)) => {
+                self.unify(ty, expected).map(GenericArg::Type)
+            }
+            (GenericArg::Origin(origin), GenericArg::Origin(expected)) if origin == expected => {
+                Ok(GenericArg::Origin(origin.clone()))
+            }
+            _ => Err(InferError::UnifyFailed),
+        }
     }
     ///Try to unify a ty with an expected ty
     pub fn unify(&self, ty: &Type, expected: &Type) -> InferResult<Type> {
@@ -151,7 +172,7 @@ impl TypeInfer {
                     generic_args
                         .iter()
                         .zip(other_generic_args.iter())
-                        .map(|(arg, other_arg)| self.unify(&arg.0, &other_arg.0).map(GenericArg))
+                        .map(|(arg, other_arg)| self.unfiy_generic_arg(arg, other_arg))
                         .collect::<InferResult<_>>()?,
                 ))
             }

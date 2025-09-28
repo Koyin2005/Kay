@@ -40,14 +40,8 @@ impl From<DefId> for Definition {
         Self::Def(value)
     }
 }
-impl From<Builtin> for Definition {
-    fn from(value: Builtin) -> Self {
-        Self::Builtin(value)
-    }
-}
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum Definition {
-    Builtin(Builtin),
     Def(DefId),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -58,7 +52,8 @@ pub enum DefKind {
     Function,
     Variant,
     VariantCase,
-    GenericParam,
+    TypeParam,
+    OriginParam,
 }
 impl DefKind {
     pub fn as_str(&self) -> &str {
@@ -69,42 +64,13 @@ impl DefKind {
             Self::Field => "field",
             Self::Function => "function",
             Self::VariantCase => "case",
-            Self::GenericParam => "generic param",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Builtin {
-    Println,
-    Len,
-    Panic,
-}
-impl Builtin {
-    pub fn expect_parent(&self) -> Builtin {
-        match self {
-            Self::Println => Self::Println,
-            Self::Len => Self::Len,
-            Self::Panic => Self::Panic,
-        }
-    }
-    pub fn as_symbol(&self) -> Symbol {
-        Symbol::intern(self.as_str())
-    }
-    pub const fn is_type(self) -> bool {
-        false
-    }
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Println => "println",
-            Self::Len => "len",
-            Self::Panic => "panic",
+            Self::OriginParam => "origin param",
+            Self::TypeParam => "type param",
         }
     }
 }
 #[derive(Clone, Copy, Debug)]
 pub enum Resolution<VarId = HirId> {
-    Builtin(Builtin),
     Def(DefId, DefKind),
     Variable(VarId),
     Err,
@@ -118,7 +84,6 @@ impl<Id> Resolution<Id> {
     }
     pub fn as_str(&self) -> &str {
         match self {
-            Self::Builtin(_) => "builtin",
             Self::Variable(_) => "variable",
             Self::Def(_, kind) => kind.as_str(),
             Self::Err => "{error}",
@@ -195,7 +160,7 @@ pub enum ExprKind {
     Tuple(Vec<Expr>),
     Loop(Box<Block>, LoopSource),
     For(Box<Pattern>, Box<Iterator>, Box<Block>),
-    Path(Path),
+    Path(Path, Option<GenericArgs>),
     Call(Box<Expr>, Vec<Expr>),
     If(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
     Match(Box<Expr>, Vec<MatchArm>),
@@ -220,8 +185,17 @@ pub struct Param {
     pub pat: Pattern,
 }
 #[derive(Debug)]
-pub struct GenericArg {
-    pub ty: Type,
+pub enum GenericArg {
+    Type(Type),
+    Origin(Origin),
+}
+impl GenericArg {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Type(_) => "type",
+            Self::Origin(_) => "origin",
+        }
+    }
 }
 #[derive(Debug)]
 pub struct GenericArgs {
@@ -229,9 +203,14 @@ pub struct GenericArgs {
     pub args: Vec<GenericArg>,
 }
 #[derive(Debug, Clone, Copy)]
+pub enum Place {
+    Var(Ident, HirId),
+    Param(Ident, DefId),
+    Err,
+}
+#[derive(Debug, Clone)]
 pub struct Origin {
-    pub name: Ident,
-    pub id: HirId,
+    pub places: Vec<Place>,
 }
 #[derive(Debug)]
 pub enum TypeKind {
@@ -339,11 +318,24 @@ pub enum LoopSource {
     While,
     Explicit,
 }
-
+#[derive(Clone, Copy, Debug)]
+pub enum GenericParamKind {
+    Origin,
+    Type,
+}
+impl GenericParamKind {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Origin => "origin",
+            Self::Type => "type",
+        }
+    }
+}
 #[derive(Clone, Copy, Debug)]
 pub struct GenericParam {
     pub def_id: DefId,
     pub name: Ident,
+    pub kind: GenericParamKind,
 }
 #[derive(Clone, Debug)]
 pub struct Generics {

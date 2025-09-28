@@ -1,7 +1,7 @@
 use crate::{
     context::CtxtRef,
     frontend::hir::{IntType, PrimitiveType},
-    types::{IsMutable, Type},
+    types::{GenericArg, IsMutable, Origin, Place, Type},
 };
 
 pub struct TypeFormat<'a> {
@@ -27,6 +27,23 @@ impl<'a> TypeFormat<'a> {
         }
         output
     }
+    fn format_origin(&self, origin: &Origin) -> String {
+        if origin.is_static() {
+            "static".to_string()
+        } else {
+            self.format_multiple(origin.places(), &|place| match place {
+                Place::Err => "{unknown}".to_string(),
+                Place::Generic(name, _) => name.as_str().to_string(),
+                Place::Var(name, _) => name.as_str().to_string(),
+            })
+        }
+    }
+    fn format_generic_args(&self, args: impl IntoIterator<Item = &'a GenericArg>) -> String {
+        self.format_multiple(args, &|arg| match arg {
+            GenericArg::Type(ty) => self.format_type(ty),
+            GenericArg::Origin(origin) => self.format_origin(origin),
+        })
+    }
     fn format_types<'b>(&self, tys: impl IntoIterator<Item = &'b Type>) -> String {
         self.format_multiple(tys, &|ty| self.format_type(ty))
     }
@@ -43,11 +60,7 @@ impl<'a> TypeFormat<'a> {
                 } else {
                     ""
                 },
-                if let Some(origin) = origin {
-                    origin.0.as_str()
-                } else {
-                    "static"
-                },
+                self.format_origin(origin),
                 self.format_type(ty)
             ),
             Type::Function(params, return_type) => format!(
@@ -62,10 +75,7 @@ impl<'a> TypeFormat<'a> {
                 if args.is_empty() {
                     ""
                 } else {
-                    &format!(
-                        "[{}]",
-                        self.format_types(args.args.iter().map(|arg| &arg.0))
-                    )
+                    &format!("[{}]", self.format_generic_args(args))
                 }
             ),
             Type::Primitive(ty) => match ty {

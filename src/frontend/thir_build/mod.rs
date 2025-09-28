@@ -6,9 +6,10 @@ use crate::{
             Arm, Body, Expr, ExprId, ExprKind, LocalVar, Param, Pattern, PatternKind, Stmt,
             StmtKind, Thir,
         },
-        typecheck::{Coercion, TypeCheckResults},
+        typecheck::{Coercion, results::TypeCheckResults},
     },
     indexvec::IndexVec,
+    types::Type,
 };
 
 pub struct ThirBuild<'ctxt> {
@@ -58,15 +59,21 @@ impl<'ctxt> ThirBuilder<'ctxt> {
         let id = expr.id;
         let mut expr = self.make_expr(expr);
         if let Some(coercion) = self.results.get_coercion(id) {
+            let span = expr.span;
             match coercion {
                 Coercion::NeverToAny(ty) => {
-                    let span = expr.span;
                     let expr_id = self.body.exprs.push(expr);
                     expr = Expr {
                         ty: ty.clone(),
                         span,
                         kind: ExprKind::NeverToAny(expr_id),
                     };
+                }
+                Coercion::RefCoercion(origin) => {
+                    let Type::Ref(target_ty, _, is_mut) = &expr.ty else {
+                        unreachable!("Can only ref coerce references")
+                    };
+                    expr.ty = Type::Ref(target_ty.clone(), (**origin).clone(), *is_mut);
                 }
             }
         }
@@ -80,6 +87,31 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             .into_iter()
             .map(|expr| self.lower_expr(expr))
             .collect()
+    }
+    fn lower_block(&mut self, block: &hir::Block) -> ExprKind {
+        let stmts = block
+            .stmts
+            .iter()
+            .filter_map(|stmt| {
+                let stmt = match &stmt.kind {
+                    hir::StmtKind::Expr(expr) | hir::StmtKind::ExprWithSemi(expr) => Stmt {
+                        kind: StmtKind::Expr(self.lower_expr(expr)),
+                    },
+                    hir::StmtKind::Let(pattern, _, expr) => Stmt {
+                        kind: StmtKind::Let(
+                            Box::new(self.lower_pattern(pattern)),
+                            self.lower_expr(expr),
+                        ),
+                    },
+                    hir::StmtKind::Item(_) => return None,
+                };
+                Some(self.body.stmts.push(stmt))
+            })
+            .collect();
+        ExprKind::Block {
+            stmts,
+            result: block.result.as_ref().map(|expr| self.lower_expr(expr)),
+        }
     }
     fn make_expr(&mut self, expr: &hir::Expr) -> Expr {
         let kind = match &expr.kind {
@@ -118,7 +150,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             ),
             hir::ExprKind::Call(callee, args) => {
                 let variant_case = match &callee.kind {
-                    hir::ExprKind::Path(path) => {
+                    hir::ExprKind::Path(path, _) => {
                         let Some(res) = self.get_res(path.id) else {
                             panic!("Resolution not finished")
                         };
@@ -160,16 +192,15 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                     .map(|else_branch| self.lower_expr(else_branch));
                 ExprKind::If(condition, then_branch, else_branch)
             }
-            hir::ExprKind::Path(path) => 'a: {
+            hir::ExprKind::Path(path, _) => 'a: {
                 let def = match self.get_res(path.id).unwrap_or_else(|| {
-                    println!("{:?}", self.results);
+                    eprintln!("{:?}", self.results);
                     panic!(
                         "There should be a resolution for {:?} at {:?}.",
                         path,
                         self.ctxt.diag().span_info(expr.span)
                     )
                 }) {
-                    Resolution::Builtin(builtin) => Definition::Builtin(builtin),
                     Resolution::Variable(var) => break 'a ExprKind::Var(LocalVar(var)),
                     Resolution::Def(id, _) => Definition::Def(id),
                     Resolution::Err => unreachable!("Can't have err resolutions for path"),
@@ -177,8 +208,14 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                 let generic_args = self.results.get_generic_args_or_empty(path.id).clone();
                 ExprKind::Constant(def, generic_args)
             }
-            hir::ExprKind::Loop(_, _) => {
-                todo!("LOOPS")
+            hir::ExprKind::Loop(block, _) => {
+                let block_ty = self.results.type_of(block.id);
+                let expr = Expr {
+                    ty: block_ty,
+                    span: block.span,
+                    kind: self.lower_block(&block),
+                };
+                ExprKind::Loop(self.body.exprs.push(expr))
             }
             hir::ExprKind::Block(block) => {
                 let stmts = block
@@ -230,10 +267,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                         )
                     }) {
                         Resolution::Def(id, DefKind::VariantCase) => id,
-                        Resolution::Def(_, _)
-                        | Resolution::Builtin(_)
-                        | Resolution::Err
-                        | Resolution::Variable(..) => {
+                        Resolution::Def(_, _) | Resolution::Err | Resolution::Variable(..) => {
                             unreachable!("This can only be a variant case")
                         }
                     };

@@ -65,6 +65,7 @@ pub enum ExprKind {
     Binary(BinaryOp, ExprId, ExprId),
     Unary(UnaryOp, ExprId),
     Index(ExprId, ExprId),
+    Loop(ExprId),
     Field {
         receiver: ExprId,
         field: FieldIndex,

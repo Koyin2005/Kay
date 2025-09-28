@@ -13,11 +13,11 @@ use crate::{
             Visitor, walk_ast, walk_block, walk_expr, walk_iterator, walk_module, walk_pat,
             walk_type,
         },
-        hir::{Builtin, DefId, DefKind, Definition, Resolution},
+        hir::{DefId, DefKind, Definition, Resolution},
     },
     span::{
         Span,
-        symbol::{Ident, Symbol, symbols},
+        symbol::{Ident, Symbol},
     },
 };
 #[derive(Debug, PartialEq, Eq)]
@@ -46,13 +46,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
     pub fn new(resolver: &'a mut Resolver<'b>) -> Self {
         let root_scope = ScopeData {
             kind: ScopeKind::Root,
-            bindings: [
-                (symbols::PRINTLN, Resolution::Builtin(Builtin::Println)),
-                (symbols::LEN, Resolution::Builtin(Builtin::Len)),
-                (symbols::PANIC, Resolution::Builtin(Builtin::Panic)),
-            ]
-            .into_iter()
-            .collect(),
+            bindings: [].into_iter().collect(),
         };
         let namespaces = [];
         Self {
@@ -231,7 +225,8 @@ impl<'a, 'b> NameRes<'a, 'b> {
                     DefKind::Field
                     | DefKind::Function
                     | DefKind::VariantCase
-                    | DefKind::GenericParam,
+                    | DefKind::TypeParam
+                    | DefKind::OriginParam,
                 ) => {
                     self.resolver.error(
                         format!(
@@ -243,7 +238,6 @@ impl<'a, 'b> NameRes<'a, 'b> {
                     );
                     return None;
                 }
-                Resolution::Builtin(builtin) => Definition::Builtin(builtin),
                 Resolution::Def(id, DefKind::Struct | DefKind::Variant | DefKind::Module) => {
                     Definition::Def(id)
                 }
@@ -261,7 +255,6 @@ impl<'a, 'b> NameRes<'a, 'b> {
             };
             let Some(next) = namespace.children.iter().find_map(|&(name, def)| {
                 (name == next_seg.name.symbol).then_some(match def {
-                    Definition::Builtin(builtin) => Resolution::Builtin(builtin),
                     Definition::Def(id) => Resolution::Def(id, self.resolver.info[id].kind),
                 })
             }) else {
@@ -289,7 +282,13 @@ impl<'a, 'b> NameRes<'a, 'b> {
         {
             self.create_item_binding(
                 param.name.symbol,
-                Resolution::Def(self.expect_def_id(param.id), DefKind::GenericParam),
+                Resolution::Def(
+                    self.expect_def_id(param.id),
+                    match param.kind {
+                        ast::GenericParamKind::Type => DefKind::TypeParam,
+                        ast::GenericParamKind::Origin => DefKind::OriginParam,
+                    },
+                ),
                 param.name.span,
             );
         }
@@ -339,7 +338,6 @@ impl<'a, 'b> NameRes<'a, 'b> {
                     | DefKind::Function
                     | DefKind::Module),
                 ) => Resolution::Def(id, kind),
-                Resolution::Builtin(builtin) => Resolution::Builtin(builtin),
                 Resolution::Err => Resolution::Err,
                 _ => {
                     self.resolver
@@ -418,7 +416,9 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 self.resolve_path(name.id, name.head, name.tail.iter().copied());
             }
             TypeKind::Ref(_, Some(origin), _) => {
-                self.resolve_name_in_current_scope(origin.id, origin.name);
+                for place in &origin.places {
+                    self.resolve_name_in_current_scope(place.id, place.name);
+                }
             }
             _ => (),
         }

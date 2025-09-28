@@ -63,7 +63,7 @@ impl SymbolInterner {
 }
 
 static SYMBOL_INTERNER: LazyLock<SymbolInterner> = LazyLock::new(SymbolInterner::new);
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Symbol(u32);
 
 impl Symbol {
@@ -111,7 +111,4 @@ pub mod symbols {
         }
         panic!("Found an unknown symbol.")
     }
-    pub const PRINTLN: Symbol = Symbol::new(find_symbol_index("println"));
-    pub const LEN: Symbol = Symbol::new(find_symbol_index("len"));
-    pub const PANIC: Symbol = Symbol::new(find_symbol_index("panic"));
 }

@@ -208,6 +208,7 @@ pub enum ExprKind {
     For(Box<Pattern>, Box<IteratorExpr>, Box<Block>),
     Ident(Symbol),
     Path(QualifiedName),
+    Instantiate(Box<Expr>, GenericArgs),
     Grouped(Box<Expr>),
     Underscore,
     Call(Box<Expr>, Vec<Expr>),
@@ -288,9 +289,14 @@ pub struct QualifiedName {
     pub tail: Vec<PathSegment>,
 }
 #[derive(Clone, Debug)]
-pub struct Origin {
+pub struct Place {
     pub id: NodeId,
     pub name: Ident,
+}
+#[derive(Clone, Debug)]
+pub struct Origin {
+    pub id: NodeId,
+    pub places: Vec<Place>,
 }
 #[derive(Clone, Debug)]
 pub enum TypeKind {
@@ -323,9 +329,15 @@ impl std::fmt::Display for NodeId {
     }
 }
 #[derive(Clone, Debug)]
+pub enum GenericParamKind {
+    Type,
+    Origin,
+}
+#[derive(Clone, Debug)]
 pub struct GenericParam {
     pub id: NodeId,
     pub name: Ident,
+    pub kind: GenericParamKind,
 }
 #[derive(Clone, Debug)]
 pub struct GenericParams {
@@ -349,6 +361,7 @@ pub struct GenericArgs {
     pub args: Vec<GenericArg>,
 }
 #[derive(Clone, Debug)]
-pub struct GenericArg {
-    pub ty: Type,
+pub enum GenericArg {
+    Type(Type),
+    Static,
 }
