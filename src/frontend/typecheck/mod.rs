@@ -1,9 +1,4 @@
-use fxhash::FxHashMap;
-
-use crate::{
-    frontend::hir::{DefId, HirId, Resolution},
-    types::{FieldIndex, GenericArgs, Origin, Type},
-};
+use crate::types::{Origin, Type};
 mod coercion;
 pub mod function;
 pub mod results;
