@@ -904,8 +904,11 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     check_mutable(this, receiver);
                 }
                 ExprKind::Unary(op, expr) if op.node == UnaryOpKind::Deref => {
-                    let ty = &this.results.borrow().types[&expr.id];
-                    if let Type::Ref(_, _, IsMutable::No) = ty {
+                    let is_mut = 
+                    if let Type::Ref(_, _, IsMutable::No) = this.results.borrow().types[&expr.id] {
+                        IsMutable::No
+                    } else { IsMutable::Yes};
+                    if let IsMutable::No = is_mut{
                         this.err("Cannot mutate through immutable reference.", expr.span);
                     }
                 }
