@@ -10,3 +10,5 @@ pub mod thir_build;
 pub(super) mod ty_infer;
 pub(super) mod ty_lower;
 pub mod typecheck;
+pub mod pattern_check;
+pub mod borrow_check;
