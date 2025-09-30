@@ -8,7 +8,7 @@ use crate::{
     span::{Span, symbol::Symbol},
     types::{FieldIndex, GenericArgs, Type},
 };
-
+pub mod visit;
 define_id!(
     pub struct ExprId {}
 );
@@ -18,19 +18,44 @@ define_id!(
 define_id!(
     pub struct StmtId {}
 );
+define_id!(
+    pub struct BlockId {}
+);
 pub struct Param {
     pub pattern: Pattern,
 }
 pub struct Thir {
     pub bodies: Box<[Body]>,
 }
-
-pub struct Body {
+pub struct Body{
+    pub info : BodyInfo,
+    pub value : ExprId
+}
+impl Body{
+    pub fn expr(&self, id: ExprId) -> &Expr{
+        &self.info.exprs[id]
+    }
+    pub fn block(&self, id : BlockId) -> &Block{
+        &self.info.blocks[id]
+    }
+    pub fn arm(&self, id : ArmId) -> &Arm{
+        &self.info.arms[id]
+    }
+    pub fn stmt(&self, id: StmtId) -> &Stmt{
+        &self.info.stmts[id]
+    }
+}
+pub struct BodyInfo {
     pub owner: DefId,
     pub params: Vec<Param>,
+    pub blocks : IndexVec<BlockId,Block>,
     pub arms: IndexVec<ArmId, Arm>,
     pub exprs: IndexVec<ExprId, Expr>,
-    pub stmts: IndexVec<StmtId, Stmt>,
+    pub stmts: IndexVec<StmtId, Stmt>
+}
+pub struct Block{
+    pub stmts : Box<[StmtId]>,
+    pub expr : Option<ExprId>
 }
 pub enum PatternKind {
     Wilcard,
@@ -52,6 +77,7 @@ pub struct Arm {
     pub body: ExprId,
 }
 pub struct Stmt {
+    pub span : Span,
     pub kind: StmtKind,
 }
 pub enum StmtKind {
@@ -82,10 +108,7 @@ pub enum ExprKind {
     Array(Box<[ExprId]>),
     Tuple(Box<[ExprId]>),
     Constant(Definition, GenericArgs),
-    Block {
-        stmts: Box<[StmtId]>,
-        result: Option<ExprId>,
-    },
+    Block(BlockId),
     NeverToAny(ExprId),
     Return(Option<ExprId>),
 }

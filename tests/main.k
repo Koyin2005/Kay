@@ -2,11 +2,10 @@ type StrOrInt = | Str(ref string) | Int(int)
 
 
 fun main() = do
-    let mut x = StrOrInt.Int(5);
-    let y = match x with 
-        StrOrInt.Int(ref y) => y,
-        _ => loop end
+    let mut y = 5;
+    let mut x  = do
+        let mut a = 50;
+        ref mut a
     end;
-    x = StrOrInt.Str("Hey");
-    y^;
+    x^ = 6;
 end

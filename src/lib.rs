@@ -13,6 +13,7 @@ pub use frontend::thir_build::ThirBuild;
 pub use frontend::{
     ast_lowering::AstLower, item_collect::ItemCollect, resolution::resolve::Resolver,
     typecheck::function::TypeCheck,
+    borrow_check::function::BorrowCheck
 };
 pub use span::SourceFiles;
 pub use span::SourceInfo;

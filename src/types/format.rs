@@ -27,15 +27,18 @@ impl<'a> TypeFormat<'a> {
         }
         output
     }
-    fn format_origin(&self, origin: &Origin) -> String {
-        if origin.is_static() {
-            "static".to_string()
-        } else {
-            self.format_multiple(origin.places(), &|place| match place {
+    pub fn format_place(&self, place : &Place) -> String{
+match place {
                 Place::Err => "{unknown}".to_string(),
                 Place::Generic(name, _) => name.as_str().to_string(),
                 Place::Var(name, _) => name.as_str().to_string(),
-            })
+            }
+    }
+    pub fn format_origin(&self, origin: &Origin) -> String {
+        if origin.is_static() {
+            "static".to_string()
+        } else {
+            self.format_multiple(origin.places(), &|place| self.format_place(place))
         }
     }
     fn format_generic_args(&self, args: impl IntoIterator<Item = &'a GenericArg>) -> String {

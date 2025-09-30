@@ -3,10 +3,9 @@ use crate::{
     frontend::{
         hir::{self, DefId, DefKind, Definition, HirId, Resolution},
         thir::{
-            Arm, Body, Expr, ExprId, ExprKind, LocalVar, Param, Pattern, PatternKind, Stmt,
-            StmtKind, Thir,
+            Arm, Block, Body, BodyInfo, Expr, ExprId, ExprKind, LocalVar, Param, Pattern, PatternKind, Stmt, StmtKind, Thir
         },
-        typecheck::{Coercion, results::TypeCheckResults},
+        typecheck::{results::TypeCheckResults, Coercion},
     },
     indexvec::IndexVec,
     types::Type,
@@ -38,19 +37,20 @@ impl<'ctxt> ThirBuild<'ctxt> {
 }
 struct ThirBuilder<'ctxt> {
     ctxt: CtxtRef<'ctxt>,
-    body: Body,
+    body: BodyInfo,
     results: TypeCheckResults,
 }
 impl<'ctxt> ThirBuilder<'ctxt> {
     pub fn new(ctxt: CtxtRef<'ctxt>, owner: DefId, results: TypeCheckResults) -> Self {
         Self {
             ctxt,
-            body: Body {
+            body: BodyInfo {
                 owner,
                 params: Vec::new(),
                 arms: IndexVec::new(),
                 exprs: IndexVec::new(),
                 stmts: IndexVec::new(),
+                blocks : IndexVec::new()
             },
             results,
         }
@@ -95,9 +95,11 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             .filter_map(|stmt| {
                 let stmt = match &stmt.kind {
                     hir::StmtKind::Expr(expr) | hir::StmtKind::ExprWithSemi(expr) => Stmt {
+                        span : stmt.span,
                         kind: StmtKind::Expr(self.lower_expr(expr)),
                     },
                     hir::StmtKind::Let(pattern, _, expr) => Stmt {
+                        span : stmt.span,
                         kind: StmtKind::Let(
                             Box::new(self.lower_pattern(pattern)),
                             self.lower_expr(expr),
@@ -108,11 +110,13 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                 Some(self.body.stmts.push(stmt))
             })
             .collect();
-        ExprKind::Block {
-            stmts,
-            result: block.result.as_ref().map(|expr| self.lower_expr(expr)),
+            let block = Block{
+                stmts,
+                expr : block.result.as_ref().map(|expr| self.lower_expr(expr))
+            };
+            ExprKind::Block(self.body.blocks.push(block))
         }
-    }
+    
     fn make_expr(&mut self, expr: &hir::Expr) -> Expr {
         let kind = match &expr.kind {
             hir::ExprKind::Err => unreachable!("Can't use an ExprKind::Err in thir"),
@@ -218,29 +222,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                 ExprKind::Loop(self.body.exprs.push(expr))
             }
             hir::ExprKind::Block(block) => {
-                let stmts = block
-                    .stmts
-                    .iter()
-                    .filter_map(|stmt| {
-                        let stmt = match &stmt.kind {
-                            hir::StmtKind::Expr(expr) | hir::StmtKind::ExprWithSemi(expr) => Stmt {
-                                kind: StmtKind::Expr(self.lower_expr(expr)),
-                            },
-                            hir::StmtKind::Let(pattern, _, expr) => Stmt {
-                                kind: StmtKind::Let(
-                                    Box::new(self.lower_pattern(pattern)),
-                                    self.lower_expr(expr),
-                                ),
-                            },
-                            hir::StmtKind::Item(_) => return None,
-                        };
-                        Some(self.body.stmts.push(stmt))
-                    })
-                    .collect();
-                ExprKind::Block {
-                    stmts,
-                    result: block.result.as_ref().map(|expr| self.lower_expr(expr)),
-                }
+                self.lower_block(&block)
             }
         };
         Expr {
@@ -298,7 +280,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             };
             self.body.params.push(param);
         }
-        self.lower_expr(&hir.value);
-        Some(self.body)
+        let value = self.lower_expr(&hir.value);
+        Some(Body { info: self.body, value })
     }
 }

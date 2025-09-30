@@ -1,9 +1,7 @@
 use std::rc::Rc;
 
 use pl5::{
-    Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, ThirBuild, TypeCheck,
-    config::{Config, ConfigError, SourceError},
-    diagnostics::DiagnosticReporter,
+    config::{Config, ConfigError, SourceError}, diagnostics::DiagnosticReporter, Ast, AstLower, BorrowCheck, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, ThirBuild, TypeCheck
 };
 
 fn main() {
@@ -85,6 +83,9 @@ fn main() {
         let body = context.expect_body_for(results.owner());
         thir_build.build(results.owner(), body, results);
     }
-    let _thir = thir_build.finish();
+    let mut thir = thir_build.finish();
+    for body in thir.bodies.iter_mut(){
+        BorrowCheck::new(&body,context_ref).check();
+    }
     global_diagnostics.emit();
 }
