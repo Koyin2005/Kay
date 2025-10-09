@@ -192,10 +192,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         let field_tys = fields
             .iter()
             .enumerate()
-            .map(|(i, field)| match field_tys.get(i) {
-                Some(ty) => self.check_expr_coerces_to(field, ty),
-                None => self.check_expr(field, None),
-            });
+            .map(|(i, field)| self.check_expr(field, field_tys.get(i)));
         Type::new_tuple_from_iter(field_tys)
     }
     fn check_stmt(&self, stmt: &Stmt) {
@@ -397,7 +394,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
         else_branch: Option<&Expr>,
         expected_ty: Option<&Type>,
     ) -> Type {
-        self.check_expr(condition, Some(&Type::new_bool()));
+
+        self.check_expr_coerces_to(condition, &Type::new_bool());
         let then_branch_ty = self.check_expr_with_hint(then_branch, expected_ty);
         if let Some(else_branch) = else_branch {
             let mut coerce = Coerce::new(expected_ty.cloned());
@@ -616,6 +614,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
     fn check_init(
         &self,
         span: Span,
+        id: HirId,
         path: Option<&Path>,
         fields: &[ExprField],
         expected_ty: Option<&Type>,
@@ -663,6 +662,14 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 return Type::Err;
             }
         };
+        self.results
+            .borrow_mut()
+            .generic_args
+            .insert(id, args.clone());
+        self.results
+            .borrow_mut()
+            .resolutions
+            .insert(id, Resolution::Def(def.into(), DefKind::Struct));
         let mut seen_fields = FxHashSet::default();
         for field in fields {
             if !seen_fields.insert(field.name.symbol) {
@@ -671,15 +678,29 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     field.name.span,
                 );
             }
-            let field_def = struct_def.fields.iter().find_map(|field_def| {
-                (field_def.name == field.name.symbol).then_some(field_def.id)
+
+            let field_def = struct_def
+                .fields
+                .iter()
+                .enumerate()
+                .find_map(|(i, field_def)| {
+                    (field_def.name == field.name.symbol)
+                        .then_some((FieldIndex::new(i), field_def.id))
+                });
+            let expected_field_ty = field_def.map(|(field_index, field_def)| {
+                self.results
+                    .borrow_mut()
+                    .fields
+                    .insert(field.id, field_index);
+                self.context.type_of(field_def).instantiate(args.clone())
             });
-            let expected_field_ty =
-                field_def.map(|def| self.context.type_of(def).instantiate(args.clone()));
-            if let Some(ref ty) = expected_field_ty {
-                self.check_expr_coerces_to(&field.expr, ty);
-            } else {
-                self.check_expr(&field.expr, None);
+            match expected_field_ty {
+                Some(ref ty) => {
+                    self.check_expr_coerces_to(&field.expr, ty);
+                }
+                None => {
+                    self.check_expr(&field.expr, None);
+                }
             }
         }
         for field in struct_def
@@ -724,7 +745,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         for (i, arg) in args.iter().enumerate() {
             let param_ty = param_types.get(i);
             match param_ty.map(|ty| self.infer_ctxt.normalize(ty)) {
-                Some(ref ty) => self.check_expr_coerces_to(arg, ty).into(),
+                Some(ref ty) => self.check_expr_coerces_to(arg, ty),
                 None => self.check_expr(arg, None),
             };
         }
@@ -796,14 +817,14 @@ impl<'ctxt> TypeCheck<'ctxt> {
         final_ty
     }
     fn try_coerce(&self, expr: HirId, ty: &Type, target: &Type) -> Result<Type, InferError> {
-        match (ty, target) {
-            (Type::Primitive(PrimitiveType::Never), target) => {
-                if !ty.is_never() {
-                    self.results
+        let ty = self.infer_ctxt.normalize(ty);
+        let target = self.infer_ctxt.normalize(target);
+        match (&ty, &target) {
+            (Type::Primitive(PrimitiveType::Never), target) if !target.is_infer() => {
+                self.results
                         .borrow_mut()
                         .coercions
-                        .insert(expr, Coercion::NeverToAny(ty.clone()));
-                }
+                        .insert(expr, Coercion::NeverToAny(target.clone()));
                 Ok(target.clone())
             }
             (Type::Ref(ty, origin, is_mut), Type::Ref(target_ty, target_origin, target_mut)) => {
@@ -904,11 +925,14 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     check_mutable(this, receiver);
                 }
                 ExprKind::Unary(op, expr) if op.node == UnaryOpKind::Deref => {
-                    let is_mut = 
-                    if let Type::Ref(_, _, IsMutable::No) = this.results.borrow().types[&expr.id] {
+                    let is_mut = if let Type::Ref(_, _, IsMutable::No) =
+                        this.results.borrow().types[&expr.id]
+                    {
                         IsMutable::No
-                    } else { IsMutable::Yes};
-                    if let IsMutable::No = is_mut{
+                    } else {
+                        IsMutable::Yes
+                    };
+                    if let IsMutable::No = is_mut {
                         this.err("Cannot mutate through immutable reference.", expr.span);
                     }
                 }
@@ -937,7 +961,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn check_ascribe_expr(&self, expr: &Expr, ty: &hir::Type) -> Type {
         let target_ty = TypeLower::new(self.context, Some(&self.infer_ctxt)).lower(ty);
-        let _ = self.check_expr_coerces_to(expr, &target_ty);
+        let _ = self.check_expr(expr, Some(&target_ty));
         target_ty
     }
     fn check_expr_kind(&self, expr: &Expr, expected_ty: Option<&Type>) -> Type {
@@ -966,7 +990,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             &ExprKind::Loop(ref block, source) => self.check_loop(block, expected_ty, source),
             ExprKind::Return(expr) => self.check_return(expr.as_deref()),
             ExprKind::Init(path, fields) => {
-                self.check_init(expr.span, path.as_ref(), fields, expected_ty)
+                self.check_init(expr.span, expr.id, path.as_ref(), fields, expected_ty)
             }
             ExprKind::Call(callee, args) => self.check_call(expr.span, callee, args, expected_ty),
             ExprKind::Break(loop_target, operand) => {
@@ -1113,8 +1137,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 }
                 let field_defs = case_and_variant_ty
                     .as_ref()
-                    .map_or(&[] as &[_], |(case, _)| case.fields.as_slice());
-                if fields.len() != field_defs.len() {
+                    .map(|(case, _)| case.fields.as_slice());
+                if let Some(field_defs) = field_defs
+                    && fields.len() != field_defs.len()
+                {
                     self.err(
                         format!(
                             "Expected '{}' fields got '{}'.",
@@ -1128,7 +1154,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     self.check_pattern(
                         field_pat,
                         field_defs
-                            .get(i)
+                            .and_then(|field_defs| field_defs.get(i))
                             .map(|field| {
                                 let generic_args = case_and_variant_ty
                                     .as_ref()
@@ -1182,7 +1208,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
             self.check_pattern(&param.pat, Some(ty), true);
         }
         self.check_expr_coerces_to(&self.body.value, &self.return_type);
-
         let mut incomplete_vars = FxHashSet::default();
         for var in self.infer_ctxt.vars() {
             incomplete_vars.extend(self.infer_ctxt.normalize(&Type::Infer(var)).infer_vars());

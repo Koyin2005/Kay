@@ -27,12 +27,12 @@ impl<'a> TypeFormat<'a> {
         }
         output
     }
-    pub fn format_place(&self, place : &Place) -> String{
-match place {
-                Place::Err => "{unknown}".to_string(),
-                Place::Generic(name, _) => name.as_str().to_string(),
-                Place::Var(name, _) => name.as_str().to_string(),
-            }
+    pub fn format_place(&self, place: &Place) -> String {
+        match place {
+            Place::Err => "{unknown}".to_string(),
+            Place::Generic(name, _) => name.as_str().to_string(),
+            Place::Var(name, _) => name.as_str().to_string(),
+        }
     }
     pub fn format_origin(&self, origin: &Origin) -> String {
         if origin.is_static() {

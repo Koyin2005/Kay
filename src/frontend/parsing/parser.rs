@@ -77,7 +77,7 @@ impl<'source> Parser<'source> {
             return;
         }
         self.panic_mode.set(true);
-        self.diag_reporter.add(Diagnostic::new(msg, span));
+        self.diag_reporter.add(Diagnostic::new(msg, span, None));
     }
     fn error_at_current(&self, msg: impl IntoDiagnosticMessage) {
         self.error_at(msg, self.current_token.span);

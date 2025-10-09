@@ -44,6 +44,11 @@ impl From<DefId> for Definition {
 pub enum Definition {
     Def(DefId),
 }
+impl From<Definition> for DefId {
+    fn from(Definition::Def(def_id): Definition) -> Self {
+        def_id
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DefKind {
     Struct,

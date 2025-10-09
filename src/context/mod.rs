@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use crate::{
     diagnostics::DiagnosticReporter,
     frontend::{
@@ -6,8 +8,11 @@ use crate::{
     },
     indexvec::IndexVec,
     span::symbol::{Ident, Symbol},
-    types::{self, FieldIndex, GenericArg, Origin, Type, TypeScheme, VariantCaseIndex},
+    types::{
+        self, FieldIndex, GenericArg, GenericArgs, Origin, Type, TypeScheme, VariantCaseIndex,
+    },
 };
+use fxhash::{FxHashMap, FxHashSet};
 use indexmap::IndexMap;
 use typed_arena::Arena;
 
@@ -114,6 +119,7 @@ pub struct GlobalContext<'hir> {
     nodes: IndexMap<DefId, NodeInfo<'hir>>,
     type_def_arena: Arena<TypeDef>,
     generics_arena: Arena<Generics>,
+    is_infifnite: RefCell<FxHashMap<DefId, bool>>,
 }
 
 impl<'hir> GlobalContext<'hir> {
@@ -128,6 +134,7 @@ impl<'hir> GlobalContext<'hir> {
             nodes,
             type_def_arena: Arena::new(),
             generics_arena: Arena::new(),
+            is_infifnite: FxHashMap::default().into(),
         }
     }
     pub fn diag<'a>(&'a self) -> &'a DiagnosticReporter
@@ -349,6 +356,98 @@ impl<'hir> GlobalContext<'hir> {
             hir::ItemKind::Function(ref function) => self.hir.bodies.get(&function.body_id),
             hir::ItemKind::TypeDef(_) => None,
             hir::ItemKind::Module(_) => None,
+        }
+    }
+    pub fn is_infinite(&self, id: DefId) -> bool {
+        if let Some(infinite) = self.is_infifnite.borrow().get(&id) {
+            return *infinite;
+        }
+        fn is_infinite_type(ctxt: &GlobalContext, ty: &Type, seen: &mut FxHashSet<DefId>) -> bool {
+            match ty {
+                Type::Err
+                | Type::Primitive(_)
+                | Type::Generic(..)
+                | Type::Function(..)
+                | Type::Ref(..) => false,
+                Type::Tuple(fields) => fields
+                    .iter()
+                    .any(|field| is_infinite_type(ctxt, field, seen)),
+                Type::Array(ty) => is_infinite_type(ctxt, ty, seen),
+                &Type::Nominal(Definition::Def(type_id), ref generic_args) => {
+                    is_infinite_type_def(ctxt, type_id, generic_args, seen)
+                }
+                Type::Infer(_) => {
+                    unreachable!("Can't determine whether inferred type '_' is recursive.")
+                }
+            }
+        }
+        fn is_infinite_type_def(
+            ctxt: &GlobalContext,
+            type_def_id: DefId,
+            args: &GenericArgs,
+            seen: &mut FxHashSet<DefId>,
+        ) -> bool {
+            if !seen.insert(type_def_id) {
+                return true;
+            }
+            match &ctxt.type_def(type_def_id.into()).kind {
+                TypeDefKind::Struct(case) => case.fields.iter().any(|field| {
+                    let ty = ctxt.type_of(field.id).instantiate(args.clone());
+                    is_infinite_type(ctxt, &ty, seen)
+                }),
+                TypeDefKind::Variant(variants) => variants.iter().any(|&(_, ref case)| {
+                    case.fields.iter().any(|field| {
+                        let ty = ctxt.type_of(field.id).instantiate(args.clone());
+                        is_infinite_type(ctxt, &ty, seen)
+                    })
+                }),
+            }
+        }
+        let is_infinite = match self.expect_node(id) {
+            NodeInfo::Field(field) => is_infinite_type(
+                self,
+                &self.type_of(field.id.into()).skip_instantiate(),
+                &mut FxHashSet::default(),
+            ),
+            NodeInfo::Item(item) => match item.kind {
+                hir::ItemKind::TypeDef(ref ty) => is_infinite_type_def(
+                    self,
+                    ty.id,
+                    &self.generics_for(ty.id.into()).as_args(),
+                    &mut FxHashSet::default(),
+                ),
+                _ => unreachable!("Can't use on non-type def or field"),
+            },
+            _ => unreachable!("Can't use on non-type def or field"),
+        };
+        self.is_infifnite.borrow_mut().insert(id, is_infinite);
+        is_infinite
+    }
+    pub fn is_inhabited(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Primitive(hir::PrimitiveType::Never) => false,
+            Type::Primitive(
+                hir::PrimitiveType::Int(_) | hir::PrimitiveType::Bool | hir::PrimitiveType::String,
+            ) => true,
+            Type::Function(_, _) | Type::Generic(_, _) | Type::Infer(_) | Type::Err => true,
+            &Type::Nominal(Definition::Def(id), ref args) => {
+                if self.is_infinite(id) {
+                    return true;
+                }
+                match &self.type_def(id.into()).kind {
+                    TypeDefKind::Struct(case) => case.fields.iter().all(|field| {
+                        self.is_inhabited(&self.type_of(field.id).instantiate(args.clone()))
+                    }),
+                    TypeDefKind::Variant(cases) => cases.iter().any(|(_, case)| {
+                        case.fields.iter().all(|field| {
+                            self.is_inhabited(&self.type_of(field.id).instantiate(args.clone()))
+                        })
+                    }),
+                }
+            }
+            Type::Tuple(fields) => fields.iter().all(|field| self.is_inhabited(field)),
+            Type::Ref(ty, _, _) => self.is_inhabited(ty),
+            Type::Array(element_ty) => self.is_inhabited(element_ty),
         }
     }
 }

@@ -1,7 +1,10 @@
 use std::rc::Rc;
 
 use pl5::{
-    config::{Config, ConfigError, SourceError}, diagnostics::DiagnosticReporter, Ast, AstLower, BorrowCheck, ItemCollect, Lexer, NodeId, Parser, Resolver, SourceFiles, ThirBuild, TypeCheck
+    Ast, AstLower, BorrowCheck, ItemCollect, Lexer, NodeId, Parser, PatCheck, Resolver,
+    SourceFiles, ThirBuild, TypeCheck,
+    config::{Config, ConfigError, SourceError},
+    diagnostics::DiagnosticReporter,
 };
 
 fn main() {
@@ -84,8 +87,9 @@ fn main() {
         thir_build.build(results.owner(), body, results);
     }
     let mut thir = thir_build.finish();
-    for body in thir.bodies.iter_mut(){
-        BorrowCheck::new(&body,context_ref).check();
+    for body in thir.bodies.iter_mut() {
+        BorrowCheck::new(&body, context_ref).check();
+        PatCheck::new(body, context_ref).check();
     }
     global_diagnostics.emit();
 }

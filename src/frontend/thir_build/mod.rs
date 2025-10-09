@@ -3,9 +3,10 @@ use crate::{
     frontend::{
         hir::{self, DefId, DefKind, Definition, HirId, Resolution},
         thir::{
-            Arm, Block, Body, BodyInfo, Expr, ExprId, ExprKind, LocalVar, Param, Pattern, PatternKind, Stmt, StmtKind, Thir
+            Arm, Block, Body, BodyInfo, Expr, ExprField, ExprId, ExprKind, LocalVar, Param,
+            Pattern, PatternKind, Stmt, StmtKind, Thir,
         },
-        typecheck::{results::TypeCheckResults, Coercion},
+        typecheck::{Coercion, results::TypeCheckResults},
     },
     indexvec::IndexVec,
     types::Type,
@@ -50,7 +51,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                 arms: IndexVec::new(),
                 exprs: IndexVec::new(),
                 stmts: IndexVec::new(),
-                blocks : IndexVec::new()
+                blocks: IndexVec::new(),
             },
             results,
         }
@@ -62,12 +63,14 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             let span = expr.span;
             match coercion {
                 Coercion::NeverToAny(ty) => {
-                    let expr_id = self.body.exprs.push(expr);
-                    expr = Expr {
-                        ty: ty.clone(),
-                        span,
-                        kind: ExprKind::NeverToAny(expr_id),
-                    };
+                    if !ty.is_never(){
+                        let expr_id = self.body.exprs.push(expr);
+                        expr = Expr {
+                            ty: ty.clone(),
+                            span,
+                            kind: ExprKind::NeverToAny(expr_id),
+                        };
+                    }
                 }
                 Coercion::RefCoercion(origin) => {
                     let Type::Ref(target_ty, _, is_mut) = &expr.ty else {
@@ -95,11 +98,11 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             .filter_map(|stmt| {
                 let stmt = match &stmt.kind {
                     hir::StmtKind::Expr(expr) | hir::StmtKind::ExprWithSemi(expr) => Stmt {
-                        span : stmt.span,
+                        span: stmt.span,
                         kind: StmtKind::Expr(self.lower_expr(expr)),
                     },
                     hir::StmtKind::Let(pattern, _, expr) => Stmt {
-                        span : stmt.span,
+                        span: stmt.span,
                         kind: StmtKind::Let(
                             Box::new(self.lower_pattern(pattern)),
                             self.lower_expr(expr),
@@ -110,13 +113,13 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                 Some(self.body.stmts.push(stmt))
             })
             .collect();
-            let block = Block{
-                stmts,
-                expr : block.result.as_ref().map(|expr| self.lower_expr(expr))
-            };
-            ExprKind::Block(self.body.blocks.push(block))
-        }
-    
+        let block = Block {
+            stmts,
+            expr: block.result.as_ref().map(|expr| self.lower_expr(expr)),
+        };
+        ExprKind::Block(self.body.blocks.push(block))
+    }
+
     fn make_expr(&mut self, expr: &hir::Expr) -> Expr {
         let kind = match &expr.kind {
             hir::ExprKind::Err => unreachable!("Can't use an ExprKind::Err in thir"),
@@ -136,7 +139,35 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             hir::ExprKind::Return(expr) => {
                 ExprKind::Return(expr.as_ref().map(|expr| self.lower_expr(expr)))
             }
-            hir::ExprKind::Init(_, _) => todo!("INIT"),
+            hir::ExprKind::Init(_, fields) => {
+                let Resolution::Def(id, DefKind::Struct) = self
+                    .results
+                    .get_res(expr.id)
+                    .expect("Should have a resolution")
+                else {
+                    panic!("Had non-struct definition")
+                };
+                let generic_args = self
+                    .results
+                    .get_generic_args(expr.id)
+                    .unwrap_or_else(|| panic!("Cannot find generic args"))
+                    .clone();
+                ExprKind::Struct {
+                    id,
+                    generic_args,
+                    fields: fields
+                        .iter()
+                        .map(|field| {
+                            let field_index = self.results.expect_field(field.id);
+                            let field_expr = self.lower_expr(&field.expr);
+                            ExprField {
+                                field: field_index,
+                                expr: field_expr,
+                            }
+                        })
+                        .collect(),
+                }
+            }
             hir::ExprKind::Break(_, _) => todo!("BREAK"),
             hir::ExprKind::For(_, _, _) => todo!("FOR"),
 
@@ -221,9 +252,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                 };
                 ExprKind::Loop(self.body.exprs.push(expr))
             }
-            hir::ExprKind::Block(block) => {
-                self.lower_block(&block)
-            }
+            hir::ExprKind::Block(block) => self.lower_block(&block),
         };
         Expr {
             ty: self.results.type_of(expr.id),
@@ -265,8 +294,13 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                 }
                 hir::PatternKind::Wildcard => PatternKind::Wilcard,
                 hir::PatternKind::Deref(..) => todo!("DEREF PATTERNS"),
-                hir::PatternKind::Literal(..) => todo!("LITERAL PATTERNS"),
-                hir::PatternKind::Tuple(..) => todo!("TUPLE PATTERNS"),
+                hir::PatternKind::Literal(literal) => PatternKind::Lit(literal),
+                hir::PatternKind::Tuple(ref fields) => PatternKind::Tuple(
+                    fields
+                        .iter()
+                        .map(|field| self.lower_pattern(field))
+                        .collect(),
+                ),
             },
         }
     }
@@ -281,6 +315,9 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             self.body.params.push(param);
         }
         let value = self.lower_expr(&hir.value);
-        Some(Body { info: self.body, value })
+        Some(Body {
+            info: self.body,
+            value,
+        })
     }
 }

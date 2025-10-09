@@ -11,7 +11,9 @@ impl<I, V> IndexVec<I, V> {
     pub const fn new() -> Self {
         Self(Vec::new(), PhantomData)
     }
-
+    pub const fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
     pub fn iter(&self) -> impl Iterator<Item = &V> {
         self.0.iter()
     }

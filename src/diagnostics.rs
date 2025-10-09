@@ -15,8 +15,11 @@ impl DiagnosticReporter {
             all_diagnostics: Vec::new(),
         }))
     }
+    pub fn emit_diag_from(&self, diag: impl IntoDiagnostic) {
+        self.add(diag.into());
+    }
     pub fn emit_diag(&self, message: impl IntoDiagnosticMessage, span: Span) {
-        self.add(Diagnostic::new(message, span));
+        self.add(Diagnostic::new(message, span, None));
     }
     pub fn had_error(&self) -> bool {
         !self.0.borrow().all_diagnostics.is_empty()
@@ -96,20 +99,54 @@ impl DiagnosticReporter {
                 }
                 eprintln!()
             }
+            fn emit_note(note: Note, space: usize) {
+                for _ in 0..=space {
+                    eprint!(" ");
+                }
+                eprintln!("{}", note.message);
+                for note in note.sub_notes {
+                    emit_note(note, space + 1);
+                }
+            }
+            if let Some(note) = diagnostic.note {
+                emit_note(note, 0);
+            }
             eprintln!()
         }
     }
 }
+pub struct Note {
+    message: Cow<'static, str>,
+    sub_notes: Box<[Note]>,
+}
+impl Note {
+    pub fn new(message: impl IntoDiagnosticMessage, sub_notes: Box<[Note]>) -> Self {
+        Self {
+            message: message.into_message(),
+            sub_notes,
+        }
+    }
+}
 
+impl<T: IntoDiagnosticMessage> From<T> for Note {
+    fn from(value: T) -> Self {
+        Self {
+            message: value.into_message(),
+            sub_notes: Box::new([]),
+        }
+    }
+}
 pub struct Diagnostic {
     message: Cow<'static, str>,
     span: Span,
+    note: Option<Note>,
 }
 impl Diagnostic {
-    pub fn new(message: impl IntoDiagnosticMessage, span: Span) -> Self {
+    pub fn new(message: impl IntoDiagnosticMessage, span: Span, note: Option<Note>) -> Self {
         Self {
             message: message.into_message(),
             span,
+            note,
         }
     }
 }
@@ -133,4 +170,8 @@ impl IntoDiagnosticMessage for &'static str {
     fn into_message(self) -> Cow<'static, str> {
         self.into()
     }
+}
+
+pub trait IntoDiagnostic {
+    fn into(self) -> Diagnostic;
 }

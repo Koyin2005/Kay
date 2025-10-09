@@ -27,40 +27,42 @@ pub struct Param {
 pub struct Thir {
     pub bodies: Box<[Body]>,
 }
-pub struct Body{
-    pub info : BodyInfo,
-    pub value : ExprId
+pub struct Body {
+    pub info: BodyInfo,
+    pub value: ExprId,
 }
-impl Body{
-    pub fn expr(&self, id: ExprId) -> &Expr{
+impl Body {
+    pub fn expr(&self, id: ExprId) -> &Expr {
         &self.info.exprs[id]
     }
-    pub fn block(&self, id : BlockId) -> &Block{
+    pub fn block(&self, id: BlockId) -> &Block {
         &self.info.blocks[id]
     }
-    pub fn arm(&self, id : ArmId) -> &Arm{
+    pub fn arm(&self, id: ArmId) -> &Arm {
         &self.info.arms[id]
     }
-    pub fn stmt(&self, id: StmtId) -> &Stmt{
+    pub fn stmt(&self, id: StmtId) -> &Stmt {
         &self.info.stmts[id]
     }
 }
 pub struct BodyInfo {
     pub owner: DefId,
     pub params: Vec<Param>,
-    pub blocks : IndexVec<BlockId,Block>,
+    pub blocks: IndexVec<BlockId, Block>,
     pub arms: IndexVec<ArmId, Arm>,
     pub exprs: IndexVec<ExprId, Expr>,
-    pub stmts: IndexVec<StmtId, Stmt>
+    pub stmts: IndexVec<StmtId, Stmt>,
 }
-pub struct Block{
-    pub stmts : Box<[StmtId]>,
-    pub expr : Option<ExprId>
+pub struct Block {
+    pub stmts: Box<[StmtId]>,
+    pub expr: Option<ExprId>,
 }
 pub enum PatternKind {
     Wilcard,
     Binding(HirId, Symbol, ByRef, Mutable),
     Case(DefId, GenericArgs, Box<[Pattern]>),
+    Tuple(Box<[Pattern]>),
+    Lit(LiteralKind),
 }
 pub struct Pattern {
     pub ty: Type,
@@ -77,12 +79,16 @@ pub struct Arm {
     pub body: ExprId,
 }
 pub struct Stmt {
-    pub span : Span,
+    pub span: Span,
     pub kind: StmtKind,
 }
 pub enum StmtKind {
     Let(Box<Pattern>, ExprId),
     Expr(ExprId),
+}
+pub struct ExprField {
+    pub field: FieldIndex,
+    pub expr: ExprId,
 }
 pub enum ExprKind {
     Literal(LiteralKind),
@@ -102,6 +108,11 @@ pub enum ExprKind {
         case_id: DefId,
         generic_args: GenericArgs,
         fields: Box<[ExprId]>,
+    },
+    Struct {
+        id: DefId,
+        generic_args: GenericArgs,
+        fields: Box<[ExprField]>,
     },
     If(ExprId, ExprId, Option<ExprId>),
     Assign(ExprId, ExprId),

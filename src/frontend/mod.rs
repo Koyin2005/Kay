@@ -1,14 +1,15 @@
 pub mod ast;
 pub mod ast_lowering;
 mod ast_visit;
+pub mod borrow_check;
 pub mod hir;
 pub mod item_collect;
 pub mod parsing;
+pub mod pattern_analysis;
+pub mod pattern_check;
 pub mod resolution;
 pub(super) mod thir;
 pub mod thir_build;
 pub(super) mod ty_infer;
 pub(super) mod ty_lower;
 pub mod typecheck;
-pub mod pattern_check;
-pub mod borrow_check;

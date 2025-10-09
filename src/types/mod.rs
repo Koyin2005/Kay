@@ -189,8 +189,14 @@ pub enum Type {
     Err,
 }
 impl Type {
+    pub fn is_str(&self) -> bool {
+        matches!(self, Type::Primitive(hir::PrimitiveType::String))
+    }
     pub fn is_unit(&self) -> bool {
         matches!(self,Type::Tuple(elements) if elements.is_empty())
+    }
+    pub fn is_infer(&self) -> bool{
+        matches!(self, Type::Infer(_))
     }
     pub fn is_never(&self) -> bool {
         matches!(self, Type::Primitive(hir::PrimitiveType::Never))

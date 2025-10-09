@@ -530,6 +530,9 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 if let Some(return_ty) = &function_def.return_type {
                     this.resolve_type(return_ty);
                 }
+                for param in function_def.params.iter() {
+                    this.visit_pat(&param.pattern);
+                }
                 this.resolve_expr(&function_def.body);
             });
         });
