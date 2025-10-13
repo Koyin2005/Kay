@@ -856,6 +856,7 @@ impl<'source> Parser<'source> {
                 if tail.is_empty() {
                     (PatternKind::Ident(name, Mutable::No, ByRef::No), span)
                 } else {
+                    let generic_args = self.parse_optional_generic_args()?;
                     let (fields, end) = self.parse_case_pattern_fields(span)?;
                     (
                         PatternKind::Case(
@@ -872,6 +873,7 @@ impl<'source> Parser<'source> {
                                 },
                                 tail,
                             },
+                            generic_args,
                             fields,
                         ),
                         span.combined(end),

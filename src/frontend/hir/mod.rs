@@ -105,7 +105,7 @@ pub enum PatternKind {
     Literal(LiteralKind),
     Tuple(Vec<Pattern>),
     Deref(Box<Pattern>),
-    Case(Resolution, Vec<Pattern>),
+    Case(Resolution,Option<GenericArgs>, Vec<Pattern>),
     Binding(HirId, Symbol, Mutable, ByRef),
     Wildcard,
 }

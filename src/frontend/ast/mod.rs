@@ -241,7 +241,7 @@ pub enum PatternKind {
     Grouped(Box<Pattern>),
     Literal(LiteralKind),
     Deref(Box<Pattern>),
-    Case(QualifiedName, Vec<Pattern>),
+    Case(QualifiedName,Option<GenericArgs>, Vec<Pattern>),
     Wildcard,
 }
 #[derive(Debug, Clone)]

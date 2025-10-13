@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 
 use fxhash::{FxHashMap, FxHashSet};
+use indexmap::IndexSet;
 
 use crate::{
     context::CtxtRef,
@@ -820,7 +821,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         let ty = self.infer_ctxt.normalize(ty);
         let target = self.infer_ctxt.normalize(target);
         match (&ty, &target) {
-            (Type::Primitive(PrimitiveType::Never), target) if !target.is_infer() => {
+            (Type::Primitive(PrimitiveType::Never), target) => {
                 self.results
                         .borrow_mut()
                         .coercions
@@ -1100,7 +1101,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 LiteralKind::Bool(_) => Type::new_bool(),
                 LiteralKind::String(..) => Type::new_ref_str(),
             },
-            PatternKind::Case(res, fields) => {
+            PatternKind::Case(res,args, fields) => {
+                let args = args.as_ref();
                 let case_def = match res {
                     Resolution::Def(id, DefKind::VariantCase) => {
                         self.results
@@ -1121,7 +1123,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                                 case,
                                 self.instantiate_generic_def(
                                     pat.id,
-                                    None,
+                                    args,
                                     parent,
                                     expected_ty,
                                     pat.span,
@@ -1218,8 +1220,9 @@ impl<'ctxt> TypeCheck<'ctxt> {
             vars
         };
         if !incomplete_vars.is_empty() {
-            for var in incomplete_vars {
-                self.err("Type annotations needed.", self.infer_ctxt.span(var));
+            let spans = incomplete_vars.into_iter().map(|var| self.infer_ctxt.span(var)).collect::<IndexSet<_>>();
+            for span in spans {
+                self.err("Type annotations needed.", span);
             }
             return self.results.into_inner();
         }

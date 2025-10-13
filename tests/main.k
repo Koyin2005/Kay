@@ -8,10 +8,19 @@ fun into_ok[T,E](x : Result[T,E], f : fun(E) -> never) -> T =
     end
 
 
+fun from_both[origin a,origin b,T]() -> ref [a,b] T = loop end
 fun diverge() -> never = loop end 
 fun hey[T](x : T, y: T) = ()
 fun main() = do 
-    let a = into_ok(stuff(),empty_to_never);
+    let a =5 ; let b = 7;
+    let c : ref [a,b] int = match 5 with 
+        0 => return, 
+        1 => ref a, 
+        2 => from_both[a,b,_](), 
+        _ => ref b 
+    end;
+    fun mid_result() -> Result[int,never] = Result.Ok(5)
+    let Result.Ok(x) = mid_result();
 end
 
 

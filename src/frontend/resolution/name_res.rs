@@ -142,7 +142,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 Self::collect_bindings_in_patttern(pat, bindings);
             }
 
-            PatternKind::Case(_, ref patterns) | PatternKind::Tuple(ref patterns) => patterns
+            PatternKind::Case(_,_, ref patterns) | PatternKind::Tuple(ref patterns) => patterns
                 .iter()
                 .for_each(|pat| Self::collect_bindings_in_patttern(pat, bindings)),
             PatternKind::Literal(_) | PatternKind::Wildcard => (),
@@ -562,7 +562,7 @@ impl Visitor for NameRes<'_, '_> {
         }
     }
     fn visit_pat(&mut self, pat: &Pattern) {
-        if let ast::PatternKind::Case(path, _) = &pat.kind {
+        if let ast::PatternKind::Case(path,_, _) = &pat.kind {
             self.resolve_path(path.id, path.head, path.tail.iter().copied());
         }
         walk_pat(self, pat)

@@ -200,9 +200,10 @@ impl<'diag> AstLower<'diag> {
             };
         }
         match pattern.kind {
-            ast::PatternKind::Case(ref name, ref elements) => {
+            ast::PatternKind::Case(ref name,ref args, ref elements) => {
                 lower_pattern!(hir::PatternKind::Case(
                     self.map_res(name.id).unwrap_or(hir::Resolution::Err),
+                    args.as_ref().map(|args| self.lower_generic_args(args)),
                     elements.iter().map(|pat| self.lower_pattern(pat)).collect()
                 ))
             }
