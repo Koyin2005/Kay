@@ -20,7 +20,7 @@ fun main() = do
         _ => ref b 
     end;
     fun mid_result() -> Result[int,never] = Result.Ok(5)
-    let Result.Ok(x) = mid_result();
+    let Result.Ok(x) = if true then Result.Ok(5) else Result.Err(12) end;
 end
 
 

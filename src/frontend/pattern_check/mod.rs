@@ -43,9 +43,6 @@ impl<'a> Visitor<'a> for PatCheck<'a> {
             let usefulness = PatternContext::new(self.ctxt)
                 .check(pattern.ty.clone(), std::iter::once(lower_pattern(&pattern)));
             if !usefulness.missing_patterns.is_empty() {
-                for pat in usefulness.missing_patterns {
-                    println!("{}", pat.format(self.ctxt))
-                }
                 self.ctxt
                     .diag()
                     .emit_diag("Refutable pattern in let bindings.", pattern.span);
