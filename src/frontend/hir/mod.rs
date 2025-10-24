@@ -58,7 +58,7 @@ pub enum DefKind {
     Variant,
     VariantCase,
     TypeParam,
-    OriginParam,
+    RegionParam,
 }
 impl DefKind {
     pub fn as_str(&self) -> &str {
@@ -69,7 +69,7 @@ impl DefKind {
             Self::Field => "field",
             Self::Function => "function",
             Self::VariantCase => "case",
-            Self::OriginParam => "origin param",
+            Self::RegionParam => "region param",
             Self::TypeParam => "type param",
         }
     }
@@ -192,13 +192,13 @@ pub struct Param {
 #[derive(Debug)]
 pub enum GenericArg {
     Type(Type),
-    Origin(Origin),
+    Region(Region),
 }
 impl GenericArg {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Type(_) => "type",
-            Self::Origin(_) => "origin",
+            Self::Region(_) => "region",
         }
     }
 }
@@ -207,15 +207,11 @@ pub struct GenericArgs {
     pub span: Span,
     pub args: Vec<GenericArg>,
 }
-#[derive(Debug, Clone, Copy)]
-pub enum Place {
-    Var(Ident, HirId),
-    Param(Ident, DefId),
-    Err,
-}
 #[derive(Debug, Clone)]
-pub struct Origin {
-    pub places: Vec<Place>,
+pub enum Region {
+    Static,
+    Param(Ident,DefId),
+    Err
 }
 #[derive(Debug)]
 pub enum TypeKind {
@@ -223,7 +219,7 @@ pub enum TypeKind {
     Path(Path, Option<GenericArgs>),
     Infer,
     Array(Box<Type>),
-    Ref(Mutable, Option<Origin>, Box<Type>),
+    Ref(Mutable, Option<Region>, Box<Type>),
     Primitive(PrimitiveType),
     Fun(Vec<Type>, Option<Box<Type>>),
 }
@@ -325,13 +321,13 @@ pub enum LoopSource {
 }
 #[derive(Clone, Copy, Debug)]
 pub enum GenericParamKind {
-    Origin,
+    Region,
     Type,
 }
 impl GenericParamKind {
     pub fn kind(&self) -> &'static str {
         match self {
-            Self::Origin => "origin",
+            Self::Region => "region",
             Self::Type => "type",
         }
     }

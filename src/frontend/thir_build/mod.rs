@@ -72,11 +72,11 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                         };
                     }
                 }
-                Coercion::RefCoercion(origin) => {
+                Coercion::RefCoercion(region) => {
                     let Type::Ref(target_ty, _, is_mut) = &expr.ty else {
                         unreachable!("Can only ref coerce references")
                     };
-                    expr.ty = Type::Ref(target_ty.clone(), (**origin).clone(), *is_mut);
+                    expr.ty = Type::Ref(target_ty.clone(), (**region).clone(), *is_mut);
                 }
             }
         }

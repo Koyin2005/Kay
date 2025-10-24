@@ -289,14 +289,9 @@ pub struct QualifiedName {
     pub tail: Vec<PathSegment>,
 }
 #[derive(Clone, Debug)]
-pub struct Place {
+pub struct Region {
     pub id: NodeId,
-    pub name: Ident,
-}
-#[derive(Clone, Debug)]
-pub struct Origin {
-    pub id: NodeId,
-    pub places: Vec<Place>,
+    pub name : Ident
 }
 #[derive(Clone, Debug)]
 pub enum TypeKind {
@@ -310,7 +305,7 @@ pub enum TypeKind {
     Array(Box<Type>),
     Grouped(Box<Type>),
     Tuple(Vec<Type>),
-    Ref(Mutable, Option<Origin>, Box<Type>),
+    Ref(Mutable, Option<Region>, Box<Type>),
     Fun(Vec<Type>, Option<Box<Type>>),
 }
 define_id! {
@@ -331,7 +326,7 @@ impl std::fmt::Display for NodeId {
 #[derive(Clone, Debug)]
 pub enum GenericParamKind {
     Type,
-    Origin,
+    Region,
 }
 #[derive(Clone, Debug)]
 pub struct GenericParam {

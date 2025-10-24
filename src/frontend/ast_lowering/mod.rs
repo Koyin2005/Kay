@@ -88,24 +88,14 @@ impl<'diag> AstLower<'diag> {
                     let ty = match arg {
                         ast::GenericArg::Type(ty) => ty,
                         ast::GenericArg::Static => {
-                            return hir::GenericArg::Origin(hir::Origin { places: Vec::new() });
+                            return hir::GenericArg::Region(hir::Region::Static);
                         }
                     };
 
                     match &ty.kind {
                         ast::TypeKind::Named(name, args) => {
                             let path = self.lower_path(&name);
-                            if let hir::Resolution::Variable(var) = path.res {
-                                if args.is_some() {
-                                    self.diag.emit_diag(
-                                        "Cannot have generic arguments here.",
-                                        name.span,
-                                    );
-                                }
-                                hir::GenericArg::Origin(hir::Origin {
-                                    places: vec![hir::Place::Var(name.head.name, var)],
-                                })
-                            } else if let hir::Resolution::Def(id, hir::DefKind::OriginParam) =
+                            if let hir::Resolution::Def(id, hir::DefKind::RegionParam) =
                                 path.res
                             {
                                 if args.is_some() {
@@ -114,9 +104,7 @@ impl<'diag> AstLower<'diag> {
                                         name.span,
                                     );
                                 }
-                                hir::GenericArg::Origin(hir::Origin {
-                                    places: vec![hir::Place::Param(name.head.name, id)],
-                                })
+                                hir::GenericArg::Region(hir::Region::Param(name.head.name, id))
                             } else {
                                 hir::GenericArg::Type(self.lower_ty(ty))
                             }
@@ -149,28 +137,18 @@ impl<'diag> AstLower<'diag> {
                     hir::TypeKind::Primitive(hir::PrimitiveType::Int(hir::IntType::Signed))
                 }
                 ast::TypeKind::String => hir::TypeKind::Primitive(hir::PrimitiveType::String),
-                ast::TypeKind::Ref(mutable, origin, ty) => hir::TypeKind::Ref(
+                ast::TypeKind::Ref(mutable, region, ty) => hir::TypeKind::Ref(
                     *mutable,
-                    origin.as_ref().map(|origin| {
-                        let places = origin
-                            .places
-                            .iter()
-                            .filter_map(|origin| {
-                                self.map_res(origin.id).map(|res| match res {
-                                    hir::Resolution::Variable(var) => {
-                                        hir::Place::Var(origin.name, var)
-                                    }
-                                    hir::Resolution::Def(id, hir::DefKind::OriginParam) => {
-                                        hir::Place::Param(origin.name, id)
-                                    }
-                                    _ => {
-                                        self.diag.emit_diag("Invalid origin", origin.name.span);
-                                        hir::Place::Err
-                                    }
-                                })
-                            })
-                            .collect();
-                        hir::Origin { places }
+                    region.as_ref().and_then(|region| {
+                        self.map_res(region.id).map(|res| match res {
+                            hir::Resolution::Def(id, hir::DefKind::RegionParam) => {
+                                hir::Region::Param(region.name, id)
+                            }
+                            _ => {
+                                self.diag.emit_diag("Invalid region.", region.name.span);
+                                hir::Region::Err
+                            }
+                        })
                     }),
                     Box::new(self.lower_ty(ty)),
                 ),
@@ -691,7 +669,7 @@ impl<'diag> AstLower<'diag> {
                         name: param.name,
                         kind: match param.kind {
                             GenericParamKind::Type => hir::GenericParamKind::Type,
-                            GenericParamKind::Origin => hir::GenericParamKind::Origin,
+                            GenericParamKind::Region => hir::GenericParamKind::Region,
                         },
                     })
                     .collect(),

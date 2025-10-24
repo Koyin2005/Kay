@@ -5,7 +5,7 @@ use crate::{
         ty_infer::TypeInfer,
     },
     span::Span,
-    types::{GenericArg, GenericArgs, Origin, Place, Type},
+    types::{GenericArg, GenericArgs, Region, Type},
 };
 pub struct TypeLower<'ctxt> {
     ctxt: CtxtRef<'ctxt>,
@@ -47,23 +47,19 @@ impl<'a> TypeLower<'a> {
         let generic_args = self.lower_generic_args_for(def, generic_args, span);
         self.ctxt.type_of(def.into()).instantiate(generic_args)
     }
-    fn lower_origin(&self, origin: &hir::Origin) -> Origin {
-        Origin::from_iter(origin.places.iter().map(|place| {
-            match place {
-                &hir::Place::Err => Place::Err,
-                &hir::Place::Param(name, id) => Place::Generic(
-                    name.symbol,
+    fn lower_region(&self, region: &hir::Region) -> Region {
+        match region{
+            hir::Region::Err => Region::Err,
+            &hir::Region::Param(name,id) => Region::Generic(name.symbol,
                     self.ctxt
                         .generics_for(self.ctxt.expect_parent_of_def(id.into()))
-                        .expect_index(name.symbol),
-                ),
-                &hir::Place::Var(name, id) => Place::Var(name.symbol, id),
-            }
-        }))
+                        .expect_index(name.symbol)),
+            hir::Region::Static => Region::Static
+        }
     }
     fn lower_generic_arg(&self, generic_arg: &hir::GenericArg) -> GenericArg {
         match generic_arg {
-            hir::GenericArg::Origin(origin) => GenericArg::Origin(self.lower_origin(origin)),
+            hir::GenericArg::Region(region) => GenericArg::Region(self.lower_region(region)),
             hir::GenericArg::Type(ty) => GenericArg::Type(self.lower(ty)),
         }
     }
@@ -85,11 +81,11 @@ impl<'a> TypeLower<'a> {
                             hir::GenericParamKind::Type => {
                                 GenericArg::Type(Type::Infer(infer.fresh_var(span)))
                             }
-                            hir::GenericParamKind::Origin => {
+                            hir::GenericParamKind::Region => {
                                 self.ctxt
                                     .diag()
-                                    .emit_diag("Cannot infer 'origin' here.", span);
-                                GenericArg::Origin(Origin::from(Place::Err))
+                                    .emit_diag("Cannot infer 'region' here.", span);
+                                GenericArg::Region(Region::Err)
                             }
                         })
                         .collect()
@@ -102,8 +98,8 @@ impl<'a> TypeLower<'a> {
                         .iter()
                         .map(|param| match param.kind {
                             hir::GenericParamKind::Type => GenericArg::Type(Type::Err),
-                            hir::GenericParamKind::Origin => {
-                                GenericArg::Origin(Origin::from(Place::Err))
+                            hir::GenericParamKind::Region => {
+                                GenericArg::Region(Region::Err)
                             }
                         })
                         .collect()
@@ -119,8 +115,8 @@ impl<'a> TypeLower<'a> {
                             (hir::GenericArg::Type(ty), hir::GenericParamKind::Type) => {
                                 GenericArg::Type(self.lower(ty))
                             }
-                            (hir::GenericArg::Origin(origin), hir::GenericParamKind::Origin) => {
-                                GenericArg::Origin(self.lower_origin(origin))
+                            (hir::GenericArg::Region(region), hir::GenericParamKind::Region) => {
+                                GenericArg::Region(self.lower_region(region))
                             }
 
                             (arg, param) => {
@@ -133,8 +129,8 @@ impl<'a> TypeLower<'a> {
                                     span,
                                 );
                                 match param {
-                                    hir::GenericParamKind::Origin => {
-                                        GenericArg::Origin(Origin::from(Place::Err))
+                                    hir::GenericParamKind::Region => {
+                                        GenericArg::Region(Region::Err)
                                     }
                                     hir::GenericParamKind::Type => GenericArg::Type(Type::Err),
                                 }
@@ -178,12 +174,12 @@ impl<'a> TypeLower<'a> {
                 }
             }
             hir::TypeKind::Array(element_ty) => Type::new_array(self.lower(element_ty)),
-            &hir::TypeKind::Ref(mutable, ref origin, ref ty) => Type::new_ref(
+            &hir::TypeKind::Ref(mutable, ref region, ref ty) => Type::new_ref(
                 self.lower(ty),
-                origin
+                region
                     .as_ref()
-                    .map(|origin| self.lower_origin(&origin))
-                    .unwrap_or(Origin::STATIC),
+                    .map(|region| self.lower_region(&region))
+                    .unwrap_or(Region::Static),
                 mutable.into(),
             ),
             hir::TypeKind::Tuple(elements) => {

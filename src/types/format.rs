@@ -1,7 +1,7 @@
 use crate::{
     context::CtxtRef,
     frontend::hir::{IntType, PrimitiveType},
-    types::{GenericArg, IsMutable, Origin, Place, Type},
+    types::{GenericArg, IsMutable, Region, Type},
 };
 
 pub struct TypeFormat<'a> {
@@ -27,24 +27,17 @@ impl<'a> TypeFormat<'a> {
         }
         output
     }
-    pub fn format_place(&self, place: &Place) -> String {
-        match place {
-            Place::Err => "{unknown}".to_string(),
-            Place::Generic(name, _) => name.as_str().to_string(),
-            Place::Var(name, _) => name.as_str().to_string(),
-        }
-    }
-    pub fn format_origin(&self, origin: &Origin) -> String {
-        if origin.is_static() {
-            "static".to_string()
-        } else {
-            self.format_multiple(origin.places(), &|place| self.format_place(place))
-        }
+    pub fn format_region(&self, region: &Region) -> String {
+        match region{
+            Region::Static => "static",
+            Region::Err => "{unknown}",
+            Region::Generic(name,_) => name.as_str()
+        }.to_string()
     }
     fn format_generic_args(&self, args: impl IntoIterator<Item = &'a GenericArg>) -> String {
         self.format_multiple(args, &|arg| match arg {
             GenericArg::Type(ty) => self.format_type(ty),
-            GenericArg::Origin(origin) => self.format_origin(origin),
+            GenericArg::Region(region) => self.format_region(region),
         })
     }
     fn format_types<'b>(&self, tys: impl IntoIterator<Item = &'b Type>) -> String {
@@ -56,14 +49,14 @@ impl<'a> TypeFormat<'a> {
             Type::Generic(name, _) => name.as_str().to_string(),
             Type::Array(element) => format!("[{}]", self.format_type(element)),
             Type::Err => "{unknown}".to_string(),
-            Type::Ref(ty, origin, is_mutable) => format!(
+            Type::Ref(ty, region, is_mutable) => format!(
                 "ref{} [{}] {}",
                 if let IsMutable::Yes = is_mutable {
                     " mut"
                 } else {
                     ""
                 },
-                self.format_origin(origin),
+                self.format_region(region),
                 self.format_type(ty)
             ),
             Type::Function(params, return_type) => format!(

@@ -33,7 +33,7 @@ impl<'a, 'b> DefCollector<'a, 'b> {
             self.create_id(
                 generic_param.id,
                 match generic_param.kind {
-                    GenericParamKind::Origin => DefKind::OriginParam,
+                    GenericParamKind::Region => DefKind::RegionParam,
                     GenericParamKind::Type => DefKind::TypeParam,
                 },
                 Some(parent),

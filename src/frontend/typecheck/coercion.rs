@@ -35,17 +35,6 @@ impl Coerce {
         let next_ty = (|| match (a, b) {
             (Type::Primitive(PrimitiveType::Never), ty)
             | (ty, Type::Primitive(PrimitiveType::Never)) => Some(ty.clone()),
-            (Type::Ref(ty, origin, is_mut), Type::Ref(other_ty, other_origin, other_is_mut)) => {
-                if is_mut == other_is_mut {
-                    Some(Type::new_ref(
-                        ctxt.infer_ctxt().unify(ty, other_ty).ok()?,
-                        origin.superset_of(other_origin),
-                        *is_mut,
-                    ))
-                } else {
-                    None
-                }
-            }
             (a, b) => ctxt.infer_ctxt().unify(a, b).ok(),
         })();
         if let Some(next_ty) = next_ty {

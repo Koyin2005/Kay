@@ -24,7 +24,7 @@ use crate::{
         Span,
         symbol::{Ident, Symbol},
     },
-    types::{FieldIndex, GenericArg, GenericArgs, IsMutable, Origin, Place, Type},
+    types::{FieldIndex, GenericArg, GenericArgs, IsMutable, Region, Type},
 };
 #[derive(Clone, PartialEq, Eq)]
 pub struct LocalInfo {
@@ -234,22 +234,22 @@ impl<'ctxt> TypeCheck<'ctxt> {
             Type::new_unit()
         }
     }
-    fn get_origin(&self, pointee: &Expr) -> Option<Origin> {
+    fn get_region(&self, pointee: &Expr) -> Option<Region> {
         match &pointee.kind {
             &ExprKind::Path(
                 Path {
                     id: _,
-                    res: Resolution::Variable(id),
+                    res: Resolution::Variable(_),
                 },
                 _,
-            ) => Some(Origin::from(Place::Var(self.locals.borrow()[&id].name, id))),
+            ) => None,
             ExprKind::Field(expr, _) | ExprKind::Index(expr, _) | ExprKind::Ascribe(expr, _) => {
-                self.get_origin(expr)
+                self.get_region(expr)
             }
             ExprKind::Unary(op, expr) if op.node == UnaryOpKind::Deref => {
                 let ty = self.results.borrow().type_of(expr.id);
-                if let Type::Ref(_, origin, _) = ty {
-                    Some(origin)
+                if let Type::Ref(_, region, _) = ty {
+                    Some(region)
                 } else {
                     None
                 }
@@ -277,14 +277,14 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 } else {
                     self.check_expr(operand, expected_ty)
                 };
-                let origin = match self.get_origin(operand) {
-                    Some(origin) => origin,
+                let region = match self.get_region(operand) {
+                    Some(region) => region,
                     None => {
                         self.err("Cannot take a reference.", operand.span);
-                        Origin::from(Place::Err)
+                        Region::Err
                     }
                 };
-                Type::new_ref(ty, origin, mutable.into())
+                Type::new_ref(ty, region, mutable.into())
             }
             UnaryOpKind::Deref => {
                 let operand_ty = self.check_expr(operand, None);
@@ -485,7 +485,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 | DefKind::Struct
                 | DefKind::Variant
                 | DefKind::TypeParam
-                | DefKind::OriginParam),
+                | DefKind::RegionParam),
             ) => {
                 return self.err(
                     format!(
@@ -828,23 +828,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
                         .insert(expr, Coercion::NeverToAny(target.clone()));
                 Ok(target.clone())
             }
-            (Type::Ref(ty, origin, is_mut), Type::Ref(target_ty, target_origin, target_mut)) => {
-                if is_mut == target_mut && origin.is_subset_of(target_origin) {
-                    if origin != target_origin {
-                        self.results
-                            .borrow_mut()
-                            .coercions
-                            .insert(expr, Coercion::RefCoercion(Box::new(target_origin.clone())));
-                    }
-                    Ok(Type::new_ref(
-                        self.infer_ctxt.unify(ty, target_ty)?,
-                        origin.superset_of(target_origin),
-                        *is_mut,
-                    ))
-                } else {
-                    Err(InferError::UnifyFailed)
-                }
-            }
             (ty, target) => self.infer_ctxt.unify(ty, target),
         }
     }
@@ -1040,7 +1023,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     (ByRef::Yes(_), IsMutable::Yes) => (
                         Type::new_ref(
                             ty.clone(),
-                            Origin::from(Place::Var(name, id)),
+                            Region::Static,
                             IsMutable::Yes,
                         ),
                         IsMutable::Yes,
@@ -1048,7 +1031,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     (ByRef::Yes(_), IsMutable::No) => (
                         Type::new_ref(
                             ty.clone(),
-                            Origin::from(Place::Var(name, id)),
+                            Region::Static,
                             IsMutable::No,
                         ),
                         IsMutable::No,
@@ -1177,21 +1160,21 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 case_and_variant_ty.map(|(_, ty)| ty).unwrap_or(Type::Err)
             }
             PatternKind::Deref(ref_pat) => {
-                let (expected_ty, origin, is_mutable) = match expected_ty.and_then(|ty| {
-                    if let Type::Ref(ty, origin, mutable) = ty {
-                        Some((&**ty, origin, mutable))
+                let (expected_ty, region, is_mutable) = match expected_ty.and_then(|ty| {
+                    if let Type::Ref(ty, region, mutable) = ty {
+                        Some((&**ty, region, mutable))
                     } else {
                         None
                     }
                 }) {
-                    Some((ty, origin, mutable)) => (Some(ty), Some(origin), Some(mutable)),
+                    Some((ty, region, mutable)) => (Some(ty), Some(region), Some(mutable)),
                     _ => (None, None, None),
                 };
 
                 let ty = self.check_pattern(ref_pat, expected_ty, from_param);
                 Type::new_ref(
                     ty,
-                    origin.cloned().unwrap_or(Origin::STATIC),
+                    region.cloned().unwrap_or(Region::Static),
                     is_mutable.copied().unwrap_or(IsMutable::No),
                 )
             }
@@ -1236,7 +1219,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 .iter()
                 .map(|arg| match arg {
                     GenericArg::Type(ty) => GenericArg::Type(self.infer_ctxt.normalize(ty)),
-                    GenericArg::Origin(origin) => GenericArg::Origin(origin.clone()),
+                    GenericArg::Region(region) => GenericArg::Region(region.clone()),
                 })
                 .collect();
         }

@@ -1,4 +1,4 @@
-use crate::types::{Origin, Type};
+use crate::types::{Region, Type};
 mod coercion;
 pub mod function;
 pub mod results;
@@ -11,5 +11,5 @@ enum LocalSource {
 #[derive(Debug)]
 pub enum Coercion {
     NeverToAny(Type),
-    RefCoercion(Box<Origin>),
+    RefCoercion(Box<Region>),
 }

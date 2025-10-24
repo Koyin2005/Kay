@@ -7,8 +7,8 @@ use crate::{
         ast::{
             BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef,
             GenericArg, GenericArgs, GenericParam, GenericParamKind, GenericParams, Item, ItemKind,
-            IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Origin,
-            Param, PathSegment, Pattern, PatternKind, Place, QualifiedName, Stmt, StmtKind, Struct,
+            IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Region,
+            Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct,
             StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant,
             VariantCase, VariantField,
         },
@@ -1091,6 +1091,11 @@ impl<'source> Parser<'source> {
             Ok(None)
         }
     }
+    fn parse_region(&mut self) -> ParseResult<Region>{
+        let name = self.expect_ident("Expected a region.")?;
+        Ok(Region { id: self.new_id(), name })
+
+    }
     fn parse_type(&mut self) -> ParseResult<Type> {
         let start_span = self.current_token.span;
         let (kind, span) = match self.current_token.kind {
@@ -1139,31 +1144,16 @@ impl<'source> Parser<'source> {
                 } else {
                     Mutable::No
                 };
-                let origin = if self.matches_current(TokenKind::LeftBracket) {
-                    let places: Vec<_> = self
-                        .parse_delimited_by(TokenKind::RightBracket, |this| {
-                            let name = this.expect_ident("Expected an origin.")?;
-                            Ok(Place {
-                                id: this.new_id(),
-                                name,
-                            })
-                        })?
-                        .into();
-                    let _ = self.expect(TokenKind::RightBracket, "Expected ']'.");
-                    if places.is_empty() {
-                        None
-                    } else {
-                        Some(Origin {
-                            id: self.new_id(),
-                            places,
-                        })
-                    }
+                let region = if self.matches_current(TokenKind::LeftBracket) {
+                    let region = self.parse_region();
+                    let _ = self.expect(TokenKind::RightBracket, "Expected ']' after place.",);
+                    Some(region?)
                 } else {
                     None
                 };
                 let ty = self.parse_type()?;
                 let span = start_span.combined(ty.span);
-                (TypeKind::Ref(mutable, origin, Box::new(ty)), span)
+                (TypeKind::Ref(mutable, region, Box::new(ty)), span)
             }
             TokenKind::LeftBracket => {
                 self.advance();
@@ -1381,7 +1371,7 @@ impl<'source> Parser<'source> {
         self.advance();
         let params = Vec::from(self.parse_delimited_by(TokenKind::RightBracket, |this| {
             let kind = if this.matches_current(TokenKind::Region) {
-                GenericParamKind::Origin
+                GenericParamKind::Region
             } else {
                 GenericParamKind::Type
             };

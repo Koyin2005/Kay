@@ -226,7 +226,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                     | DefKind::Function
                     | DefKind::VariantCase
                     | DefKind::TypeParam
-                    | DefKind::OriginParam,
+                    | DefKind::RegionParam,
                 ) => {
                     self.resolver.error(
                         format!(
@@ -286,7 +286,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                     self.expect_def_id(param.id),
                     match param.kind {
                         ast::GenericParamKind::Type => DefKind::TypeParam,
-                        ast::GenericParamKind::Origin => DefKind::OriginParam,
+                        ast::GenericParamKind::Region => DefKind::RegionParam,
                     },
                 ),
                 param.name.span,
@@ -415,10 +415,8 @@ impl<'a, 'b> NameRes<'a, 'b> {
             TypeKind::Named(name, _) => {
                 self.resolve_path(name.id, name.head, name.tail.iter().copied());
             }
-            TypeKind::Ref(_, Some(origin), _) => {
-                for place in &origin.places {
-                    self.resolve_name_in_current_scope(place.id, place.name);
-                }
+            TypeKind::Ref(_, Some(region), _) => {
+                self.resolve_name_in_current_scope(region.id, region.name);
             }
             _ => (),
         }

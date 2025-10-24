@@ -9,7 +9,7 @@ use crate::{
     indexvec::IndexVec,
     span::symbol::{Ident, Symbol},
     types::{
-        self, FieldIndex, GenericArg, GenericArgs, Origin, Type, TypeScheme, VariantCaseIndex,
+        self, FieldIndex, GenericArg, GenericArgs, Region, Type, TypeScheme, VariantCaseIndex,
     },
 };
 use fxhash::{FxHashMap, FxHashSet};
@@ -94,8 +94,8 @@ impl Generics {
                     .try_into()
                     .expect("Should have less than u32::MAX generic params.");
                 match param.kind {
-                    hir::GenericParamKind::Origin => {
-                        GenericArg::Origin(Origin::from(types::Place::Generic(param.name, index)))
+                    hir::GenericParamKind::Region => {
+                        GenericArg::Region(Region::Generic(param.name, index))
                     }
                     hir::GenericParamKind::Type => {
                         GenericArg::Type(Type::Generic(param.name, index))
@@ -196,7 +196,7 @@ impl<'hir> GlobalContext<'hir> {
                 DefKind::VariantCase => {
                     self.generic_arg_count(self.expect_parent_of_def(def.into()))
                 }
-                DefKind::Field | DefKind::Module | DefKind::TypeParam | DefKind::OriginParam => 0,
+                DefKind::Field | DefKind::Module | DefKind::TypeParam | DefKind::RegionParam => 0,
                 DefKind::Struct | DefKind::Function | DefKind::Variant => {
                     self.generics_for(def.into()).count()
                 }

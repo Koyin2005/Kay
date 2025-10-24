@@ -58,11 +58,11 @@ impl TypeInfer {
         }
         impl TypeMapper for Normalizer<'_> {
             type Error = std::convert::Infallible;
-            fn map_origin(
+            fn map_region(
                 &self,
-                origin: &crate::types::Origin,
-            ) -> Result<crate::types::Origin, Self::Error> {
-                Ok(origin.clone())
+                region: &crate::types::Region,
+            ) -> Result<crate::types::Region, Self::Error> {
+                Ok(region.clone())
             }
             fn map_ty(&self, ty: &Type) -> Result<Type, Self::Error> {
                 match ty {
@@ -90,8 +90,8 @@ impl TypeInfer {
             (GenericArg::Type(ty), GenericArg::Type(expected)) => {
                 self.unify(ty, expected).map(GenericArg::Type)
             }
-            (GenericArg::Origin(origin), GenericArg::Origin(expected)) if origin == expected => {
-                Ok(GenericArg::Origin(origin.clone()))
+            (GenericArg::Region(region), GenericArg::Region(expected)) if region == expected => {
+                Ok(GenericArg::Region(region.clone()))
             }
             _ => Err(InferError::UnifyFailed),
         }
@@ -159,10 +159,10 @@ impl TypeInfer {
                     self.unify(&return_ty, &other_return_ty)?,
                 ))
             }
-            (Type::Ref(ty, origin, mutable), Type::Ref(other_ty, other_origin, other_mutable))
-                if mutable == other_mutable && origin == other_origin =>
+            (Type::Ref(ty, region, mutable), Type::Ref(other_ty, other_region, other_mutable))
+                if mutable == other_mutable && region == other_region =>
             {
-                Ok(Type::new_ref(self.unify(&ty, &other_ty)?, origin, mutable))
+                Ok(Type::new_ref(self.unify(&ty, &other_ty)?, region, mutable))
             }
             (Type::Nominal(def, generic_args), Type::Nominal(other_def, other_generic_args))
                 if def == other_def && generic_args.len() == other_generic_args.len() =>
