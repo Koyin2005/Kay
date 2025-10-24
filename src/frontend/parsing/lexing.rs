@@ -144,7 +144,7 @@ impl<'a> Lexer<'a> {
             "type" => TokenKind::Type,
             "variant" => TokenKind::Variant,
             "match" => TokenKind::Match,
-            "origin" => TokenKind::Origin,
+            "region" => TokenKind::Region,
             "static" => TokenKind::Static,
             symbol => TokenKind::Ident(Symbol::intern(symbol)),
         };

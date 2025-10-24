@@ -1380,7 +1380,7 @@ impl<'source> Parser<'source> {
         let start_span = self.current_token.span;
         self.advance();
         let params = Vec::from(self.parse_delimited_by(TokenKind::RightBracket, |this| {
-            let kind = if this.matches_current(TokenKind::Origin) {
+            let kind = if this.matches_current(TokenKind::Region) {
                 GenericParamKind::Origin
             } else {
                 GenericParamKind::Type
