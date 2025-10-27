@@ -1,5 +1,6 @@
 use crate::frontend::ast::{
-    self, Ast, Block, Expr, ExprKind, GenericArgs, Item, ItemKind, IteratorExpr, IteratorExprKind, Module, Pattern, PatternKind, Stmt, StmtKind, Type, TypeDefKind, TypeKind
+    self, Ast, Block, Expr, ExprKind, GenericArgs, Item, ItemKind, IteratorExpr, IteratorExprKind,
+    Module, Pattern, PatternKind, Stmt, StmtKind, Type, TypeDefKind, TypeKind,
 };
 
 pub trait Visitor: Sized {
@@ -84,26 +85,26 @@ pub fn walk_item(visitor: &mut impl Visitor, item: &Item) {
     }
 }
 pub fn walk_generic_args(visitor: &mut impl Visitor, args: &GenericArgs) {
-            for arg in args.args.iter() {
-                if let ast::GenericArg::Type(ty) = arg {
-                    visitor.visit_ty(&ty);
-                }
-            }
+    for arg in args.args.iter() {
+        if let ast::GenericArg::Type(ty) = arg {
+            visitor.visit_ty(&ty);
+        }
+    }
 }
 pub fn walk_pat(visitor: &mut impl Visitor, pat: &Pattern) {
     match &pat.kind {
         PatternKind::Grouped(pat) | PatternKind::Deref(pat) => visitor.visit_pat(pat),
         PatternKind::Tuple(elements) => elements
             .iter()
-            .for_each(|element| visitor.visit_pat(element)) ,
-        PatternKind::Case(_,args, elements) =>{ 
-            if let Some(args) = args{
+            .for_each(|element| visitor.visit_pat(element)),
+        PatternKind::Case(_, args, elements) => {
+            if let Some(args) = args {
                 walk_generic_args(visitor, args);
             }
             elements
-            .iter()
-            .for_each(|element| visitor.visit_pat(element))
-        },
+                .iter()
+                .for_each(|element| visitor.visit_pat(element))
+        }
         PatternKind::Ident(..) | PatternKind::Literal(..) | PatternKind::Wildcard => (),
     }
 }

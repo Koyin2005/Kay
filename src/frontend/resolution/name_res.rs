@@ -6,8 +6,8 @@ use crate::{
     frontend::{
         ast::{
             self, Ast, Block, Expr, ExprKind, FunctionDef, GenericParams, Item, ItemKind, Module,
-            NodeId, PathSegment, Pattern, PatternKind, QualifiedName, StmtKind, Type, TypeDef,
-            TypeDefKind,
+            NodeId, PathSegment, Pattern, PatternKind, QualifiedName, RegionKind, StmtKind, Type,
+            TypeDef, TypeDefKind,
         },
         ast_visit::{
             Visitor, walk_ast, walk_block, walk_expr, walk_iterator, walk_module, walk_pat,
@@ -142,7 +142,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 Self::collect_bindings_in_patttern(pat, bindings);
             }
 
-            PatternKind::Case(_,_, ref patterns) | PatternKind::Tuple(ref patterns) => patterns
+            PatternKind::Case(_, _, ref patterns) | PatternKind::Tuple(ref patterns) => patterns
                 .iter()
                 .for_each(|pat| Self::collect_bindings_in_patttern(pat, bindings)),
             PatternKind::Literal(_) | PatternKind::Wildcard => (),
@@ -416,7 +416,9 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 self.resolve_path(name.id, name.head, name.tail.iter().copied());
             }
             TypeKind::Ref(_, Some(region), _) => {
-                self.resolve_name_in_current_scope(region.id, region.name);
+                if let RegionKind::Named(name) = region.kind {
+                    self.resolve_name_in_current_scope(region.id, name);
+                }
             }
             _ => (),
         }
@@ -554,13 +556,13 @@ impl Visitor for NameRes<'_, '_> {
     }
     fn visit_let_stmt(&mut self, pat: &Pattern, ty: Option<&Type>, expr: &Expr) {
         self.resolve_expr(expr);
-        self.resolve_pattern(pat);
         if let Some(ty) = ty {
             self.resolve_type(ty);
         }
+        self.resolve_pattern(pat);
     }
     fn visit_pat(&mut self, pat: &Pattern) {
-        if let ast::PatternKind::Case(path,_, _) = &pat.kind {
+        if let ast::PatternKind::Case(path, _, _) = &pat.kind {
             self.resolve_path(path.id, path.head, path.tail.iter().copied());
         }
         walk_pat(self, pat)

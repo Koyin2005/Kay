@@ -28,11 +28,14 @@ impl<'a> TypeFormat<'a> {
         output
     }
     pub fn format_region(&self, region: &Region) -> String {
-        match region{
+        match region {
+            Region::Local(name, id) => return format!("{}{id:?}", name.as_str()),
             Region::Static => "static",
+            Region::Infer(_) => "_",
             Region::Err => "{unknown}",
-            Region::Generic(name,_) => name.as_str()
-        }.to_string()
+            Region::Generic(name, _) => return format!("generic {}", name.as_str()),
+        }
+        .to_string()
     }
     fn format_generic_args(&self, args: impl IntoIterator<Item = &'a GenericArg>) -> String {
         self.format_multiple(args, &|arg| match arg {

@@ -98,7 +98,7 @@ impl Ident {
 const ALL_SYMBOLS: &[&str] = &["iter", "println", "Some", "None", "Option", "len", "panic"];
 
 pub mod symbols {
-    use crate::span::symbol::ALL_SYMBOLS;
+    use crate::span::symbol::{ALL_SYMBOLS, Symbol};
 
     const fn find_symbol_index(txt: &'static str) -> u32 {
         let mut i = 0;
@@ -111,4 +111,5 @@ pub mod symbols {
         }
         panic!("Found an unknown symbol.")
     }
+    pub const PANIC: Symbol = Symbol::new(find_symbol_index("panic"));
 }

@@ -105,7 +105,7 @@ pub enum PatternKind {
     Literal(LiteralKind),
     Tuple(Vec<Pattern>),
     Deref(Box<Pattern>),
-    Case(Resolution,Option<GenericArgs>, Vec<Pattern>),
+    Case(Resolution, Option<GenericArgs>, Vec<Pattern>),
     Binding(HirId, Symbol, Mutable, ByRef),
     Wildcard,
 }
@@ -210,8 +210,9 @@ pub struct GenericArgs {
 #[derive(Debug, Clone)]
 pub enum Region {
     Static,
-    Param(Ident,DefId),
-    Err
+    Param(Ident, DefId),
+    Var(Ident, HirId),
+    Err,
 }
 #[derive(Debug)]
 pub enum TypeKind {

@@ -48,13 +48,16 @@ impl<'a> TypeLower<'a> {
         self.ctxt.type_of(def.into()).instantiate(generic_args)
     }
     fn lower_region(&self, region: &hir::Region) -> Region {
-        match region{
+        match region {
             hir::Region::Err => Region::Err,
-            &hir::Region::Param(name,id) => Region::Generic(name.symbol,
-                    self.ctxt
-                        .generics_for(self.ctxt.expect_parent_of_def(id.into()))
-                        .expect_index(name.symbol)),
-            hir::Region::Static => Region::Static
+            hir::Region::Var(name, id) => Region::Local(name.symbol, *id),
+            &hir::Region::Param(name, id) => Region::Generic(
+                name.symbol,
+                self.ctxt
+                    .generics_for(self.ctxt.expect_parent_of_def(id.into()))
+                    .expect_index(name.symbol),
+            ),
+            hir::Region::Static => Region::Static,
         }
     }
     fn lower_generic_arg(&self, generic_arg: &hir::GenericArg) -> GenericArg {
@@ -82,10 +85,7 @@ impl<'a> TypeLower<'a> {
                                 GenericArg::Type(Type::Infer(infer.fresh_var(span)))
                             }
                             hir::GenericParamKind::Region => {
-                                self.ctxt
-                                    .diag()
-                                    .emit_diag("Cannot infer 'region' here.", span);
-                                GenericArg::Region(Region::Err)
+                                GenericArg::Region(Region::Infer(infer.fresh_region_var(span)))
                             }
                         })
                         .collect()
@@ -98,9 +98,7 @@ impl<'a> TypeLower<'a> {
                         .iter()
                         .map(|param| match param.kind {
                             hir::GenericParamKind::Type => GenericArg::Type(Type::Err),
-                            hir::GenericParamKind::Region => {
-                                GenericArg::Region(Region::Err)
-                            }
+                            hir::GenericParamKind::Region => GenericArg::Region(Region::Err),
                         })
                         .collect()
                 }
@@ -174,12 +172,15 @@ impl<'a> TypeLower<'a> {
                 }
             }
             hir::TypeKind::Array(element_ty) => Type::new_array(self.lower(element_ty)),
-            &hir::TypeKind::Ref(mutable, ref region, ref ty) => Type::new_ref(
-                self.lower(ty),
+            &hir::TypeKind::Ref(mutable, ref region, ref pointee) => Type::new_ref(
+                self.lower(&pointee),
                 region
                     .as_ref()
                     .map(|region| self.lower_region(&region))
-                    .unwrap_or(Region::Static),
+                    .unwrap_or_else(|| {
+                        self.ctxt.diag().emit_diag("Cannot infer region.", ty.span);
+                        Region::Err
+                    }),
                 mutable.into(),
             ),
             hir::TypeKind::Tuple(elements) => {

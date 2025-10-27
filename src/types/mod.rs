@@ -5,7 +5,7 @@ use crate::{
     define_id,
     frontend::{
         ast,
-        hir,
+        hir::{self, HirId},
         ty_infer::InferVar,
     },
     span::symbol::Symbol,
@@ -124,14 +124,18 @@ impl FromIterator<GenericArg> for GenericArgs {
         }
     }
 }
-#[derive(Clone, Debug, Eq,PartialEq)]
-pub enum Region{
+#[derive(Clone, Debug, Eq, PartialEq,Copy)]
+pub enum Region {
+    Infer(InferVar),
+    Local(Symbol, HirId),
     Static,
-    Generic(Symbol,u32),
+    Generic(Symbol, u32),
     Err,
 }
-impl Region{
-    pub const fn is_static(&self) -> bool { matches!(self,Region::Static)}
+impl Region {
+    pub const fn is_static(&self) -> bool {
+        matches!(self, Region::Static)
+    }
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Type {
@@ -152,7 +156,7 @@ impl Type {
     pub fn is_unit(&self) -> bool {
         matches!(self,Type::Tuple(elements) if elements.is_empty())
     }
-    pub fn is_infer(&self) -> bool{
+    pub fn is_infer(&self) -> bool {
         matches!(self, Type::Infer(_))
     }
     pub fn is_never(&self) -> bool {
@@ -163,6 +167,26 @@ impl Type {
     }
     pub fn format(&self, ctxt: CtxtRef) -> String {
         TypeFormat::new(ctxt).format_type(self)
+    }
+    pub fn region_vars(&self) -> FxHashSet<InferVar> {
+        struct InferVarCollect {
+            vars: FxHashSet<InferVar>,
+        }
+        impl TypeVisitor for InferVarCollect {
+            fn visit_region(&mut self, region: &Region) {
+                if let Region::Infer(var) = region {
+                    self.vars.insert(*var);
+                }
+            }
+            fn visit_ty(&mut self, ty: &Type) {
+                walk_ty(self, ty);
+            }
+        }
+        let mut vars_collect = InferVarCollect {
+            vars: FxHashSet::default(),
+        };
+        vars_collect.visit_ty(self);
+        vars_collect.vars
     }
     pub fn infer_vars(&self) -> FxHashSet<InferVar> {
         struct InferVarCollect {
@@ -273,6 +297,7 @@ impl Type {
 
 pub trait TypeVisitor {
     fn visit_ty(&mut self, ty: &Type);
+    fn visit_region(&mut self, _region: &Region) {}
 }
 pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
     match ty {
@@ -286,7 +311,10 @@ pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
             .iter()
             .filter_map(|arg| arg.as_ty())
             .for_each(|ty| v.visit_ty(ty)),
-        Type::Ref(ty, _, _) => v.visit_ty(ty),
+        Type::Ref(ty, region, _) => {
+            v.visit_ty(ty);
+            v.visit_region(region);
+        }
         Type::Generic(..) => (),
         Type::Infer(..) => (),
         Type::Err | Type::Primitive(_) => (),
@@ -374,10 +402,17 @@ impl TypeScheme {
         impl TypeMapper for InstanceArgs {
             type Error = InfallibleMap;
             fn map_region(&self, region: &Region) -> Result<Region, Self::Error> {
-                Ok(match region{
+                Ok(match region {
+                    Region::Local(name, id) => Region::Local(*name, *id),
                     Region::Err => Region::Err,
                     Region::Static => Region::Static,
-                    Region::Generic(_, index) => self.args.get(*index as usize).and_then(|arg| arg.as_region()).cloned().unwrap_or(Region::Static)
+                    Region::Infer(infer) => Region::Infer(*infer),
+                    Region::Generic(_, index) => self
+                        .args
+                        .get(*index as usize)
+                        .and_then(|arg| arg.as_region())
+                        .cloned()
+                        .unwrap_or(Region::Static),
                 })
             }
             fn map_ty(&self, ty: &Type) -> Result<Type, InfallibleMap> {

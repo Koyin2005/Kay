@@ -241,7 +241,7 @@ pub enum PatternKind {
     Grouped(Box<Pattern>),
     Literal(LiteralKind),
     Deref(Box<Pattern>),
-    Case(QualifiedName,Option<GenericArgs>, Vec<Pattern>),
+    Case(QualifiedName, Option<GenericArgs>, Vec<Pattern>),
     Wildcard,
 }
 #[derive(Debug, Clone)]
@@ -288,10 +288,16 @@ pub struct QualifiedName {
     pub head: PathSegment,
     pub tail: Vec<PathSegment>,
 }
+#[derive(Clone, Debug, Copy)]
+pub enum RegionKind {
+    Static,
+    Named(Ident),
+}
 #[derive(Clone, Debug)]
 pub struct Region {
+    pub span: Span,
     pub id: NodeId,
-    pub name : Ident
+    pub kind: RegionKind,
 }
 #[derive(Clone, Debug)]
 pub enum TypeKind {
@@ -358,5 +364,5 @@ pub struct GenericArgs {
 #[derive(Clone, Debug)]
 pub enum GenericArg {
     Type(Type),
-    Static,
+    Region(Region),
 }

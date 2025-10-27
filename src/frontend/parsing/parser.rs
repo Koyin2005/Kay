@@ -7,10 +7,10 @@ use crate::{
         ast::{
             BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef,
             GenericArg, GenericArgs, GenericParam, GenericParamKind, GenericParams, Item, ItemKind,
-            IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Region,
-            Param, PathSegment, Pattern, PatternKind, QualifiedName, Stmt, StmtKind, Struct,
-            StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant,
-            VariantCase, VariantField,
+            IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Param,
+            PathSegment, Pattern, PatternKind, QualifiedName, Region, RegionKind, Stmt, StmtKind,
+            Struct, StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind,
+            Variant, VariantCase, VariantField,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
     },
@@ -1067,8 +1067,8 @@ impl<'source> Parser<'source> {
         self.advance();
         let args: Vec<_> = self
             .parse_delimited_by(TokenKind::RightBracket, |this| {
-                Ok(if this.matches_current(TokenKind::Static) {
-                    GenericArg::Static
+                Ok(if this.check(TokenKind::Static) || this.check(TokenKind::Region) {
+                    GenericArg::Region(this.parse_region()?)
                 } else {
                     GenericArg::Type(this.parse_type()?)
                 })
@@ -1091,10 +1091,22 @@ impl<'source> Parser<'source> {
             Ok(None)
         }
     }
-    fn parse_region(&mut self) -> ParseResult<Region>{
-        let name = self.expect_ident("Expected a region.")?;
-        Ok(Region { id: self.new_id(), name })
-
+    fn parse_region(&mut self) -> ParseResult<Region> {
+        if let Some(token) = self.match_current(TokenKind::Static) {
+            Ok(Region {
+                id: self.new_id(),
+                kind: RegionKind::Static,
+                span: token.span,
+            })
+        } else {
+            self.match_current(TokenKind::Region);
+            let name = self.expect_ident("Expected a region.")?;
+            Ok(Region {
+                id: self.new_id(),
+                kind: RegionKind::Named(name),
+                span: name.span,
+            })
+        }
     }
     fn parse_type(&mut self) -> ParseResult<Type> {
         let start_span = self.current_token.span;
@@ -1144,9 +1156,9 @@ impl<'source> Parser<'source> {
                 } else {
                     Mutable::No
                 };
-                let region = if self.matches_current(TokenKind::LeftBracket) {
+                let region = if self.matches_current(TokenKind::LeftBrace) {
                     let region = self.parse_region();
-                    let _ = self.expect(TokenKind::RightBracket, "Expected ']' after place.",);
+                    let _ = self.expect(TokenKind::RightBrace, "Expected '}' after region.");
                     Some(region?)
                 } else {
                     None

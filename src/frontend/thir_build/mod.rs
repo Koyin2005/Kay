@@ -63,7 +63,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             let span = expr.span;
             match coercion {
                 Coercion::NeverToAny(ty) => {
-                    if !ty.is_never(){
+                    if !ty.is_never() {
                         let expr_id = self.body.exprs.push(expr);
                         expr = Expr {
                             ty: ty.clone(),
@@ -269,7 +269,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                 hir::PatternKind::Binding(id, name, is_mut, by_ref) => {
                     PatternKind::Binding(id, name, by_ref, is_mut)
                 }
-                hir::PatternKind::Case(res,_, ref fields) => {
+                hir::PatternKind::Case(res, _, ref fields) => {
                     let id = match self.results.get_res(pattern.id).unwrap_or_else(|| {
                         panic!(
                             "There should be a resolution for this pattern {} at {:?}.",

@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use pl5::{
-    Ast, AstLower, BorrowCheck, ItemCollect, Lexer, NodeId, Parser, PatCheck, Resolver,
-    SourceFiles, ThirBuild, TypeCheck,
+    Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, PatCheck, Resolver, SourceFiles, ThirBuild,
+    TypeCheck,
     config::{Config, ConfigError, SourceError},
     diagnostics::DiagnosticReporter,
 };
@@ -88,7 +88,6 @@ fn main() {
     }
     let mut thir = thir_build.finish();
     for body in thir.bodies.iter_mut() {
-        BorrowCheck::new(&body, context_ref).check();
         PatCheck::new(body, context_ref).check();
     }
     global_diagnostics.emit();

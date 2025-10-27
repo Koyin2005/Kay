@@ -78,6 +78,24 @@ impl<'diag> AstLower<'diag> {
             res: self.map_res(name.id).unwrap_or(hir::Resolution::Err),
         }
     }
+    fn lower_region(&self, region : &ast::Region) -> hir::Region{ 
+        match region.kind {
+            ast::RegionKind::Named(name) => {
+                self.map_res(region.id).map(|res| match res {
+                    hir::Resolution::Def(id, hir::DefKind::RegionParam) => {
+                        hir::Region::Param(name, id)
+                    }
+                    hir::Resolution::Variable(id) => hir::Region::Var(name, id),
+                    _ => {
+                        self.diag.emit_diag("Invalid region.", region.span);
+                        hir::Region::Err
+                    }
+                }).unwrap_or(hir::Region::Err)
+            }
+            ast::RegionKind::Static => hir::Region::Static,
+        }
+
+    }
     fn lower_generic_args(&self, args: &ast::GenericArgs) -> hir::GenericArgs {
         hir::GenericArgs {
             span: args.span,
@@ -87,17 +105,15 @@ impl<'diag> AstLower<'diag> {
                 .map(|arg| {
                     let ty = match arg {
                         ast::GenericArg::Type(ty) => ty,
-                        ast::GenericArg::Static => {
-                            return hir::GenericArg::Region(hir::Region::Static);
+                        ast::GenericArg::Region(region) => {
+                            return hir::GenericArg::Region(self.lower_region(region));
                         }
                     };
 
                     match &ty.kind {
                         ast::TypeKind::Named(name, args) => {
                             let path = self.lower_path(&name);
-                            if let hir::Resolution::Def(id, hir::DefKind::RegionParam) =
-                                path.res
-                            {
+                            if let hir::Resolution::Def(id, hir::DefKind::RegionParam) = path.res {
                                 if args.is_some() {
                                     self.diag.emit_diag(
                                         "Cannot have generic arguments here.",
@@ -139,17 +155,7 @@ impl<'diag> AstLower<'diag> {
                 ast::TypeKind::String => hir::TypeKind::Primitive(hir::PrimitiveType::String),
                 ast::TypeKind::Ref(mutable, region, ty) => hir::TypeKind::Ref(
                     *mutable,
-                    region.as_ref().and_then(|region| {
-                        self.map_res(region.id).map(|res| match res {
-                            hir::Resolution::Def(id, hir::DefKind::RegionParam) => {
-                                hir::Region::Param(region.name, id)
-                            }
-                            _ => {
-                                self.diag.emit_diag("Invalid region.", region.name.span);
-                                hir::Region::Err
-                            }
-                        })
-                    }),
+                    region.as_ref().map(|region| self.lower_region(region)),
                     Box::new(self.lower_ty(ty)),
                 ),
                 ast::TypeKind::Array(ty) => hir::TypeKind::Array(Box::new(self.lower_ty(ty))),
@@ -178,7 +184,7 @@ impl<'diag> AstLower<'diag> {
             };
         }
         match pattern.kind {
-            ast::PatternKind::Case(ref name,ref args, ref elements) => {
+            ast::PatternKind::Case(ref name, ref args, ref elements) => {
                 lower_pattern!(hir::PatternKind::Case(
                     self.map_res(name.id).unwrap_or(hir::Resolution::Err),
                     args.as_ref().map(|args| self.lower_generic_args(args)),
