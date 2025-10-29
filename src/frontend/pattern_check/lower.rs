@@ -6,7 +6,7 @@ use crate::frontend::{
 
 pub fn lower_pattern(pattern: &thir::Pattern) -> Pattern {
     match pattern.kind {
-        thir::PatternKind::Binding(_, _, _, _) | thir::PatternKind::Wilcard => Pattern {
+        thir::PatternKind::Binding(..) | thir::PatternKind::Wilcard => Pattern {
             ty: pattern.ty.clone(),
             constructor: Constructor::Wildcard,
             fields: vec![],

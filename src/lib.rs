@@ -11,8 +11,8 @@ pub use frontend::ast::NodeId;
 pub use frontend::parsing::{lexing::Lexer, parser::Parser};
 pub use frontend::thir_build::ThirBuild;
 pub use frontend::{
-    ast_lowering::AstLower, item_collect::ItemCollect, pattern_check::PatCheck,
-    resolution::resolve::Resolver, typecheck::function::TypeCheck,
+    ast_lowering::AstLower, item_collect::ItemCollect,
+    pattern_check::PatCheck, resolution::resolve::Resolver, typecheck::function::TypeCheck,
 };
 pub use span::SourceFiles;
 pub use span::SourceInfo;

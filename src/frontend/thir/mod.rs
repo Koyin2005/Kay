@@ -10,15 +10,22 @@ use crate::{
 };
 pub mod visit;
 define_id!(
+    #[derive(Debug)]
     pub struct ExprId {}
 );
 define_id!(
+    #[derive(Debug)]
+
     pub struct ArmId {}
 );
 define_id!(
+    #[derive(Debug)]
+
     pub struct StmtId {}
 );
 define_id!(
+    #[derive(Debug)]
+
     pub struct BlockId {}
 );
 pub struct Param {
@@ -59,7 +66,7 @@ pub struct Block {
 }
 pub enum PatternKind {
     Wilcard,
-    Binding(HirId, Symbol, ByRef, Mutable),
+    Binding(HirId, Symbol, ByRef, Mutable,Type),
     Case(DefId, GenericArgs, Box<[Pattern]>),
     Tuple(Box<[Pattern]>),
     Lit(LiteralKind),
@@ -69,6 +76,7 @@ pub struct Pattern {
     pub span: Span,
     pub kind: PatternKind,
 }
+#[derive(Debug)]
 pub struct Expr {
     pub ty: Type,
     pub span: Span,
@@ -86,10 +94,12 @@ pub enum StmtKind {
     Let(Box<Pattern>, ExprId),
     Expr(ExprId),
 }
+#[derive(Debug)]
 pub struct ExprField {
     pub field: FieldIndex,
     pub expr: ExprId,
 }
+#[derive(Debug)]
 pub enum ExprKind {
     Literal(LiteralKind),
     Match(ExprId, Box<[ArmId]>),

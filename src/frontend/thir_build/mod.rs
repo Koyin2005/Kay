@@ -267,7 +267,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             span: pattern.span,
             kind: match pattern.kind {
                 hir::PatternKind::Binding(id, name, is_mut, by_ref) => {
-                    PatternKind::Binding(id, name, by_ref, is_mut)
+                    PatternKind::Binding(id, name, by_ref, is_mut,self.results.get_local_type(id).clone())
                 }
                 hir::PatternKind::Case(res, _, ref fields) => {
                     let id = match self.results.get_res(pattern.id).unwrap_or_else(|| {

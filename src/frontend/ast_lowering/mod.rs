@@ -78,10 +78,11 @@ impl<'diag> AstLower<'diag> {
             res: self.map_res(name.id).unwrap_or(hir::Resolution::Err),
         }
     }
-    fn lower_region(&self, region : &ast::Region) -> hir::Region{ 
+    fn lower_region(&self, region: &ast::Region) -> hir::Region {
         match region.kind {
-            ast::RegionKind::Named(name) => {
-                self.map_res(region.id).map(|res| match res {
+            ast::RegionKind::Named(name) => self
+                .map_res(region.id)
+                .map(|res| match res {
                     hir::Resolution::Def(id, hir::DefKind::RegionParam) => {
                         hir::Region::Param(name, id)
                     }
@@ -90,11 +91,10 @@ impl<'diag> AstLower<'diag> {
                         self.diag.emit_diag("Invalid region.", region.span);
                         hir::Region::Err
                     }
-                }).unwrap_or(hir::Region::Err)
-            }
+                })
+                .unwrap_or(hir::Region::Err),
             ast::RegionKind::Static => hir::Region::Static,
         }
-
     }
     fn lower_generic_args(&self, args: &ast::GenericArgs) -> hir::GenericArgs {
         hir::GenericArgs {

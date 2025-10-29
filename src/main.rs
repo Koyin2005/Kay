@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use pl5::{
-    Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, PatCheck, Resolver, SourceFiles, ThirBuild,
-    TypeCheck,
+    Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, PatCheck, Resolver,
+    SourceFiles, ThirBuild, TypeCheck,
     config::{Config, ConfigError, SourceError},
     diagnostics::DiagnosticReporter,
 };

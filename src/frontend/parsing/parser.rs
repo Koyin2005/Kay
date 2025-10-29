@@ -1067,11 +1067,13 @@ impl<'source> Parser<'source> {
         self.advance();
         let args: Vec<_> = self
             .parse_delimited_by(TokenKind::RightBracket, |this| {
-                Ok(if this.check(TokenKind::Static) || this.check(TokenKind::Region) {
-                    GenericArg::Region(this.parse_region()?)
-                } else {
-                    GenericArg::Type(this.parse_type()?)
-                })
+                Ok(
+                    if this.check(TokenKind::Static) || this.check(TokenKind::Region) {
+                        GenericArg::Region(this.parse_region()?)
+                    } else {
+                        GenericArg::Type(this.parse_type()?)
+                    },
+                )
             })?
             .into();
         let end_span = self.current_token.span;

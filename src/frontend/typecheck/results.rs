@@ -16,6 +16,7 @@ pub struct TypeCheckResults {
     pub(super) resolutions: FxHashMap<HirId, Resolution>,
     pub(super) generic_args: FxHashMap<HirId, GenericArgs>,
     pub(super) fields: FxHashMap<HirId, FieldIndex>,
+    pub(super) local_types : FxHashMap<HirId,Type>,
     pub(super) had_error: bool,
 }
 impl TypeCheckResults {
@@ -43,5 +44,8 @@ impl TypeCheckResults {
     }
     pub fn get_generic_args(&self, id: HirId) -> Option<&GenericArgs> {
         self.generic_args.get(&id)
+    }
+    pub fn get_local_type(&self, id: HirId) -> &Type {
+        self.local_types.get(&id).expect("Expected a local")
     }
 }
