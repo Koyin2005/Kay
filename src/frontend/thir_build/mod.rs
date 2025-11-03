@@ -1,14 +1,16 @@
 use crate::{
     context::CtxtRef,
     frontend::{
+        ast::{BinaryOpKind, UnaryOpKind},
         hir::{self, DefId, DefKind, Definition, HirId, Resolution},
         thir::{
-            Arm, Block, Body, BodyInfo, Expr, ExprField, ExprId, ExprKind, LocalVar, Param,
-            Pattern, PatternKind, Stmt, StmtKind, Thir,
+            Arm, Block, Body, BodyInfo, Expr, ExprField, ExprId, ExprKind, LocalVar, LogicalOp,
+            Param, Pattern, PatternKind, Stmt, StmtKind, Thir, UnaryOp,
         },
         typecheck::{Coercion, results::TypeCheckResults},
     },
     indexvec::IndexVec,
+    mir,
     types::Type,
 };
 
@@ -128,9 +130,42 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             hir::ExprKind::Tuple(elements) => ExprKind::Tuple(self.lower_exprs(elements)),
             hir::ExprKind::Array(elements) => ExprKind::Array(self.lower_exprs(elements)),
             hir::ExprKind::Binary(op, left, right) => {
-                ExprKind::Binary(*op, self.lower_expr(&left), self.lower_expr(right))
+                let left = self.lower_expr(left);
+                let right = self.lower_expr(right);
+                match op.node {
+                    BinaryOpKind::Add => ExprKind::Binary(mir::BinaryOp::Add, left, right),
+                    BinaryOpKind::Subtract => {
+                        ExprKind::Binary(mir::BinaryOp::Subtract, left, right)
+                    }
+                    BinaryOpKind::Multiply => {
+                        ExprKind::Binary(mir::BinaryOp::Multiply, left, right)
+                    }
+                    BinaryOpKind::Divide => ExprKind::Binary(mir::BinaryOp::Divide, left, right),
+                    BinaryOpKind::Equals => ExprKind::Binary(mir::BinaryOp::Equals, left, right),
+                    BinaryOpKind::NotEquals => {
+                        ExprKind::Binary(mir::BinaryOp::NotEquals, left, right)
+                    }
+                    BinaryOpKind::LesserEquals => {
+                        ExprKind::Binary(mir::BinaryOp::LesserEquals, left, right)
+                    }
+                    BinaryOpKind::LesserThan => {
+                        ExprKind::Binary(mir::BinaryOp::LesserThan, left, right)
+                    }
+                    BinaryOpKind::GreaterEquals => {
+                        ExprKind::Binary(mir::BinaryOp::GreaterEquals, left, right)
+                    }
+                    BinaryOpKind::GreaterThan => {
+                        ExprKind::Binary(mir::BinaryOp::GreaterThan, left, right)
+                    }
+                    BinaryOpKind::And => ExprKind::Logical(LogicalOp::And, left, right),
+                    BinaryOpKind::Or => ExprKind::Logical(LogicalOp::Or, left, right),
+                }
             }
-            hir::ExprKind::Unary(op, operand) => ExprKind::Unary(*op, self.lower_expr(operand)),
+            hir::ExprKind::Unary(op, operand) => match op.node {
+                UnaryOpKind::Deref => ExprKind::Deref(self.lower_expr(operand)),
+                UnaryOpKind::Negate => ExprKind::Unary(UnaryOp::Negate, self.lower_expr(operand)),
+                UnaryOpKind::Ref(mutable) => ExprKind::Ref(mutable, self.lower_expr(operand)),
+            },
             hir::ExprKind::Index(receiver, index) => {
                 let reciever = self.lower_expr(receiver);
                 let index = self.lower_expr(index);
@@ -266,9 +301,13 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             ty,
             span: pattern.span,
             kind: match pattern.kind {
-                hir::PatternKind::Binding(id, name, is_mut, by_ref) => {
-                    PatternKind::Binding(id, name, by_ref, is_mut,self.results.get_local_type(id).clone())
-                }
+                hir::PatternKind::Binding(id, name, is_mut, by_ref) => PatternKind::Binding(
+                    id,
+                    name,
+                    by_ref,
+                    is_mut,
+                    self.results.get_local_type(id).clone(),
+                ),
                 hir::PatternKind::Case(res, _, ref fields) => {
                     let id = match self.results.get_res(pattern.id).unwrap_or_else(|| {
                         panic!(
@@ -282,9 +321,14 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                             unreachable!("This can only be a variant case")
                         }
                     };
+                    let case = self
+                        .ctxt
+                        .type_def(self.ctxt.expect_parent(id).into())
+                        .index_of_case_with_id(id.into());
                     let generic_args = self.results.get_generic_args_or_empty(pattern.id).clone();
                     PatternKind::Case(
                         id,
+                        case,
                         generic_args,
                         fields
                             .iter()

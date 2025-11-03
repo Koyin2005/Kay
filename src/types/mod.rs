@@ -307,12 +307,10 @@ pub fn walk_ty(v: &mut impl TypeVisitor, ty: &Type) {
             .iter()
             .chain(std::iter::once(&**return_ty))
             .for_each(|ty| v.visit_ty(ty)),
-        Type::Nominal(_, args) => args
-            .iter()
-            .for_each(|arg| match arg {
-                GenericArg::Region(region) => v.visit_region(region),
-                GenericArg::Type(ty) => v.visit_ty(ty)
-            }),
+        Type::Nominal(_, args) => args.iter().for_each(|arg| match arg {
+            GenericArg::Region(region) => v.visit_region(region),
+            GenericArg::Type(ty) => v.visit_ty(ty),
+        }),
         Type::Ref(ty, region, _) => {
             v.visit_ty(ty);
             v.visit_region(region);

@@ -1,12 +1,13 @@
 use crate::{
     define_id,
     frontend::{
-        ast::{BinaryOp, ByRef, LiteralKind, Mutable, UnaryOp},
+        ast::{ByRef, LiteralKind, Mutable},
         hir::{DefId, Definition, HirId},
     },
     indexvec::IndexVec,
+    mir,
     span::{Span, symbol::Symbol},
-    types::{FieldIndex, GenericArgs, Type},
+    types::{FieldIndex, GenericArgs, Type, VariantCaseIndex},
 };
 pub mod visit;
 define_id!(
@@ -66,8 +67,8 @@ pub struct Block {
 }
 pub enum PatternKind {
     Wilcard,
-    Binding(HirId, Symbol, ByRef, Mutable,Type),
-    Case(DefId, GenericArgs, Box<[Pattern]>),
+    Binding(HirId, Symbol, ByRef, Mutable, Type),
+    Case(DefId, VariantCaseIndex, GenericArgs, Box<[Pattern]>),
     Tuple(Box<[Pattern]>),
     Lit(LiteralKind),
 }
@@ -99,13 +100,25 @@ pub struct ExprField {
     pub field: FieldIndex,
     pub expr: ExprId,
 }
+#[derive(Debug, Clone, Copy)]
+pub enum LogicalOp {
+    And,
+    Or,
+}
+#[derive(Debug, Clone, Copy)]
+pub enum UnaryOp {
+    Negate,
+}
 #[derive(Debug)]
 pub enum ExprKind {
     Literal(LiteralKind),
     Match(ExprId, Box<[ArmId]>),
     Call(ExprId, Box<[ExprId]>),
-    Binary(BinaryOp, ExprId, ExprId),
+    Binary(mir::BinaryOp, ExprId, ExprId),
+    Logical(LogicalOp, ExprId, ExprId),
     Unary(UnaryOp, ExprId),
+    Deref(ExprId),
+    Ref(Mutable, ExprId),
     Index(ExprId, ExprId),
     Loop(ExprId),
     Field {

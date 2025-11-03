@@ -1,10 +1,10 @@
 use crate::{
     context::TypeDefKind,
     frontend::{
-        hir::{DefId, Definition, PrimitiveType},
+        hir::{Definition, PrimitiveType},
         pattern_analysis::PatternContext,
     },
-    types::Type,
+    types::{Type, VariantCaseIndex},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -15,7 +15,7 @@ pub enum Constructor {
     Ref,
     Unknown,
     NonExhaustive,
-    Case(DefId),
+    Case(VariantCaseIndex),
     Wildcard,
 }
 impl Constructor {
@@ -73,7 +73,8 @@ impl PatternContext<'_> {
                 }
                 TypeDefKind::Variant(cases) => cases
                     .iter()
-                    .filter_map(|&(Definition::Def(id), ref case)| {
+                    .enumerate()
+                    .filter_map(|(i, (Definition::Def(_), case))| {
                         if case.fields.iter().any(|field| {
                             !self.ctxt.is_inhabited(
                                 &self.ctxt.type_of(field.id).instantiate(args.clone()),
@@ -82,7 +83,7 @@ impl PatternContext<'_> {
                             return None;
                         }
                         Some((
-                            Constructor::Case(id),
+                            Constructor::Case(VariantCaseIndex::new(i)),
                             case.fields
                                 .iter()
                                 .map(|field| self.ctxt.type_of(field.id).instantiate(args.clone()))

@@ -43,10 +43,13 @@ pub fn walk_expr<'thir, 'a>(v: &mut impl Visitor<'a>, expr: &'thir thir::Expr) {
             field_span: _,
         }
         | &ExprKind::Unary(_, expr)
+        | &ExprKind::Deref(expr)
+        | &ExprKind::Ref(_, expr)
         | &ExprKind::Loop(expr) => v.visit_expr(v.body().expr(expr)),
         &ExprKind::Assign(first, second)
         | &ExprKind::Index(first, second)
-        | &ExprKind::Binary(_, first, second) => {
+        | &ExprKind::Binary(_, first, second)
+        | &ExprKind::Logical(_, first, second) => {
             v.visit_expr(v.body().expr(first));
             v.visit_expr(v.body().expr(second));
         }

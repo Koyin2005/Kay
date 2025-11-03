@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use pl5::{
-    Ast, AstLower, ItemCollect, Lexer, NodeId, Parser, PatCheck, Resolver,
-    SourceFiles, ThirBuild, TypeCheck,
+    Ast, AstLower, ItemCollect, Lexer, MirBuilder, NodeId, Parser, PatCheck, Resolver, SourceFiles,
+    ThirBuild, TypeCheck,
     config::{Config, ConfigError, SourceError},
     diagnostics::DiagnosticReporter,
 };
@@ -89,6 +89,7 @@ fn main() {
     let mut thir = thir_build.finish();
     for body in thir.bodies.iter_mut() {
         PatCheck::new(body, context_ref).check();
+        MirBuilder::new(body, context_ref).build();
     }
     global_diagnostics.emit();
 }

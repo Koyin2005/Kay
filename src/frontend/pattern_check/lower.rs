@@ -11,9 +11,9 @@ pub fn lower_pattern(pattern: &thir::Pattern) -> Pattern {
             constructor: Constructor::Wildcard,
             fields: vec![],
         },
-        thir::PatternKind::Case(id, _, ref fields) => Pattern {
+        thir::PatternKind::Case(_, case, _, ref fields) => Pattern {
             ty: pattern.ty.clone(),
-            constructor: Constructor::Case(id),
+            constructor: Constructor::Case(case),
             fields: fields.iter().map(lower_pattern).collect(),
         },
         thir::PatternKind::Tuple(ref fields) => Pattern {

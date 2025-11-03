@@ -59,7 +59,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 resolutions: FxHashMap::default(),
                 generic_args: FxHashMap::default(),
                 fields: FxHashMap::default(),
-                local_types : FxHashMap::default(),
+                local_types: FxHashMap::default(),
                 had_error: false,
             }),
         })
@@ -1246,8 +1246,10 @@ impl<'ctxt> TypeCheck<'ctxt> {
             let norm_ty = self.infer_ctxt.normalize(ty);
             *ty = norm_ty;
         }
-        for local in self.locals.into_inner(){
-            results.local_types.insert(local.0, self.infer_ctxt.normalize(&local.1.ty));
+        for local in self.locals.into_inner() {
+            results
+                .local_types
+                .insert(local.0, self.infer_ctxt.normalize(&local.1.ty));
         }
         results
     }

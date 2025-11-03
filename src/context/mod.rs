@@ -28,9 +28,29 @@ pub enum TypeDefKind {
     Struct(TypeDefCase),
 }
 pub struct TypeDef {
+    id: DefId,
     pub kind: TypeDefKind,
 }
 impl TypeDef {
+    pub fn index_of_case_with_id(&self, id: DefId) -> VariantCaseIndex {
+        match &self.kind {
+            TypeDefKind::Struct(_) if self.id == id => VariantCaseIndex::new(0),
+            TypeDefKind::Variant(cases) => cases
+                .iter()
+                .position(|(Definition::Def(case_id), _)| *case_id == id)
+                .map(VariantCaseIndex::new)
+                .unwrap_or_else(|| unreachable!("Can only have valid indices")),
+            _ => unreachable!("Can only have valid ids"),
+        }
+    }
+    pub fn cases(&self) -> IndexVec<VariantCaseIndex, (Definition, &TypeDefCase)> {
+        match &self.kind {
+            TypeDefKind::Struct(struct_case) => [(Definition::Def(self.id), struct_case)]
+                .into_iter()
+                .collect(),
+            TypeDefKind::Variant(cases) => cases.iter().map(|(def, case)| (*def, case)).collect(),
+        }
+    }
     pub fn as_struct(&self) -> Option<&TypeDefCase> {
         match &self.kind {
             TypeDefKind::Struct(struct_case) => Some(struct_case),
@@ -210,6 +230,7 @@ impl<'hir> GlobalContext<'hir> {
                     panic!("Expected type def for {:?}.", id)
                 };
                 TypeDef {
+                    id,
                     kind: match &type_def.kind {
                         hir::TypeDefKind::Struct(struct_def) => TypeDefKind::Struct(TypeDefCase {
                             fields: struct_def

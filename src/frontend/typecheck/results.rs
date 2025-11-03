@@ -16,7 +16,7 @@ pub struct TypeCheckResults {
     pub(super) resolutions: FxHashMap<HirId, Resolution>,
     pub(super) generic_args: FxHashMap<HirId, GenericArgs>,
     pub(super) fields: FxHashMap<HirId, FieldIndex>,
-    pub(super) local_types : FxHashMap<HirId,Type>,
+    pub(super) local_types: FxHashMap<HirId, Type>,
     pub(super) had_error: bool,
 }
 impl TypeCheckResults {

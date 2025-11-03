@@ -35,16 +35,21 @@ impl Pattern {
             Constructor::Bool(value) => value.to_string(),
             Constructor::Int(value) => value.to_string(),
             Constructor::Ref => format!("ref {}", self.fields[0].format(ctxt)),
-            Constructor::Case(name) => {
+            Constructor::Case(case) => {
                 let &Type::Nominal(id, _) = &self.ty else {
                     unreachable!("Cannot use this with non-adt")
                 };
+                let case_id = ctxt.type_def(id).cases()[case].0.into();
                 let mut txt = format!(
                     "{}.{}",
                     ctxt.symbol(id).as_str(),
-                    ctxt.symbol(name.into()).as_str()
+                    ctxt.symbol(case_id).as_str()
                 );
-                if ctxt.expect_variant_case_node(name).fields.is_some() {
+                if ctxt
+                    .expect_variant_case_node(case_id.into())
+                    .fields
+                    .is_some()
+                {
                     txt.push('(');
                     for field in self.fields.iter() {
                         txt.push_str(&format!("{}{}", start_or_comma(), field.format(ctxt)));
