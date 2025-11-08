@@ -37,7 +37,7 @@ pub struct TypeCheck<'ctxt> {
     return_type: Type,
     infer_ctxt: TypeInfer,
     loop_coerce: RefCell<Option<Coerce>>,
-    region_counter : Cell<u32>,
+    region_counter: Cell<u32>,
     locals: RefCell<FxHashMap<HirId, LocalInfo>>,
     results: RefCell<TypeCheckResults>,
 }
@@ -48,7 +48,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         Some(Self {
             context,
             body,
-            region_counter : Cell::new(0),
+            region_counter: Cell::new(0),
             infer_ctxt: TypeInfer::new(),
             param_types: params,
             return_type: return_ty,
@@ -75,8 +75,8 @@ impl<'ctxt> TypeCheck<'ctxt> {
     fn local_ty(&self, id: HirId) -> Type {
         self.locals.borrow()[&id].ty.clone()
     }
-    fn fresh_region(&self) -> Region{
-        Region::Local(self.region_counter.replace(self.region_counter.get()+1))
+    fn fresh_region(&self) -> Region {
+        Region::Local(self.region_counter.replace(self.region_counter.get() + 1))
     }
     fn err(&self, msg: impl IntoDiagnosticMessage, span: Span) -> Type {
         self.diag().emit_diag(msg, span);
@@ -217,7 +217,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 } else {
                     self.check_expr(expr, None)
                 };
-                self.check_pattern(pat, Some(&ty),false);
+                self.check_pattern(pat, Some(&ty), false);
             }
         }
     }
@@ -766,11 +766,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 }
             }
         };
-        self.check_pattern(
-            pat,
-            Some(item_ty.as_ref().unwrap_or(&Type::Err)),
-            false,
-        );
+        self.check_pattern(pat, Some(item_ty.as_ref().unwrap_or(&Type::Err)), false);
         self.check_block(body, Some(&Type::new_unit()));
         Type::new_unit()
     }
@@ -981,12 +977,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             Some(expected_ty) => self.expect_ty(&ty, expected_ty, expr.span),
         }
     }
-    fn check_pattern(
-        &self,
-        pat: &Pattern,
-        expected_ty: Option<&Type>,
-        from_param: bool,
-    ) -> Type {
+    fn check_pattern(&self, pat: &Pattern, expected_ty: Option<&Type>, from_param: bool) -> Type {
         let ty = match &pat.kind {
             &PatternKind::Binding(id, name, mutable, by_ref) => {
                 let mutable = IsMutable::from(mutable);

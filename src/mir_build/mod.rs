@@ -215,9 +215,37 @@ impl<'a> MirBuilder<'a> {
         left: Value,
         right: Value,
     ) -> Rvalue {
+        let mut build_op = |op, op_with_overflow, left: Value, right: Value| {
+            let result_tmp =
+                self.new_temp(Type::new_tuple_from_iter([ty.clone(), Type::new_bool()]));
+            self.push_assign(
+                result_tmp.into(),
+                Rvalue::Binary(op_with_overflow, Box::new((left.clone(), right.clone()))),
+                span,
+            );
+            let has_overflow = PlaceBuilder::new(result_tmp)
+                .field(FieldIndex::new(1))
+                .to_place();
+            let target_block = self.new_block();
+            self.assert(
+                span,
+                AssertMessage::NoOverflow(op, left, right),
+                Value::Load(has_overflow),
+                false,
+                target_block,
+            );
+            let result_place = PlaceBuilder::new(result_tmp)
+                .field(FieldIndex::new(0))
+                .to_place();
+            Rvalue::Use(Value::Load(result_place))
+        };
         match op {
-            mir::BinaryOp::Add | mir::BinaryOp::Subtract | mir::BinaryOp::Multiply => {
-                todo!("Overflowing ops")
+            mir::BinaryOp::Add => build_op(op, mir::BinaryOp::AddWithOverflow, left, right),
+            mir::BinaryOp::Subtract => {
+                build_op(op, mir::BinaryOp::SubtractWithOverflow, left, right)
+            }
+            mir::BinaryOp::Multiply => {
+                build_op(op, mir::BinaryOp::MultiplyWithOverflow, left, right)
             }
             mir::BinaryOp::Divide => {
                 //Check for right = 0
@@ -298,7 +326,10 @@ impl<'a> MirBuilder<'a> {
             | mir::BinaryOp::GreaterEquals
             | mir::BinaryOp::LesserEquals
             | mir::BinaryOp::LesserThan
-            | mir::BinaryOp::GreaterThan => Rvalue::Binary(op, Box::new((left, right))),
+            | mir::BinaryOp::GreaterThan
+            | mir::BinaryOp::AddWithOverflow
+            | mir::BinaryOp::MultiplyWithOverflow
+            | mir::BinaryOp::SubtractWithOverflow => Rvalue::Binary(op, Box::new((left, right))),
         }
     }
     fn as_value(&mut self, expr: ExprId) -> Value {
@@ -410,10 +441,18 @@ impl<'a> MirBuilder<'a> {
                 )
             }
             thir::ExprKind::VariantCase {
-                case_id,
+                type_id,
+                case_index,
                 generic_args,
                 fields,
-            } => todo!("Variant case"),
+            } => Rvalue::Aggregate(
+                Box::new(mir::AggregateKind::Variant {
+                    type_id: *type_id,
+                    args: generic_args.clone(),
+                    case_index: *case_index,
+                }),
+                fields.iter().map(|field| self.as_value(*field)).collect(),
+            ),
         }
     }
     fn lower_expr_as_place(&mut self, expr_id: ExprId) -> PlaceBuilder {

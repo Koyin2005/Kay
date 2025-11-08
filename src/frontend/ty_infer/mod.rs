@@ -128,9 +128,7 @@ impl TypeInfer {
                 Ok(Region::Generic(*name, *index))
             }
 
-            (Region::Local(index), Region::Local(other_index))
-                if index == other_index =>
-            {
+            (Region::Local(index), Region::Local(other_index)) if index == other_index => {
                 Ok(Region::Local(*index))
             }
             (Region::Infer(var), region) | (region, Region::Infer(var)) => {

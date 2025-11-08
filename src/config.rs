@@ -42,7 +42,6 @@ fn try_as_file_path(path: &Path) -> Option<FilePath> {
     }
 }
 pub struct Config {
-    file_path: FilePath,
     kind: PathKind,
 }
 impl Config {
@@ -58,7 +57,6 @@ impl Config {
             return Err(ConfigError::FileDoesNotExist(file_name.to_string()));
         }
         Ok(Self {
-            file_path: try_as_file_path(path).ok_or(ConfigError::InvalidFile)?,
             kind: if path.is_dir() {
                 PathKind::Folder({
                     let dir = std::fs::read_dir(path).expect("Should be a valid file.");

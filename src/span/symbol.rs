@@ -113,8 +113,6 @@ pub mod symbols {
         }
         panic!("Found an unknown symbol.")
     }
-    pub const ITER: Symbol = Symbol::new(find_symbol_index("iter"));
-    pub const ITER_END: Symbol = Symbol::new(find_symbol_index("iter_end"));
     pub const PANIC: Symbol = Symbol::new(find_symbol_index("panic"));
     pub const LEN: Symbol = Symbol::new(find_symbol_index("len"));
     pub const BUILTINS: Symbol = Symbol::new(find_symbol_index("builtins"));

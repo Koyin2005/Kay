@@ -128,8 +128,9 @@ pub enum ExprKind {
     },
     Var(LocalVar),
     VariantCase {
-        case_id: DefId,
+        type_id: DefId,
         generic_args: GenericArgs,
+        case_index: VariantCaseIndex,
         fields: Box<[ExprId]>,
     },
     Struct {

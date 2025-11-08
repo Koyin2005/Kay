@@ -809,12 +809,12 @@ impl<'diag> AstLower<'diag> {
         }
         self.items.extend(items);
         self.diag.emit();
-        let (def_info,builtins) = self.resolution_results.get_def_info_and_builtins();
+        let (def_info, builtins) = self.resolution_results.get_def_info_and_builtins();
         Hir {
             items: self.items,
             bodies: self.bodies,
             def_info,
-            builtins
+            builtins,
         }
     }
 }

@@ -1,12 +1,14 @@
 use indexmap::IndexMap;
 
 use crate::{
-    builtins::Builtins, define_id, frontend::{
-        ast::{BinaryOp, ByRef, LiteralKind, Mutable, UnaryOp},
-    }, indexvec::IndexVec, span::{
+    builtins::Builtins,
+    define_id,
+    frontend::ast::{BinaryOp, ByRef, LiteralKind, Mutable, UnaryOp},
+    indexvec::IndexVec,
+    span::{
         Span,
         symbol::{Ident, Symbol},
-    }
+    },
 };
 #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq)]
 pub enum IntType {
@@ -307,7 +309,7 @@ pub struct Hir {
     pub items: IndexMap<DefId, Item>,
     pub bodies: IndexMap<HirId, Body>,
     pub def_info: IndexVec<DefId, DefInfo>,
-    pub builtins : Builtins
+    pub builtins: Builtins,
 }
 #[derive(Debug)]
 pub struct DefInfo {

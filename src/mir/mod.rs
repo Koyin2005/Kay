@@ -1,7 +1,4 @@
-use std::{
-    fmt::Display,
-    hash::Hash,
-};
+use std::{fmt::Display, hash::Hash};
 
 use crate::{
     context::{CtxtRef, TypeDefKind},
@@ -155,10 +152,18 @@ pub enum BorrowKind {
     ReadWrite,
 }
 #[derive(Debug, Clone, Copy)]
+pub enum BinaryOpKind {
+    Overflowing,
+    None,
+}
+#[derive(Debug, Clone, Copy)]
 pub enum BinaryOp {
     Add,
+    AddWithOverflow,
     Subtract,
+    SubtractWithOverflow,
     Multiply,
+    MultiplyWithOverflow,
     Divide,
     Equals,
     NotEquals,
@@ -172,14 +177,14 @@ pub enum BinaryOp {
 impl BinaryOp {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Add => "+",
+            Self::Add | Self::AddWithOverflow => "+",
+            Self::Subtract | Self::SubtractWithOverflow => "-",
+            Self::Multiply | Self::MultiplyWithOverflow => "*",
             Self::Divide => "/",
             Self::Equals => "==",
             Self::GreaterEquals => ">=",
             Self::LesserEquals => "<=",
-            Self::Multiply => "*",
             Self::NotEquals => "!=",
-            Self::Subtract => "-",
             Self::LesserThan => "<",
             Self::GreaterThan => ">",
             Self::And => "&",
@@ -197,6 +202,11 @@ pub enum AggregateKind {
     Array,
     Tuple,
     Struct(DefId, GenericArgs),
+    Variant {
+        type_id: DefId,
+        args: GenericArgs,
+        case_index: VariantCaseIndex,
+    },
 }
 #[derive(Debug, Clone)]
 pub enum Rvalue {

@@ -29,8 +29,8 @@ impl ResolveResults {
     pub fn get_resolution(&self, id: NodeId) -> Option<Resolution<NodeId>> {
         self.resolutions.get(&id).copied()
     }
-    pub fn get_def_info_and_builtins(self) -> (IndexVec<DefId, DefInfo>,Builtins) {
-        (self.info,self.builtins)
+    pub fn get_def_info_and_builtins(self) -> (IndexVec<DefId, DefInfo>, Builtins) {
+        (self.info, self.builtins)
     }
 }
 pub struct Resolver<'source> {

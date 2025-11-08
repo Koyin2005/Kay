@@ -3,11 +3,7 @@ use std::{fmt::Debug, hash::Hash};
 use crate::{
     context::CtxtRef,
     define_id,
-    frontend::{
-        ast,
-        hir::{self, HirId},
-        ty_infer::InferVar,
-    },
+    frontend::{ast, hir, ty_infer::InferVar},
     span::symbol::Symbol,
     types::format::TypeFormat,
 };

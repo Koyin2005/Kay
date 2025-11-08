@@ -253,6 +253,36 @@ impl<'body> DebugMir<'body> {
                                 format_fields(self, &ty);
                                 self.write_char('}');
                             }
+                            AggregateKind::Variant {
+                                type_id,
+                                args,
+                                case_index,
+                            } => {
+                                self.write(self.ctxt.ident(*type_id).symbol.as_str());
+                                self.write_char('.');
+                                self.write(
+                                    self.ctxt
+                                        .ident(
+                                            self.ctxt.type_def((*type_id).into()).cases()
+                                                [*case_index]
+                                                .0
+                                                .into(),
+                                        )
+                                        .symbol
+                                        .as_str(),
+                                );
+                                if !args.is_empty() {
+                                    self.write_char('[');
+                                    self.write(
+                                        &TypeFormat::new(self.ctxt).format_generic_args(args),
+                                    );
+                                    self.write_char(']');
+                                }
+                                self.write_space();
+                                self.write_char('(');
+                                format_fields(self, &ty);
+                                self.write_char(')');
+                            }
                         }
                     }
                 }

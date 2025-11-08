@@ -240,8 +240,14 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                     _ => None,
                 };
                 if let Some((id, generic_args)) = variant_case {
+                    let parent_id = self.ctxt.expect_parent(id);
+                    let case_index = self
+                        .ctxt
+                        .type_def(parent_id.into())
+                        .index_of_case_with_id(id.into());
                     ExprKind::VariantCase {
-                        case_id: id,
+                        type_id: parent_id,
+                        case_index,
                         generic_args: generic_args.clone(),
                         fields: self.lower_exprs(args),
                     }
