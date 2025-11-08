@@ -86,7 +86,6 @@ impl<'diag> AstLower<'diag> {
                     hir::Resolution::Def(id, hir::DefKind::RegionParam) => {
                         hir::Region::Param(name, id)
                     }
-                    hir::Resolution::Variable(id) => hir::Region::Var(name, id),
                     _ => {
                         self.diag.emit_diag("Invalid region.", region.span);
                         hir::Region::Err

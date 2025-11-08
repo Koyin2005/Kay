@@ -1,7 +1,6 @@
 use std::{
-    fmt::{Display, Write},
+    fmt::Display,
     hash::Hash,
-    str::FromStr,
 };
 
 use crate::{
@@ -10,7 +9,7 @@ use crate::{
     frontend::hir::DefId,
     indexvec::{Idx, IndexVec},
     span::{Span, symbol::Symbol},
-    types::{FieldIndex, GenericArgs, Region, Type, VariantCaseIndex},
+    types::{FieldIndex, GenericArgs, Type, VariantCaseIndex},
 };
 
 define_id! {

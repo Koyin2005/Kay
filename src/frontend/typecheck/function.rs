@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use fxhash::{FxHashMap, FxHashSet};
 use indexmap::IndexSet;
@@ -37,6 +37,7 @@ pub struct TypeCheck<'ctxt> {
     return_type: Type,
     infer_ctxt: TypeInfer,
     loop_coerce: RefCell<Option<Coerce>>,
+    region_counter : Cell<u32>,
     locals: RefCell<FxHashMap<HirId, LocalInfo>>,
     results: RefCell<TypeCheckResults>,
 }
@@ -47,6 +48,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         Some(Self {
             context,
             body,
+            region_counter : Cell::new(0),
             infer_ctxt: TypeInfer::new(),
             param_types: params,
             return_type: return_ty,
@@ -72,6 +74,9 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn local_ty(&self, id: HirId) -> Type {
         self.locals.borrow()[&id].ty.clone()
+    }
+    fn fresh_region(&self) -> Region{
+        Region::Local(self.region_counter.replace(self.region_counter.get()+1))
     }
     fn err(&self, msg: impl IntoDiagnosticMessage, span: Span) -> Type {
         self.diag().emit_diag(msg, span);
@@ -212,8 +217,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 } else {
                     self.check_expr(expr, None)
                 };
-                let region = self.get_region(&expr);
-                self.check_pattern(pat, Some(&ty), region, false);
+                self.check_pattern(pat, Some(&ty),false);
             }
         }
     }
@@ -229,29 +233,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
             }
         } else {
             Type::new_unit()
-        }
-    }
-    fn get_region(&self, pointee: &Expr) -> Option<Region> {
-        match &pointee.kind {
-            &ExprKind::Path(
-                Path {
-                    id: _,
-                    res: Resolution::Variable(id),
-                },
-                _,
-            ) => Some(Region::Local(self.locals.borrow()[&id].name, id)),
-            ExprKind::Field(expr, _) | ExprKind::Index(expr, _) | ExprKind::Ascribe(expr, _) => {
-                self.get_region(expr)
-            }
-            ExprKind::Unary(op, expr) if op.node == UnaryOpKind::Deref => {
-                let ty = self.results.borrow().type_of(expr.id);
-                if let Type::Ref(_, region, _) = ty {
-                    Some(region)
-                } else {
-                    None
-                }
-            }
-            _ => None,
         }
     }
     fn check_unary(&self, op: UnaryOp, operand: &Expr, expected_ty: Option<&Type>) -> Type {
@@ -274,10 +255,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 } else {
                     self.check_expr(operand, expected_ty)
                 };
-                let region = self.get_region(operand).unwrap_or_else(|| {
-                    self.err("Cannot take reference.", operand.span);
-                    Region::Err
-                });
+                let region = self.fresh_region();
                 Type::new_ref(ty, region, mutable.into())
             }
             UnaryOpKind::Deref => {
@@ -788,14 +766,9 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 }
             }
         };
-        let region = match iterator {
-            hir::Iterator::Expr(_, expr) => self.get_region(&expr),
-            _ => None,
-        };
         self.check_pattern(
             pat,
             Some(item_ty.as_ref().unwrap_or(&Type::Err)),
-            region,
             false,
         );
         self.check_block(body, Some(&Type::new_unit()));
@@ -866,7 +839,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
 
     fn check_match(&self, scrutinee: &Expr, arms: &[MatchArm], expected_ty: Option<&Type>) -> Type {
         let scrut_ty = self.check_expr(scrutinee, None);
-        let region = self.get_region(scrutinee);
         let mut coerce = Coerce::new(expected_ty.cloned());
         for MatchArm {
             id: _,
@@ -875,7 +847,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             body,
         } in arms
         {
-            self.check_pattern(pat, Some(&scrut_ty), region, false);
+            self.check_pattern(pat, Some(&scrut_ty), false);
             let body_ty = self.check_expr_with_hint(body, expected_ty);
             coerce.add_expr_and_ty(body, body_ty, self);
         }
@@ -1013,7 +985,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
         &self,
         pat: &Pattern,
         expected_ty: Option<&Type>,
-        region: Option<Region>,
         from_param: bool,
     ) -> Type {
         let ty = match &pat.kind {
@@ -1027,19 +998,13 @@ impl<'ctxt> TypeCheck<'ctxt> {
                         pat.span,
                     )
                 };
-                let get_region = || {
-                    region.unwrap_or_else(|| {
-                        self.err("Cannot take reference.", pat.span);
-                        Region::Err
-                    })
-                };
                 let (local_ty, mutable) = match (by_ref, mutable) {
                     (ByRef::Yes(_), IsMutable::Yes) => (
-                        Type::new_ref(ty.clone(), get_region(), IsMutable::Yes),
+                        Type::new_ref(ty.clone(), self.fresh_region(), IsMutable::Yes),
                         IsMutable::Yes,
                     ),
                     (ByRef::Yes(_), IsMutable::No) => (
-                        Type::new_ref(ty.clone(), get_region(), IsMutable::No),
+                        Type::new_ref(ty.clone(), self.fresh_region(), IsMutable::No),
                         IsMutable::No,
                     ),
                     (ByRef::No, mutable) => (ty.clone(), mutable),
@@ -1079,7 +1044,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     &[]
                 };
                 Type::new_tuple_from_iter(fields.iter().enumerate().map(|(i, field_pat)| {
-                    self.check_pattern(field_pat, field_tys.get(i), region, from_param)
+                    self.check_pattern(field_pat, field_tys.get(i), from_param)
                 }))
             }
             PatternKind::Literal(lit) => match lit {
@@ -1160,7 +1125,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
                                 self.context.type_of(field.id).instantiate(generic_args)
                             })
                             .as_ref(),
-                        region,
                         from_param,
                     );
                 }
@@ -1178,7 +1142,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     pub fn check(self) -> TypeCheckResults {
         for (param, ty) in self.body.params.iter().zip(self.param_types.iter()) {
-            self.check_pattern(&param.pat, Some(ty), None, true);
+            self.check_pattern(&param.pat, Some(ty), true);
         }
         self.check_expr_coerces_to(&self.body.value, &self.return_type);
         let mut incomplete_vars = FxHashSet::default();

@@ -29,7 +29,7 @@ impl<'a> TypeFormat<'a> {
     }
     pub fn format_region(&self, region: &Region) -> String {
         match region {
-            Region::Local(name, id) => return format!("{}{id:?}", name.as_str()),
+            Region::Local(index) => return format!("local{index:?}"),
             Region::Static => "static",
             Region::Infer(_) => "_",
             Region::Err => "{unknown}",

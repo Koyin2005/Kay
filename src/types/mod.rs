@@ -127,7 +127,7 @@ impl FromIterator<GenericArg> for GenericArgs {
 #[derive(Clone, Debug, Eq, PartialEq, Copy, Hash)]
 pub enum Region {
     Infer(InferVar),
-    Local(Symbol, HirId),
+    Local(u32),
     Static,
     Generic(Symbol, u32),
     Err,
@@ -403,7 +403,7 @@ impl TypeScheme {
             type Error = InfallibleMap;
             fn map_region(&self, region: &Region) -> Result<Region, Self::Error> {
                 Ok(match region {
-                    Region::Local(name, id) => Region::Local(*name, *id),
+                    Region::Local(index) => Region::Local(*index),
                     Region::Err => Region::Err,
                     Region::Static => Region::Static,
                     Region::Infer(infer) => Region::Infer(*infer),

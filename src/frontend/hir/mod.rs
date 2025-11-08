@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use crate::{
     builtins::Builtins, define_id, frontend::{
         ast::{BinaryOp, ByRef, LiteralKind, Mutable, UnaryOp},
-        resolution,
     }, indexvec::IndexVec, span::{
         Span,
         symbol::{Ident, Symbol},
@@ -210,7 +209,6 @@ pub struct GenericArgs {
 pub enum Region {
     Static,
     Param(Ident, DefId),
-    Var(Ident, HirId),
     Err,
 }
 #[derive(Debug)]

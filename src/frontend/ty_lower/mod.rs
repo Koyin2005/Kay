@@ -50,7 +50,6 @@ impl<'a> TypeLower<'a> {
     fn lower_region(&self, region: &hir::Region) -> Region {
         match region {
             hir::Region::Err => Region::Err,
-            hir::Region::Var(name, id) => Region::Local(name.symbol, *id),
             &hir::Region::Param(name, id) => Region::Generic(
                 name.symbol,
                 self.ctxt

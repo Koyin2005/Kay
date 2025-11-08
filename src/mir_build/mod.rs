@@ -5,13 +5,13 @@ use crate::{
     context::CtxtRef,
     frontend::{
         ast::{ByRef, LiteralKind, Mutable},
-        hir::{self, HirId, IntType, PrimitiveType},
-        thir::{self, Block, Expr, ExprId, LocalVar, LoopLabel, Pattern, PatternKind},
+        hir::{self, IntType, PrimitiveType},
+        thir::{self, Block, ExprId, LocalVar, LoopLabel, Pattern, PatternKind},
     },
     indexvec::IndexVec,
     mir::{
         self, AssertMessage, BasicBlock, BasicBlockInfo, Constant, Local, LocalInfo, LocalKind,
-        Place, PlaceProjection, Rvalue, Stmt, StmtIndex, Terminator, UnaryOp, Value,
+        Place, PlaceProjection, Rvalue, Stmt, StmtIndex, Terminator, Value,
     },
     span::{Span, symbol::Symbol},
     types::{FieldIndex, Type, VariantCaseIndex},
