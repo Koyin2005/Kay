@@ -1,3 +1,4 @@
+pub mod builtins;
 pub mod config;
 pub mod context;
 pub mod diagnostics;

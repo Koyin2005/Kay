@@ -3,6 +3,7 @@ use indexmap::{IndexMap, map::Entry};
 
 use crate::{
     Resolver,
+    builtins::builtin_from_name,
     frontend::{
         ast::{
             self, Ast, Block, Expr, ExprKind, FunctionDef, GenericParams, Item, ItemKind, Module,
@@ -118,6 +119,14 @@ impl<'a, 'b> NameRes<'a, 'b> {
             .rev()
             .find_map(|scope| scope.bindings.get(&name))
             .copied()
+            .or_else(|| {
+                builtin_from_name(name).and_then(|builtin| {
+                    self.resolver
+                        .builtins
+                        .get_item(builtin)
+                        .map(|id| Resolution::Def(id, self.resolver.info[id].kind))
+                })
+            })
     }
     fn expect_def_id(&self, id: NodeId) -> DefId {
         self.resolver
@@ -138,7 +147,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
             PatternKind::Ident(name, _mut, _by_ref) => {
                 bindings.push((name, pattern.id, pattern.span));
             }
-            PatternKind::Deref(ref pat) | PatternKind::Grouped(ref pat) => {
+            PatternKind::Grouped(ref pat) => {
                 Self::collect_bindings_in_patttern(pat, bindings);
             }
 
@@ -533,7 +542,9 @@ impl<'a, 'b> NameRes<'a, 'b> {
                 for param in function_def.params.iter() {
                     this.visit_pat(&param.pattern);
                 }
-                this.resolve_expr(&function_def.body);
+                if let Some(body) = &function_def.body {
+                    this.resolve_expr(body);
+                }
             });
         });
     }

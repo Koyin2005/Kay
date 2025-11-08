@@ -19,8 +19,9 @@ pub struct FunctionDef {
     pub generics: Option<GenericParams>,
     pub params: Vec<Param>,
     pub return_type: Option<Type>,
-    pub body: Box<Expr>,
+    pub body: Option<Box<Expr>>,
 }
+///A block (if the last stmt is an expr with no semi it shall be lowered to its result)
 #[derive(Clone, Debug)]
 pub struct Block {
     pub id: NodeId,
@@ -240,7 +241,6 @@ pub enum PatternKind {
     Tuple(Vec<Pattern>),
     Grouped(Box<Pattern>),
     Literal(LiteralKind),
-    Deref(Box<Pattern>),
     Case(QualifiedName, Option<GenericArgs>, Vec<Pattern>),
     Wildcard,
 }

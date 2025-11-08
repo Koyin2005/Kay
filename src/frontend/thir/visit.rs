@@ -21,8 +21,8 @@ pub trait Visitor<'a>: Sized {
 
 pub fn walk_expr<'thir, 'a>(v: &mut impl Visitor<'a>, expr: &'thir thir::Expr) {
     match &expr.kind {
-        &ExprKind::Return(expr) => {
-            if let Some(expr) = expr {
+        ExprKind::Return(expr) | ExprKind::Break(_, expr) => {
+            if let &Some(expr) = expr {
                 v.visit_expr(v.body().expr(expr));
             }
         }
@@ -45,7 +45,7 @@ pub fn walk_expr<'thir, 'a>(v: &mut impl Visitor<'a>, expr: &'thir thir::Expr) {
         | &ExprKind::Unary(_, expr)
         | &ExprKind::Deref(expr)
         | &ExprKind::Ref(_, expr)
-        | &ExprKind::Loop(expr) => v.visit_expr(v.body().expr(expr)),
+        | &ExprKind::Loop(_, expr) => v.visit_expr(v.body().expr(expr)),
         &ExprKind::Assign(first, second)
         | &ExprKind::Index(first, second)
         | &ExprKind::Binary(_, first, second)

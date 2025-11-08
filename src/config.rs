@@ -19,7 +19,6 @@ pub struct SourceFile {
     pub data: String,
 }
 enum PathKind {
-    File,
     Folder(Vec<FilePath>),
 }
 fn try_as_file_path(path: &Path) -> Option<FilePath> {
@@ -60,9 +59,7 @@ impl Config {
         }
         Ok(Self {
             file_path: try_as_file_path(path).ok_or(ConfigError::InvalidFile)?,
-            kind: if path.is_file() {
-                PathKind::File
-            } else {
+            kind: if path.is_dir() {
                 PathKind::Folder({
                     let dir = std::fs::read_dir(path).expect("Should be a valid file.");
                     let files = dir
@@ -71,16 +68,13 @@ impl Config {
                         .collect();
                     files
                 })
+            } else {
+                return Err(ConfigError::InvalidFile);
             },
         })
     }
     pub fn get_all_source_files(&self) -> Result<Box<[SourceFile]>, SourceError> {
         match &self.kind {
-            PathKind::File => Ok(Box::new([SourceFile {
-                name: self.file_path.name.to_string(),
-                data: std::fs::read_to_string(&self.file_path.path)
-                    .map_err(SourceError::ReadFileFailed)?,
-            }])),
             PathKind::Folder(files) => Ok(files
                 .iter()
                 .map(|file| {

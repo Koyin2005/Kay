@@ -196,10 +196,6 @@ impl<'diag> AstLower<'diag> {
                 pat.span = pattern.span;
                 pat
             }
-            ast::PatternKind::Deref(ref pat) => {
-                let pat = self.lower_pattern(pat);
-                lower_pattern!(hir::PatternKind::Deref(Box::new(pat)))
-            }
             ast::PatternKind::Literal(literal) => {
                 lower_pattern!(hir::PatternKind::Literal(literal))
             }
@@ -648,7 +644,7 @@ impl<'diag> AstLower<'diag> {
         let pat = self.lower_pattern(pat);
         let iterator = match &iterator.kind {
             ast::IteratorExprKind::Expr(expr) => {
-                hir::Iterator::Expr(Box::new(self.lower_expr(expr)))
+                hir::Iterator::Expr(self.next_hir_id(), Box::new(self.lower_expr(expr)))
             }
             ast::IteratorExprKind::Range(start, end) => hir::Iterator::Ranged(
                 iterator.span,
@@ -755,7 +751,26 @@ impl<'diag> AstLower<'diag> {
                         pat: self.lower_pattern(&param.pattern),
                     })
                     .collect();
-                let value = self.lower_expr(&function_def.body);
+                let (has_body, value) = if let Some(ref body) = function_def.body {
+                    (true, self.lower_expr(body))
+                } else {
+                    (
+                        false,
+                        hir::Expr {
+                            id: self.next_hir_id(),
+                            span: function_def.span,
+                            kind: hir::ExprKind::Loop(
+                                Box::new(hir::Block {
+                                    id: self.next_hir_id(),
+                                    span,
+                                    stmts: Vec::new(),
+                                    result: None,
+                                }),
+                                hir::LoopSource::Explicit,
+                            ),
+                        },
+                    )
+                };
                 let body_id = value.id;
                 let body = Body { params, value };
                 self.bodies.insert(body_id, body);
@@ -770,6 +785,7 @@ impl<'diag> AstLower<'diag> {
                         ),
                         generics: self.lower_generics(function_def.generics.as_ref()),
                         body_id,
+                        has_body,
                         span,
                     }),
                 )
@@ -794,10 +810,12 @@ impl<'diag> AstLower<'diag> {
         }
         self.items.extend(items);
         self.diag.emit();
+        let (def_info,builtins) = self.resolution_results.get_def_info_and_builtins();
         Hir {
             items: self.items,
             bodies: self.bodies,
-            def_info: self.resolution_results.get_def_info(),
+            def_info,
+            builtins
         }
     }
 }

@@ -5,7 +5,7 @@ use crate::{
         hir::{self, DefId, DefKind, Definition, HirId, Resolution},
         thir::{
             Arm, Block, Body, BodyInfo, Expr, ExprField, ExprId, ExprKind, LocalVar, LogicalOp,
-            Param, Pattern, PatternKind, Stmt, StmtKind, Thir, UnaryOp,
+            LoopLabel, Param, Pattern, PatternKind, Stmt, StmtId, StmtKind, Thir, UnaryOp,
         },
         typecheck::{Coercion, results::TypeCheckResults},
     },
@@ -93,27 +93,25 @@ impl<'ctxt> ThirBuilder<'ctxt> {
             .map(|expr| self.lower_expr(expr))
             .collect()
     }
+    fn lower_stmt(&mut self, stmt: &hir::Stmt) -> Option<StmtId> {
+        let stmt = match &stmt.kind {
+            hir::StmtKind::Expr(expr) | hir::StmtKind::ExprWithSemi(expr) => Stmt {
+                span: stmt.span,
+                kind: StmtKind::Expr(self.lower_expr(expr)),
+            },
+            hir::StmtKind::Let(pattern, _, expr) => Stmt {
+                span: stmt.span,
+                kind: StmtKind::Let(Box::new(self.lower_pattern(pattern)), self.lower_expr(expr)),
+            },
+            hir::StmtKind::Item(_) => return None,
+        };
+        Some(self.body.stmts.push(stmt))
+    }
     fn lower_block(&mut self, block: &hir::Block) -> ExprKind {
         let stmts = block
             .stmts
             .iter()
-            .filter_map(|stmt| {
-                let stmt = match &stmt.kind {
-                    hir::StmtKind::Expr(expr) | hir::StmtKind::ExprWithSemi(expr) => Stmt {
-                        span: stmt.span,
-                        kind: StmtKind::Expr(self.lower_expr(expr)),
-                    },
-                    hir::StmtKind::Let(pattern, _, expr) => Stmt {
-                        span: stmt.span,
-                        kind: StmtKind::Let(
-                            Box::new(self.lower_pattern(pattern)),
-                            self.lower_expr(expr),
-                        ),
-                    },
-                    hir::StmtKind::Item(_) => return None,
-                };
-                Some(self.body.stmts.push(stmt))
-            })
+            .filter_map(|stmt| self.lower_stmt(stmt))
             .collect();
         let block = Block {
             stmts,
@@ -203,8 +201,16 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                         .collect(),
                 }
             }
-            hir::ExprKind::Break(_, _) => todo!("BREAK"),
-            hir::ExprKind::For(_, _, _) => todo!("FOR"),
+            hir::ExprKind::Break(label, expr) => {
+                let label = label.expect("Should have a valid loop label now");
+                ExprKind::Break(
+                    LoopLabel(label),
+                    expr.as_ref().map(|expr| self.lower_expr(expr)),
+                )
+            }
+            hir::ExprKind::For(..) => {
+                todo!("For loop lowering")
+            }
 
             hir::ExprKind::Match(scrutinee, arms) => ExprKind::Match(
                 self.lower_expr(scrutinee),
@@ -279,13 +285,14 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                 ExprKind::Constant(def, generic_args)
             }
             hir::ExprKind::Loop(block, _) => {
+                let label = LoopLabel(expr.id);
                 let block_ty = self.results.type_of(block.id);
                 let expr = Expr {
                     ty: block_ty,
                     span: block.span,
                     kind: self.lower_block(&block),
                 };
-                ExprKind::Loop(self.body.exprs.push(expr))
+                ExprKind::Loop(label, self.body.exprs.push(expr))
             }
             hir::ExprKind::Block(block) => self.lower_block(&block),
         };
@@ -337,7 +344,6 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                     )
                 }
                 hir::PatternKind::Wildcard => PatternKind::Wilcard,
-                hir::PatternKind::Deref(..) => todo!("DEREF PATTERNS"),
                 hir::PatternKind::Literal(literal) => PatternKind::Lit(literal),
                 hir::PatternKind::Tuple(ref fields) => PatternKind::Tuple(
                     fields

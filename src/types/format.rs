@@ -13,12 +13,12 @@ impl<'a> TypeFormat<'a> {
     }
     fn format_multiple<'b, T: 'b>(
         &self,
-        tys: impl IntoIterator<Item = &'b T>,
+        elements: impl IntoIterator<Item = &'b T>,
         f: &impl Fn(&'b T) -> String,
     ) -> String {
         let mut first = true;
         let mut output = String::new();
-        for elem in tys {
+        for elem in elements {
             if !first {
                 output.push(',');
             }
@@ -37,7 +37,7 @@ impl<'a> TypeFormat<'a> {
         }
         .to_string()
     }
-    fn format_generic_args(&self, args: impl IntoIterator<Item = &'a GenericArg>) -> String {
+    pub fn format_generic_args(&self, args: impl IntoIterator<Item = &'a GenericArg>) -> String {
         self.format_multiple(args, &|arg| match arg {
             GenericArg::Type(ty) => self.format_type(ty),
             GenericArg::Region(region) => self.format_region(region),

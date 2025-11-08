@@ -6,6 +6,7 @@ pub struct DiagnosticReporter(RefCell<DiagnosticReporterInner>);
 struct DiagnosticReporterInner {
     source_info: SourceFilesRef,
     all_diagnostics: Vec<Diagnostic>,
+    any_error_occurred: bool,
 }
 
 impl DiagnosticReporter {
@@ -13,6 +14,7 @@ impl DiagnosticReporter {
         Self(RefCell::new(DiagnosticReporterInner {
             source_info,
             all_diagnostics: Vec::new(),
+            any_error_occurred: false,
         }))
     }
     pub fn emit_diag_from(&self, diag: impl IntoDiagnostic) {
@@ -21,10 +23,14 @@ impl DiagnosticReporter {
     pub fn emit_diag(&self, message: impl IntoDiagnosticMessage, span: Span) {
         self.add(Diagnostic::new(message, span, None));
     }
-    pub fn had_error(&self) -> bool {
+    pub fn have_errors(&self) -> bool {
         !self.0.borrow().all_diagnostics.is_empty()
     }
+    pub fn had_error(&self) -> bool {
+        self.0.borrow().any_error_occurred
+    }
     pub fn add(&self, message: Diagnostic) {
+        self.0.borrow_mut().any_error_occurred = true;
         self.0.borrow_mut().all_diagnostics.push(message);
     }
     pub fn span_info(&self, span: Span) -> (SourceLocation, SourceLocation) {

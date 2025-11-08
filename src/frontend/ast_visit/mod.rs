@@ -65,7 +65,9 @@ pub fn walk_item(visitor: &mut impl Visitor, item: &Item) {
             if let Some(return_ty) = function.return_type.as_ref() {
                 visitor.visit_ty(return_ty);
             }
-            visitor.visit_expr(&function.body);
+            if let Some(body) = &function.body {
+                visitor.visit_expr(body);
+            }
         }
         ItemKind::Type(ty) => match &ty.kind {
             TypeDefKind::Struct(struct_def) => {
@@ -93,7 +95,7 @@ pub fn walk_generic_args(visitor: &mut impl Visitor, args: &GenericArgs) {
 }
 pub fn walk_pat(visitor: &mut impl Visitor, pat: &Pattern) {
     match &pat.kind {
-        PatternKind::Grouped(pat) | PatternKind::Deref(pat) => visitor.visit_pat(pat),
+        PatternKind::Grouped(pat) => visitor.visit_pat(pat),
         PatternKind::Tuple(elements) => elements
             .iter()
             .for_each(|element| visitor.visit_pat(element)),

@@ -1,10 +1,12 @@
 use std::rc::Rc;
 
+use indexmap::IndexMap;
 use pl5::{
     Ast, AstLower, ItemCollect, Lexer, MirBuilder, NodeId, Parser, PatCheck, Resolver, SourceFiles,
     ThirBuild, TypeCheck,
     config::{Config, ConfigError, SourceError},
     diagnostics::DiagnosticReporter,
+    mir::debug::DebugMir,
 };
 
 fn main() {
@@ -64,11 +66,10 @@ fn main() {
     let ast = Ast {
         modules: modules.collect(),
     };
-    let name_res_diagnostics = DiagnosticReporter::new(source_files.clone());
-    let results = Resolver::new(&name_res_diagnostics).resolve(&ast);
-    let ast_lower_diagnostics = DiagnosticReporter::new(source_files.clone());
-    let hir = AstLower::new(results, &ast_lower_diagnostics).lower_ast(&ast);
     let global_diagnostics = DiagnosticReporter::new(source_files.clone());
+    let results = Resolver::new(&global_diagnostics).resolve(&ast);
+
+    let hir = AstLower::new(results, &global_diagnostics).lower_ast(&ast);
     let context = ItemCollect::new(&global_diagnostics).collect(&hir);
     let context_ref = &context;
     let type_check_results = hir.items.iter().filter_map(|(_, item)| {
@@ -87,9 +88,18 @@ fn main() {
         thir_build.build(results.owner(), body, results);
     }
     let mut thir = thir_build.finish();
+
     for body in thir.bodies.iter_mut() {
         PatCheck::new(body, context_ref).check();
-        MirBuilder::new(body, context_ref).build();
+    }
+    let mut bodies = thir
+        .bodies
+        .iter()
+        .map(|body| (body.info.owner, MirBuilder::new(body, context_ref).build()))
+        .collect::<IndexMap<_, _>>();
+
+    for (_, body) in bodies.iter_mut() {
+        println!("{}", DebugMir::new(body, context_ref).output());
     }
     global_diagnostics.emit();
 }

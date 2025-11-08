@@ -947,21 +947,7 @@ impl<'source> Parser<'source> {
         })
     }
     fn parse_pattern(&mut self) -> ParseResult<Pattern> {
-        let mut pattern = self.parse_prefix_pattern()?;
-        loop {
-            match self.current_token.kind {
-                TokenKind::Caret => {
-                    let span = self.current_token.span;
-                    self.advance();
-                    pattern = Pattern {
-                        id: self.new_id(),
-                        span: pattern.span.combined(span),
-                        kind: PatternKind::Deref(Box::new(pattern)),
-                    }
-                }
-                _ => break Ok(pattern),
-            }
-        }
+        self.parse_prefix_pattern()
     }
     fn parse_struct_def(&mut self) -> ParseResult<Struct> {
         let start_span = self.current_token.span;
@@ -1305,16 +1291,20 @@ impl<'source> Parser<'source> {
             .then(|| self.parse_type())
             .transpose()?;
 
-        let _ = self.expect(TokenKind::Equals, "Expected '=' before function body.");
-        let body = self.parse_expr(0)?;
-        let span = start.combined(body.span);
+        let (span, body) = if let Some(token) = self.match_current(TokenKind::Semicolon) {
+            (start.combined(token.span), None)
+        } else {
+            let _ = self.expect(TokenKind::Equals, "Expected '=' before function body.");
+            let body = self.parse_expr(0)?;
+            (start.combined(body.span), Some(body))
+        };
         Ok(FunctionDef {
             id: self.new_id(),
             span,
             name: function_name,
             params,
             generics: generic_params,
-            body: Box::new(body),
+            body: body.map(Box::new),
             return_type,
         })
     }

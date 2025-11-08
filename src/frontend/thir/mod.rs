@@ -120,7 +120,7 @@ pub enum ExprKind {
     Deref(ExprId),
     Ref(Mutable, ExprId),
     Index(ExprId, ExprId),
-    Loop(ExprId),
+    Loop(LoopLabel, ExprId),
     Field {
         receiver: ExprId,
         field: FieldIndex,
@@ -145,6 +145,9 @@ pub enum ExprKind {
     Block(BlockId),
     NeverToAny(ExprId),
     Return(Option<ExprId>),
+    Break(LoopLabel, Option<ExprId>),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LocalVar(pub HirId);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LoopLabel(pub HirId);

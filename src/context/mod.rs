@@ -471,4 +471,15 @@ impl<'hir> GlobalContext<'hir> {
             Type::Array(element_ty) => self.is_inhabited(element_ty),
         }
     }
+    pub fn debug_name(&self, id: DefId) -> String {
+        let mut name = if let Some(parent) = self.get_parent(id) {
+            let mut name = self.debug_name(parent);
+            name.push('.');
+            name
+        } else {
+            String::with_capacity(2)
+        };
+        name.push_str(self.ident(id).symbol.as_str());
+        name
+    }
 }

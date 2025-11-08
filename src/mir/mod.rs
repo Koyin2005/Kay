@@ -1,9 +1,14 @@
-use std::hash::Hash;
+use std::{
+    fmt::{Display, Write},
+    hash::Hash,
+    str::FromStr,
+};
 
 use crate::{
+    context::{CtxtRef, TypeDefKind},
     define_id,
     frontend::hir::DefId,
-    indexvec::IndexVec,
+    indexvec::{Idx, IndexVec},
     span::{Span, symbol::Symbol},
     types::{FieldIndex, GenericArgs, Region, Type, VariantCaseIndex},
 };
@@ -20,15 +25,25 @@ define_id! {
     #[derive(Debug)]
     pub struct BasicBlock{}
 }
-#[derive(Debug, Clone, Copy)]
-pub enum LocalInfo {
-    UserDefined(Symbol),
-    Param,
-    Temp,
+#[derive(Debug, Clone)]
+pub struct LocalInfo {
+    pub ty: Type,
+    pub kind: LocalKind,
 }
-
+#[derive(Debug, Clone, Copy)]
+pub enum LocalKind {
+    UserDefined(Symbol),
+    Param(Option<Symbol>),
+    Temp,
+    Return,
+}
+#[derive(Debug, Clone)]
+pub struct BodyInfo {
+    pub id: DefId,
+}
 #[derive(Debug, Clone)]
 pub struct Body {
+    pub info: BodyInfo,
     pub locals: IndexVec<Local, LocalInfo>,
     pub blocks: IndexVec<BasicBlock, BasicBlockInfo>,
 }
@@ -43,6 +58,41 @@ pub enum PlaceProjection {
     Field(FieldIndex, Option<VariantCaseIndex>),
     Index(Local),
 }
+impl PlaceProjection {
+    pub fn apply_to(self, ty: &Type, ctxt: CtxtRef) -> Type {
+        match self {
+            Self::Deref => {
+                let Type::Ref(ty, _, _) = ty else {
+                    unreachable!("Cannot dereference {:?}", ty)
+                };
+                (**ty).clone()
+            }
+            Self::Index(_) => {
+                let Type::Array(ty) = ty else {
+                    unreachable!("Cannot get element of {:?}", ty)
+                };
+                (**ty).clone()
+            }
+            Self::Field(field, case) => match ty {
+                Type::Tuple(fields) => fields[field.into_index()].clone(),
+                Type::Nominal(def, args) => {
+                    let type_def = ctxt.type_def(*def);
+                    ctxt.type_of(match &type_def.kind {
+                        TypeDefKind::Struct(struct_def) => struct_def.fields[field].id,
+                        TypeDefKind::Variant(variant_cases) => {
+                            variant_cases[case.expect("Should be within bounds")]
+                                .1
+                                .fields[field]
+                                .id
+                        }
+                    })
+                    .instantiate(args.clone())
+                }
+                _ => unreachable!("Cannot get field of type"),
+            },
+        }
+    }
+}
 #[derive(Debug, Clone, Copy)]
 pub enum PlaceBase {
     Local(Local),
@@ -50,13 +100,31 @@ pub enum PlaceBase {
 }
 #[derive(Debug, Clone)]
 pub struct Place {
-    pub base: PlaceBase,
+    pub local: Local,
     pub projections: Box<[PlaceProjection]>,
 }
+impl Display for Local {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("_{}", self.0))
+    }
+}
 impl Place {
+    pub fn new_from_local(local: Local) -> Self {
+        Self {
+            local,
+            projections: Box::new([]),
+        }
+    }
+    pub fn type_of(&self, locals: &IndexVec<Local, LocalInfo>, ctxt: CtxtRef) -> Type {
+        let mut ty = locals[self.local].ty.clone();
+        for projection in self.projections.iter() {
+            ty = projection.apply_to(&ty, ctxt);
+        }
+        ty
+    }
     pub fn return_place() -> Self {
         Self {
-            base: PlaceBase::Return,
+            local: Local(0),
             projections: Box::new([]),
         }
     }
@@ -64,7 +132,7 @@ impl Place {
 impl From<Local> for Place {
     fn from(value: Local) -> Self {
         Self {
-            base: PlaceBase::Local(value),
+            local: value,
             projections: Box::new([]),
         }
     }
@@ -99,6 +167,26 @@ pub enum BinaryOp {
     GreaterThan,
     LesserEquals,
     GreaterEquals,
+    And,
+    Or,
+}
+impl BinaryOp {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Add => "+",
+            Self::Divide => "/",
+            Self::Equals => "==",
+            Self::GreaterEquals => ">=",
+            Self::LesserEquals => "<=",
+            Self::Multiply => "*",
+            Self::NotEquals => "!=",
+            Self::Subtract => "-",
+            Self::LesserThan => "<",
+            Self::GreaterThan => ">",
+            Self::And => "&",
+            Self::Or => "|",
+        }
+    }
 }
 #[derive(Debug, Clone, Copy)]
 pub enum UnaryOp {
@@ -128,16 +216,18 @@ pub enum StmtKind {
     Noop,
 }
 #[derive(Debug, Clone)]
-pub enum AssertCondition {
+pub enum AssertMessage {
     BoundsCheck { index: Value, len: Value },
-    NoOverflow(Value, Value),
+    NoOverflow(BinaryOp, Value, Value),
+    DivisionByZero(Value),
+    NegOverflow(Value),
 }
 #[derive(Debug, Clone)]
 pub enum TerminatorKind {
     Switch(Value, Box<[(Constant, BasicBlock)]>, BasicBlock),
     Unreachable,
     Goto(BasicBlock),
-    Assert(AssertCondition, BasicBlock),
+    Assert(Value, bool, AssertMessage, BasicBlock),
     Return,
 }
 #[derive(Debug, Clone)]
@@ -150,3 +240,5 @@ pub struct BasicBlockInfo {
     pub stmts: IndexVec<StmtIndex, Stmt>,
     pub terminator: Terminator,
 }
+
+pub mod debug;

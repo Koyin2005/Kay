@@ -1,13 +1,13 @@
 use indexmap::IndexMap;
 
 use crate::{
-    define_id,
-    frontend::ast::{BinaryOp, ByRef, LiteralKind, Mutable, UnaryOp},
-    indexvec::IndexVec,
-    span::{
+    builtins::Builtins, define_id, frontend::{
+        ast::{BinaryOp, ByRef, LiteralKind, Mutable, UnaryOp},
+        resolution,
+    }, indexvec::IndexVec, span::{
         Span,
         symbol::{Ident, Symbol},
-    },
+    }
 };
 #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq)]
 pub enum IntType {
@@ -104,7 +104,6 @@ pub struct Path {
 pub enum PatternKind {
     Literal(LiteralKind),
     Tuple(Vec<Pattern>),
-    Deref(Box<Pattern>),
     Case(Resolution, Option<GenericArgs>, Vec<Pattern>),
     Binding(HirId, Symbol, Mutable, ByRef),
     Wildcard,
@@ -154,7 +153,7 @@ pub struct ExprField {
 #[derive(Debug)]
 pub enum Iterator {
     Ranged(Span, Box<Expr>, Box<Expr>),
-    Expr(Box<Expr>),
+    Expr(HirId, Box<Expr>),
 }
 #[derive(Debug)]
 pub enum ExprKind {
@@ -244,6 +243,7 @@ pub struct FunctionSig {
 pub struct FunctionDef {
     pub id: DefId,
     pub name: Ident,
+    pub has_body: bool,
     pub generics: Generics,
     pub sig: FunctionSig,
     pub body_id: HirId,
@@ -309,6 +309,7 @@ pub struct Hir {
     pub items: IndexMap<DefId, Item>,
     pub bodies: IndexMap<HirId, Body>,
     pub def_info: IndexVec<DefId, DefInfo>,
+    pub builtins : Builtins
 }
 #[derive(Debug)]
 pub struct DefInfo {
@@ -351,4 +352,13 @@ impl Generics {
             params: Vec::new(),
         }
     }
+}
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum Builtin {
+    Len,
+    Panic,
+}
+
+impl Builtin {
+    pub const COUNT: usize = 2;
 }

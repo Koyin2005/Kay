@@ -752,7 +752,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
     }
     fn check_for(&self, pat: &Pattern, iterator: &hir::Iterator, body: &Block) -> Type {
         let item_ty = match iterator {
-            hir::Iterator::Expr(expr) => match self.check_expr(expr, None) {
+            hir::Iterator::Expr(_, expr) => match self.check_expr(expr, None) {
                 Type::Array(elem) => Some(*elem),
                 ty => {
                     self.err(
@@ -789,7 +789,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             }
         };
         let region = match iterator {
-            hir::Iterator::Expr(expr) => self.get_region(&expr),
+            hir::Iterator::Expr(_, expr) => self.get_region(&expr),
             _ => None,
         };
         self.check_pattern(
@@ -1165,25 +1165,6 @@ impl<'ctxt> TypeCheck<'ctxt> {
                     );
                 }
                 case_and_variant_ty.map(|(_, ty)| ty).unwrap_or(Type::Err)
-            }
-            PatternKind::Deref(ref_pat) => {
-                let (expected_ty, region, is_mutable) = match expected_ty.and_then(|ty| {
-                    if let Type::Ref(ty, region, mutable) = ty {
-                        Some((&**ty, region, mutable))
-                    } else {
-                        None
-                    }
-                }) {
-                    Some((ty, region, mutable)) => (Some(ty), Some(region), Some(mutable)),
-                    _ => (None, None, None),
-                };
-
-                let ty = self.check_pattern(ref_pat, expected_ty, region.cloned(), from_param);
-                Type::new_ref(
-                    ty,
-                    region.cloned().unwrap_or(Region::Err),
-                    is_mutable.copied().unwrap_or(IsMutable::No),
-                )
             }
         };
         self.write_type(pat.id, ty.clone());
