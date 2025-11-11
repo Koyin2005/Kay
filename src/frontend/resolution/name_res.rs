@@ -228,6 +228,7 @@ impl<'a, 'b> NameRes<'a, 'b> {
         for next_seg in segments {
             let definition = match current {
                 Resolution::Variable(_) => return None,
+                Resolution::Region(_) => return None,
                 Resolution::Err => return None,
                 Resolution::Def(
                     _,
@@ -512,6 +513,9 @@ impl<'a, 'b> NameRes<'a, 'b> {
             _ => walk_expr(self, expr),
         }
     }
+    fn resolve_region(&mut self, id: NodeId, region: Ident) {
+        self.create_binding(region.symbol, Resolution::Region(id));
+    }
     fn resolve_pattern(&mut self, pattern: &Pattern) {
         let mut bindings = Vec::new();
         Self::collect_bindings_in_patttern(pattern, &mut bindings);
@@ -571,6 +575,9 @@ impl Visitor for NameRes<'_, '_> {
             self.resolve_type(ty);
         }
         self.resolve_pattern(pat);
+    }
+    fn visit_region(&mut self, id: NodeId, name: Ident) {
+        self.resolve_region(id, name);
     }
     fn visit_pat(&mut self, pat: &Pattern) {
         if let ast::PatternKind::Case(path, _, _) = &pat.kind {

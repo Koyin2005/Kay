@@ -39,6 +39,7 @@ pub struct TypeCheck<'ctxt> {
     loop_coerce: RefCell<Option<Coerce>>,
     region_counter: Cell<u32>,
     locals: RefCell<FxHashMap<HirId, LocalInfo>>,
+    regions: RefCell<FxHashMap<HirId, (Symbol, u32)>>,
     results: RefCell<TypeCheckResults>,
 }
 impl<'ctxt> TypeCheck<'ctxt> {
@@ -49,6 +50,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             context,
             body,
             region_counter: Cell::new(0),
+            regions: RefCell::default(),
             infer_ctxt: TypeInfer::new(),
             param_types: params,
             return_type: return_ty,
@@ -75,8 +77,12 @@ impl<'ctxt> TypeCheck<'ctxt> {
     fn local_ty(&self, id: HirId) -> Type {
         self.locals.borrow()[&id].ty.clone()
     }
-    fn fresh_region(&self) -> Region {
-        Region::Local(self.region_counter.replace(self.region_counter.get() + 1))
+    fn new_local_region(&self, id: HirId, name: Symbol) {
+        let index = self.region_counter.replace(self.region_counter.get() + 1);
+        self.regions.borrow_mut().insert(id, (name, index));
+    }
+    fn fresh_region_var(&self, span: Span) -> Region {
+        Region::Infer(self.infer_ctxt.fresh_region_var(span))
     }
     fn err(&self, msg: impl IntoDiagnosticMessage, span: Span) -> Type {
         self.diag().emit_diag(msg, span);
@@ -205,13 +211,21 @@ impl<'ctxt> TypeCheck<'ctxt> {
             StmtKind::ExprWithSemi(expr) => {
                 self.check_expr(expr, None);
             }
+            StmtKind::LetRegion(id, name) => {
+                self.new_local_region(*id, name.symbol);
+            }
             StmtKind::Item(_) => {
                 //Don't check items here
             }
             StmtKind::Let(pat, ty, expr) => {
-                let ty = ty
-                    .as_ref()
-                    .map(|ty| TypeLower::new(self.context, Some(&self.infer_ctxt)).lower(ty));
+                let ty = ty.as_ref().map(|ty| {
+                    TypeLower::new(
+                        self.context,
+                        Some(&self.infer_ctxt),
+                        Some(&self.regions.borrow()),
+                    )
+                    .lower(ty)
+                });
                 let ty = if let Some(ty) = ty.as_ref() {
                     self.check_expr_coerces_to(expr, ty)
                 } else {
@@ -255,7 +269,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 } else {
                     self.check_expr(operand, expected_ty)
                 };
-                let region = self.fresh_region();
+                let region = self.fresh_region_var(operand.span);
                 Type::new_ref(ty, region, mutable.into())
             }
             UnaryOpKind::Deref => {
@@ -422,8 +436,12 @@ impl<'ctxt> TypeCheck<'ctxt> {
         if scheme.arg_count() == 0 {
             return scheme.skip_instantiate();
         }
-        let generic_args = TypeLower::new(self.context, Some(&self.infer_ctxt))
-            .lower_generic_args_for(def_id, generic_args, span);
+        let generic_args = TypeLower::new(
+            self.context,
+            Some(&self.infer_ctxt),
+            Some(&self.regions.borrow()),
+        )
+        .lower_generic_args_for(def_id, generic_args, span);
         self.results
             .borrow_mut()
             .generic_args
@@ -462,6 +480,15 @@ impl<'ctxt> TypeCheck<'ctxt> {
                         "Cannot use {} '{}' as value.",
                         kind.as_str(),
                         self.context.ident(id).symbol.as_str()
+                    ),
+                    span,
+                );
+            }
+            hir::Resolution::Region(var) => {
+                return self.err(
+                    format!(
+                        "Cannot use region '{}' as value.",
+                        self.regions.borrow()[&var].0.as_str()
                     ),
                     span,
                 );
@@ -561,7 +588,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
             | ExprKind::Path(
                 Path {
                     id: _,
-                    res: Resolution::Def(..),
+                    res: Resolution::Def(..) | Resolution::Region(..),
                 },
                 _,
             )
@@ -591,10 +618,14 @@ impl<'ctxt> TypeCheck<'ctxt> {
         expected_ty: Option<&Type>,
     ) -> Type {
         let struct_def = if let Some(path) = path {
-            let ty_lower = TypeLower::new(self.context, Some(&self.infer_ctxt));
             match path.res {
                 Resolution::Def(_, DefKind::Struct) => {
-                    let ty = ty_lower.lower_ty_path(path, None, span);
+                    let ty = TypeLower::new(
+                        self.context,
+                        Some(&self.infer_ctxt),
+                        Some(&self.regions.borrow()),
+                    )
+                    .lower_ty_path(path, None, span);
                     if let Type::Nominal(def, args) = ty {
                         Ok(self
                             .context
@@ -729,41 +760,29 @@ impl<'ctxt> TypeCheck<'ctxt> {
         Type::new_never()
     }
     fn check_for(&self, pat: &Pattern, iterator: &hir::Iterator, body: &Block) -> Type {
-        let item_ty = match iterator {
-            hir::Iterator::Expr(_, expr) => match self.check_expr(expr, None) {
-                Type::Array(elem) => Some(*elem),
-                ty => {
-                    self.err(
-                        format!("Cannot iterate with {}.", self.format_ty(&ty)),
-                        expr.span,
-                    );
-                    None
+        let item_ty = {
+            let start = self.check_expr(&iterator.start, None);
+            let end = self.check_expr(&iterator.end, None);
+            let int_ty = if start != end {
+                None
+            } else {
+                match start {
+                    Type::Primitive(PrimitiveType::Int(int_ty)) => Some(int_ty),
+                    _ => None,
                 }
-            },
-            hir::Iterator::Ranged(span, start, end) => {
-                let start = self.check_expr(start, None);
-                let end = self.check_expr(end, None);
-                let int_ty = if start != end {
-                    None
-                } else {
-                    match start {
-                        Type::Primitive(PrimitiveType::Int(int_ty)) => Some(int_ty),
-                        _ => None,
-                    }
-                };
-                if let Some(int_ty) = int_ty {
-                    Some(Type::Primitive(PrimitiveType::Int(int_ty)))
-                } else {
-                    self.err(
-                        format!(
-                            "Invalid types for range '{}' and '{}'.",
-                            self.format_ty(&start),
-                            self.format_ty(&end)
-                        ),
-                        *span,
-                    );
-                    None
-                }
+            };
+            if let Some(int_ty) = int_ty {
+                Some(Type::Primitive(PrimitiveType::Int(int_ty)))
+            } else {
+                self.err(
+                    format!(
+                        "Invalid types for range '{}' and '{}'.",
+                        self.format_ty(&start),
+                        self.format_ty(&end)
+                    ),
+                    iterator.span,
+                );
+                None
             }
         };
         self.check_pattern(pat, Some(item_ty.as_ref().unwrap_or(&Type::Err)), false);
@@ -869,7 +888,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
                             );
                         }
                     }
-                    hir::Resolution::Def(..) => (),
+                    hir::Resolution::Def(..) | hir::Resolution::Region(..) => (),
                     hir::Resolution::Err => (),
                 },
                 ExprKind::Index(base, _) => {
@@ -914,7 +933,12 @@ impl<'ctxt> TypeCheck<'ctxt> {
         ty
     }
     fn check_ascribe_expr(&self, expr: &Expr, ty: &hir::Type) -> Type {
-        let target_ty = TypeLower::new(self.context, Some(&self.infer_ctxt)).lower(ty);
+        let target_ty = TypeLower::new(
+            self.context,
+            Some(&self.infer_ctxt),
+            Some(&self.regions.borrow()),
+        )
+        .lower(ty);
         let _ = self.check_expr(expr, Some(&target_ty));
         target_ty
     }
@@ -989,13 +1013,14 @@ impl<'ctxt> TypeCheck<'ctxt> {
                         pat.span,
                     )
                 };
+                let get_region = || self.fresh_region_var(pat.span);
                 let (local_ty, mutable) = match (by_ref, mutable) {
                     (ByRef::Yes(_), IsMutable::Yes) => (
-                        Type::new_ref(ty.clone(), self.fresh_region(), IsMutable::Yes),
+                        Type::new_ref(ty.clone(), get_region(), IsMutable::Yes),
                         IsMutable::Yes,
                     ),
                     (ByRef::Yes(_), IsMutable::No) => (
-                        Type::new_ref(ty.clone(), self.fresh_region(), IsMutable::No),
+                        Type::new_ref(ty.clone(), get_region(), IsMutable::No),
                         IsMutable::No,
                     ),
                     (ByRef::No, mutable) => (ty.clone(), mutable),
@@ -1170,7 +1195,9 @@ impl<'ctxt> TypeCheck<'ctxt> {
                 .iter()
                 .map(|arg| match arg {
                     GenericArg::Type(ty) => GenericArg::Type(self.infer_ctxt.normalize(ty)),
-                    GenericArg::Region(region) => GenericArg::Region(region.clone()),
+                    GenericArg::Region(region) => {
+                        GenericArg::Region(self.infer_ctxt.normalize_region(region))
+                    }
                 })
                 .collect();
         }

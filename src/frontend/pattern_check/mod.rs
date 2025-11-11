@@ -65,6 +65,14 @@ impl<'a> Visitor<'a> for PatCheck<'a> {
                     ctxt: self.ctxt,
                 });
             }
+        } else if let thir::ExprKind::For(_, ref pattern, ..) = expr.kind {
+            let usefulness = PatternContext::new(self.ctxt)
+                .check(pattern.ty.clone(), std::iter::once(lower_pattern(&pattern)));
+            if !usefulness.missing_patterns.is_empty() {
+                self.ctxt
+                    .diag()
+                    .emit_diag("Refutable pattern in let bindings.", pattern.span);
+            }
         }
         walk_expr(self, expr);
     }

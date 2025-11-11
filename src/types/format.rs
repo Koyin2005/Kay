@@ -29,7 +29,7 @@ impl<'a> TypeFormat<'a> {
     }
     pub fn format_region(&self, region: &Region) -> String {
         match region {
-            Region::Local(index) => return format!("local{index:?}"),
+            Region::Local(name, _) => return format!("local {}", name.as_str()),
             Region::Static => "static",
             Region::Infer(_) => "_",
             Region::Err => "{unknown}",
@@ -53,7 +53,7 @@ impl<'a> TypeFormat<'a> {
             Type::Array(element) => format!("[{}]", self.format_type(element)),
             Type::Err => "{unknown}".to_string(),
             Type::Ref(ty, region, is_mutable) => format!(
-                "ref{} [{}] {}",
+                "ref{} {{{}}} {}",
                 if let IsMutable::Yes = is_mutable {
                     " mut"
                 } else {

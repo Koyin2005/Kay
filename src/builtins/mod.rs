@@ -24,6 +24,10 @@ pub fn builtin_from_name(name: Symbol) -> Option<Builtin> {
     match name {
         symbols::PANIC => Some(Builtin::Panic),
         symbols::LEN => Some(Builtin::Len),
+        symbols::OPTION => Some(Builtin::Option),
+        symbols::SOME => Some(Builtin::Some),
+        symbols::NONE => Some(Builtin::None),
+        symbols::PRINTLN => Some(Builtin::Println),
         _ => None,
     }
 }

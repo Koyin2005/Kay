@@ -11,16 +11,13 @@ use crate::{
     indexvec::IndexVec,
     mir::{
         self, AssertMessage, BasicBlock, BasicBlockInfo, Constant, Local, LocalInfo, LocalKind,
-        Place, PlaceProjection, Rvalue, Stmt, StmtIndex, Terminator, Value,
+        Place, PlaceProjection, Rvalue, Stmt, Terminator, Value,
     },
+    mir_build::matches::MatchBuilder,
     span::{Span, symbol::Symbol},
     types::{FieldIndex, Type, VariantCaseIndex},
 };
-#[derive(Debug)]
-struct BlockInfo {
-    stmts: IndexVec<StmtIndex, Stmt>,
-    terminator: Option<Terminator>,
-}
+pub mod matches;
 #[derive(Clone)]
 pub struct PlaceBuilder {
     base: Local,
@@ -70,20 +67,19 @@ struct LoopScope {
     result_destination: Place,
 }
 pub struct MirBuilder<'body> {
-    thir: &'body thir::Body,
-    context: CtxtRef<'body>,
+    pub(super) thir: &'body thir::Body,
+    pub(super) context: CtxtRef<'body>,
     body: mir::Body,
     loop_scopes: Vec<LoopScope>,
 
     vars: FxHashMap<LocalVar, Local>,
-    basic_blocks: IndexVec<BasicBlock, BlockInfo>,
     current_block: BasicBlock,
 }
 
 impl<'a> MirBuilder<'a> {
     pub fn new(body: &'a thir::Body, ctxt: CtxtRef<'a>) -> Self {
         let mut basic_blocks = IndexVec::new();
-        let entry_block = basic_blocks.push(BlockInfo {
+        let entry_block = basic_blocks.push(BasicBlockInfo {
             stmts: IndexVec::new(),
             terminator: None,
         });
@@ -96,28 +92,42 @@ impl<'a> MirBuilder<'a> {
                     id: body.info.owner,
                 },
                 locals: IndexVec::new(),
-                blocks: IndexVec::new(),
+                blocks: basic_blocks,
             },
             vars: FxHashMap::default(),
-            basic_blocks: basic_blocks,
             current_block: entry_block,
         }
     }
-    fn switch_to_new_block(&mut self) -> BasicBlock {
+    pub(super) fn constant_from_literal(literal: LiteralKind) -> Constant {
+        match literal {
+            LiteralKind::Bool(value) => mir::Constant::Bool(value),
+            LiteralKind::Int(value) => mir::Constant::Int(value),
+            LiteralKind::String(value) => mir::Constant::String(value),
+            LiteralKind::IntErr => unreachable!("Can't have 'LiteralKind::IntErr' this here"),
+        }
+    }
+
+    pub(super) fn switch_to_new_block(&mut self) -> BasicBlock {
         let new_block = self.new_block();
         self.switch_to_block(new_block);
         new_block
     }
-    fn switch_to_block(&mut self, block: BasicBlock) {
+    pub(super) fn switch_to_block(&mut self, block: BasicBlock) {
         self.current_block = block;
     }
-    fn new_block(&mut self) -> BasicBlock {
-        self.basic_blocks.push(BlockInfo {
+    pub(super) fn new_block(&mut self) -> BasicBlock {
+        self.body.blocks.push(BasicBlockInfo {
             stmts: IndexVec::new(),
             terminator: None,
         })
     }
-    fn goto(&mut self, span: Span, target: BasicBlock) {
+    pub(super) fn unreachable(&mut self, span: Span) {
+        self.terminate(Terminator {
+            span,
+            kind: mir::TerminatorKind::Unreachable,
+        });
+    }
+    pub(super) fn goto(&mut self, span: Span, target: BasicBlock) {
         self.terminate(Terminator {
             span,
             kind: mir::TerminatorKind::Goto(target),
@@ -129,7 +139,7 @@ impl<'a> MirBuilder<'a> {
             kind: mir::TerminatorKind::Return,
         });
     }
-    fn assert(
+    pub(super) fn assert(
         &mut self,
         span: Span,
         msg: AssertMessage,
@@ -143,9 +153,30 @@ impl<'a> MirBuilder<'a> {
         });
     }
     fn terminate(&mut self, terminator: Terminator) {
-        self.basic_blocks[self.current_block].terminator = Some(terminator);
+        self.body.blocks[self.current_block].terminator = Some(terminator);
     }
-    fn if_then_else(
+    pub(super) fn switch(
+        &mut self,
+        span: Span,
+        value: Value,
+        targets: Box<[(Constant, BasicBlock)]>,
+        otherwise: BasicBlock,
+    ) {
+        self.terminate(Terminator {
+            span,
+            kind: mir::TerminatorKind::Switch(value, targets, otherwise),
+        });
+    }
+    pub(super) fn false_edge(&mut self, span: Span, real: BasicBlock, imag: BasicBlock) {
+        self.terminate(Terminator {
+            span,
+            kind: mir::TerminatorKind::FalseEdge {
+                real_target: real,
+                false_target: imag,
+            },
+        });
+    }
+    pub(super) fn if_then_else(
         &mut self,
         span: Span,
         condition: Value,
@@ -161,13 +192,13 @@ impl<'a> MirBuilder<'a> {
             ),
         });
     }
-    fn new_local(&mut self, ty: Type, kind: LocalKind) -> Local {
+    pub(super) fn new_local(&mut self, ty: Type, kind: LocalKind) -> Local {
         self.body.locals.push(LocalInfo { ty, kind })
     }
     fn insert_var(&mut self, var: LocalVar, local: Local) {
         self.vars.insert(var, local);
     }
-    fn new_var(&mut self, var: LocalVar, name: Symbol, ty: Type) -> Local {
+    pub(super) fn new_var(&mut self, var: LocalVar, name: Symbol, ty: Type) -> Local {
         let local = self.new_local(ty, LocalKind::UserDefined(name));
         self.insert_var(var, local);
         local
@@ -175,37 +206,41 @@ impl<'a> MirBuilder<'a> {
     fn new_param(&mut self, ty: Type, name: Option<Symbol>) -> Local {
         self.new_local(ty, LocalKind::Param(name))
     }
-    fn new_temp(&mut self, ty: Type) -> Local {
+    pub(super) fn new_temp(&mut self, ty: Type) -> Local {
         self.new_local(ty, LocalKind::Temp)
     }
-    fn finish(mut self) -> mir::Body {
-        for block in self.basic_blocks {
-            self.body.blocks.push(BasicBlockInfo {
-                stmts: block.stmts,
-                terminator: block
-                    .terminator
-                    .expect("All blocks should have terminators"),
-            });
-        }
+    fn finish(self) -> mir::Body {
         self.body
     }
-    fn push_unit_assign(&mut self, place: Place, span: Span) {
+    pub(super) fn push_equal_tmp(&mut self, value: Value, span: Span) -> Local {
+        let tmp = self.new_temp(Type::new_bool());
+        self.push_assign(
+            tmp.into(),
+            Rvalue::Binary(
+                mir::BinaryOp::Equals,
+                Box::new((Value::Load(tmp.into()), value)),
+            ),
+            span,
+        );
+        tmp
+    }
+    pub(super) fn push_unit_assign(&mut self, place: Place, span: Span) {
         self.push_constant_assign(place, Constant::ZeroSized(Type::new_unit()), span);
     }
-    fn push_constant_assign(&mut self, place: Place, constant: Constant, span: Span) {
+    pub(super) fn push_constant_assign(&mut self, place: Place, constant: Constant, span: Span) {
         self.push_value_assign(place, Value::Constant(constant), span);
     }
-    fn push_value_assign(&mut self, place: Place, value: Value, span: Span) {
+    pub(super) fn push_value_assign(&mut self, place: Place, value: Value, span: Span) {
         self.push_assign(place, Rvalue::Use(value), span);
     }
-    fn push_assign(&mut self, place: Place, value: Rvalue, span: Span) {
+    pub(super) fn push_assign(&mut self, place: Place, value: Rvalue, span: Span) {
         self.push_stmt(Stmt {
             span,
             kind: mir::StmtKind::Assign(place, value),
         });
     }
     fn push_stmt(&mut self, stmt: Stmt) {
-        self.basic_blocks[self.current_block].stmts.push(stmt);
+        self.body.blocks[self.current_block].stmts.push(stmt);
     }
     fn build_binary_op(
         &mut self,
@@ -234,6 +269,7 @@ impl<'a> MirBuilder<'a> {
                 false,
                 target_block,
             );
+            self.switch_to_block(target_block);
             let result_place = PlaceBuilder::new(result_tmp)
                 .field(FieldIndex::new(0))
                 .to_place();
@@ -335,14 +371,11 @@ impl<'a> MirBuilder<'a> {
     fn as_value(&mut self, expr: ExprId) -> Value {
         match self.thir.expr(expr).kind {
             thir::ExprKind::Constant(def, ref args) => {
-                Value::Constant(mir::Constant::Function(def.into(), args.clone()))
+                Value::Constant(mir::Constant::Named(def.into(), args.clone()))
             }
-            thir::ExprKind::Literal(literal) => Value::Constant(match literal {
-                LiteralKind::Bool(value) => mir::Constant::Bool(value),
-                LiteralKind::Int(value) => mir::Constant::Int(value),
-                LiteralKind::String(value) => mir::Constant::String(value),
-                LiteralKind::IntErr => unreachable!("Can't have 'LiteralKind::IntErr' this here"),
-            }),
+            thir::ExprKind::Literal(literal) => {
+                Value::Constant(Self::constant_from_literal(literal))
+            }
             _ => Value::Load(self.lower_expr_as_place(expr).to_place()),
         }
     }
@@ -389,14 +422,6 @@ impl<'a> MirBuilder<'a> {
                     }
                 }
             }
-            thir::ExprKind::Call(callee, args) => {
-                let args = args
-                    .iter()
-                    .map(|arg| self.as_value(*arg))
-                    .collect::<Box<[_]>>();
-                let callee = self.as_value(*callee);
-                Rvalue::Call(callee, args)
-            }
             thir::ExprKind::Field { .. }
             | thir::ExprKind::Var(..)
             | thir::ExprKind::Index(..)
@@ -408,10 +433,12 @@ impl<'a> MirBuilder<'a> {
             | thir::ExprKind::Assign(..)
             | thir::ExprKind::Match(..)
             | thir::ExprKind::Loop(..)
+            | thir::ExprKind::For(..)
             | thir::ExprKind::Break(..)
             | thir::ExprKind::NeverToAny(..)
             | thir::ExprKind::Block(..)
-            | thir::ExprKind::Return(..) => Rvalue::Use(self.as_value(expr_id)),
+            | thir::ExprKind::Return(..)
+            | thir::ExprKind::Call(..) => Rvalue::Use(self.as_value(expr_id)),
 
             thir::ExprKind::Ref(..) => {
                 Rvalue::Use(Value::Load(self.expr_into_temp(expr_id).into()))
@@ -575,12 +602,12 @@ impl<'a> MirBuilder<'a> {
             result_destination: destination,
             breaks: Vec::new(),
         });
-        let continue_block = f(self);
+        let exit_block = f(self);
         if let Some(scope) = self.loop_scopes.pop() {
             let current_block = self.current_block;
             for Break { block, span } in scope.breaks {
                 self.switch_to_block(block);
-                self.goto(span, continue_block);
+                self.goto(span, exit_block);
             }
             self.switch_to_block(current_block);
         }
@@ -628,6 +655,9 @@ impl<'a> MirBuilder<'a> {
                 self.lower_block(place, self.thir.block(*block), expr.span)
             }
             &thir::ExprKind::Ref(mutable, operand) => {
+                let Type::Ref(_, region, _) = expr.ty else {
+                    unreachable!("This should be a reference type not a {:?}", expr.ty)
+                };
                 let operand_place = self.lower_expr_as_place(operand).to_place();
                 self.push_assign(
                     place,
@@ -636,12 +666,15 @@ impl<'a> MirBuilder<'a> {
                             Mutable::No => mir::BorrowKind::Read,
                             Mutable::Yes(_) => mir::BorrowKind::ReadWrite,
                         },
+                        region,
                         operand_place,
                     ),
                     expr.span,
                 );
             }
-            thir::ExprKind::Match(..) => todo!("Pattern matching"),
+            thir::ExprKind::Match(matched, arms) => {
+                MatchBuilder::new(self, place, *matched, arms, expr).match_expr()
+            }
             thir::ExprKind::Loop(label, body) => {
                 self.in_loop(*label, place, |this| {
                     let old_block = this.current_block;
@@ -655,19 +688,80 @@ impl<'a> MirBuilder<'a> {
                     this.switch_to_new_block()
                 });
             }
-            thir::ExprKind::NeverToAny(never_expr) => {
-                self.expr_into_temp(*never_expr);
-                self.terminate(Terminator {
-                    span: expr.span,
-                    kind: mir::TerminatorKind::Unreachable,
+            thir::ExprKind::For(label, pattern, start, end, body) => {
+                let int_ty = self.thir.expr(*start).ty.clone();
+                let iter_var = self.new_temp(int_ty.clone());
+                self.expr_into_place(*start, iter_var.into());
+
+                let end_var = self.new_temp(int_ty.clone());
+                self.expr_into_place(*end, end_var.into());
+
+                self.in_loop(*label, place.clone(), |this| {
+                    let old_block = this.current_block;
+
+                    let loop_start = this.switch_to_new_block();
+
+                    let condition_tmp = this.new_temp(int_ty.clone());
+                    let condition_rvalue = this.build_binary_op(
+                        pattern.span,
+                        Type::new_bool(),
+                        mir::BinaryOp::LesserThan,
+                        Value::Load(iter_var.into()),
+                        Value::Load(end_var.into()),
+                    );
+                    this.push_assign(condition_tmp.into(), condition_rvalue, pattern.span);
+
+                    //Handle the body of the loop
+                    let body_block = this.switch_to_new_block();
+                    this.place_into_pattern(PlaceBuilder::new(iter_var), pattern);
+                    this.lower_expr_as_stmt(*body);
+
+                    let next_iter_value = this.build_binary_op(
+                        pattern.span,
+                        int_ty.clone(),
+                        mir::BinaryOp::Add,
+                        Value::Load(iter_var.into()),
+                        Value::Constant(Constant::Int(1)),
+                    );
+                    this.push_assign(
+                        iter_var.into(),
+                        next_iter_value,
+                        this.thir.expr(*body).span.end(),
+                    );
+                    this.goto(this.thir.expr(*body).span, loop_start);
+
+                    this.switch_to_block(old_block);
+                    this.goto(pattern.span, loop_start);
+                    let exit_block = this.new_block();
+
+                    //Finish loop conditional jump
+                    this.switch_to_block(loop_start);
+                    this.if_then_else(
+                        pattern.span,
+                        Value::Load(condition_tmp.into()),
+                        body_block,
+                        exit_block,
+                    );
+
+                    //Continue to exit block
+                    this.switch_to_block(exit_block);
+                    exit_block
                 });
-                self.switch_to_new_block();
+
+                self.push_unit_assign(place, expr.span.end());
+            }
+            thir::ExprKind::NeverToAny(never_expr) => {
+                let is_call = matches!(self.thir.expr(*never_expr).kind, thir::ExprKind::Call(..));
+                self.expr_into_temp(*never_expr);
+                if !is_call {
+                    self.unreachable(expr.span);
+                    self.switch_to_new_block();
+                }
             }
             thir::ExprKind::Binary(..)
             | thir::ExprKind::Var(_)
             | thir::ExprKind::Literal(_)
             | thir::ExprKind::Constant(..)
-            | thir::ExprKind::Call(..)
             | thir::ExprKind::Array(..)
             | thir::ExprKind::Field { .. }
             | thir::ExprKind::Tuple(..)
@@ -678,6 +772,19 @@ impl<'a> MirBuilder<'a> {
             | thir::ExprKind::Struct { .. } => {
                 let rvalue = self.expr_into_rvalue(expr_id);
                 self.push_assign(place, rvalue, expr.span);
+            }
+
+            thir::ExprKind::Call(callee, args) => {
+                let args = args
+                    .iter()
+                    .map(|arg| self.as_value(*arg))
+                    .collect::<Box<[_]>>();
+                let callee = self.as_value(*callee);
+                self.push_assign(place, Rvalue::Call(callee, args), expr.span);
+                if !self.context.is_inhabited(&expr.ty) {
+                    self.unreachable(expr.span);
+                    self.switch_to_new_block();
+                }
             }
             &thir::ExprKind::Logical(op, left, right) => {
                 let left_span = self.thir.expr(left).span;
@@ -752,13 +859,16 @@ impl<'a> MirBuilder<'a> {
                         pattern.span,
                     );
                 } else {
+                    let Type::Ref(_, region, _) = ty else {
+                        unreachable!("By ref binding should have reference type, not {:?}", ty)
+                    };
                     let kind = match mutable {
                         Mutable::Yes(_) => mir::BorrowKind::ReadWrite,
                         Mutable::No => mir::BorrowKind::Read,
                     };
                     self.push_assign(
                         local.into(),
-                        Rvalue::Ref(kind, place.to_place()),
+                        Rvalue::Ref(kind, region.clone(), place.to_place()),
                         pattern.span,
                     );
                 }

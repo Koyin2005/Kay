@@ -6,7 +6,7 @@ use crate::{
     frontend::hir::DefId,
     indexvec::{Idx, IndexVec},
     span::{Span, symbol::Symbol},
-    types::{FieldIndex, GenericArgs, Type, VariantCaseIndex},
+    types::{FieldIndex, GenericArgs, Region, Type, VariantCaseIndex},
 };
 
 define_id! {
@@ -48,7 +48,7 @@ pub struct Stmt {
     pub span: Span,
     pub kind: StmtKind,
 }
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaceProjection {
     Deref,
     Field(FieldIndex, Option<VariantCaseIndex>),
@@ -94,7 +94,7 @@ pub enum PlaceBase {
     Local(Local),
     Return,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Place {
     pub local: Local,
     pub projections: Box<[PlaceProjection]>,
@@ -133,9 +133,9 @@ impl From<Local> for Place {
         }
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Constant {
-    Function(DefId, GenericArgs),
+    Named(DefId, GenericArgs),
     Int(i64),
     Bool(bool),
     String(Symbol),
@@ -175,6 +175,25 @@ pub enum BinaryOp {
     Or,
 }
 impl BinaryOp {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Add => "Add",
+            Self::AddWithOverflow => "AddWithOverflow",
+            Self::Multiply => "Mul",
+            Self::MultiplyWithOverflow => "MulWithOverflow",
+            Self::Subtract => "Sub",
+            Self::SubtractWithOverflow => "SubWithOverflow",
+            Self::And => "And",
+            Self::Or => "Or",
+            Self::Divide => "Div",
+            Self::Equals => "Eq",
+            Self::GreaterThan => "Gt",
+            Self::NotEquals => "Neq",
+            Self::LesserThan => "Lt",
+            Self::LesserEquals => "Leq",
+            Self::GreaterEquals => "Geq",
+        }
+    }
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Add | Self::AddWithOverflow => "+",
@@ -213,7 +232,7 @@ pub enum Rvalue {
     Use(Value),
     Call(Value, Box<[Value]>),
     Aggregate(Box<AggregateKind>, IndexVec<FieldIndex, Value>),
-    Ref(BorrowKind, Place),
+    Ref(BorrowKind, Region, Place),
     Discrimant(Place),
     Binary(BinaryOp, Box<(Value, Value)>),
     Len(Place),
@@ -236,6 +255,10 @@ pub enum TerminatorKind {
     Switch(Value, Box<[(Constant, BasicBlock)]>, BasicBlock),
     Unreachable,
     Goto(BasicBlock),
+    FalseEdge {
+        real_target: BasicBlock,
+        false_target: BasicBlock,
+    },
     Assert(Value, bool, AssertMessage, BasicBlock),
     Return,
 }
@@ -247,7 +270,7 @@ pub struct Terminator {
 #[derive(Debug, Clone)]
 pub struct BasicBlockInfo {
     pub stmts: IndexVec<StmtIndex, Stmt>,
-    pub terminator: Terminator,
+    pub terminator: Option<Terminator>,
 }
 
 pub mod debug;

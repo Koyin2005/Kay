@@ -43,6 +43,12 @@ impl TypeDef {
             _ => unreachable!("Can only have valid ids"),
         }
     }
+    pub fn case_count(&self) -> usize {
+        match &self.kind {
+            TypeDefKind::Struct(_) => 1,
+            TypeDefKind::Variant(cases) => cases.len(),
+        }
+    }
     pub fn cases(&self) -> IndexVec<VariantCaseIndex, (Definition, &TypeDefCase)> {
         match &self.kind {
             TypeDefKind::Struct(struct_case) => [(Definition::Def(self.id), struct_case)]
@@ -175,7 +181,7 @@ impl<'hir> GlobalContext<'hir> {
     pub fn signature_of(&'hir self, id: DefId) -> (Vec<Type>, Type) {
         match &self.expect_item(id).kind {
             hir::ItemKind::Function(function) => {
-                let lower = TypeLower::new(self, None);
+                let lower = TypeLower::new(self, None, None);
                 let (params, return_ty) = lower.lower_function_sig(&function.sig);
                 (params.collect(), return_ty)
             }
@@ -192,7 +198,7 @@ impl<'hir> GlobalContext<'hir> {
         match &self.nodes[&id] {
             NodeInfo::Field(field) => field.name,
             NodeInfo::VariantCase(case) => case.name,
-            NodeInfo::VariantField(_) => unreachable!("This can't be accessed"),
+            NodeInfo::VariantField(_) => unreachable!("Variant fields can't have idents"),
             NodeInfo::Item(item) => match &item.kind {
                 hir::ItemKind::Function(function) => function.name,
                 hir::ItemKind::TypeDef(ty) => ty.name,
@@ -323,7 +329,7 @@ impl<'hir> GlobalContext<'hir> {
         self.generics_arena.alloc(Generics { owner: def, params })
     }
     pub fn type_of(&self, def: Definition) -> TypeScheme {
-        let ty_lower = TypeLower::new(self, None);
+        let ty_lower = TypeLower::new(self, None, None);
         match def {
             Definition::Def(id) => match self.nodes[&id] {
                 NodeInfo::GenericParam(param) => {

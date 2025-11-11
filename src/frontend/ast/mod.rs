@@ -44,6 +44,7 @@ pub struct Stmt {
 #[derive(Clone, Debug)]
 pub enum StmtKind {
     Item(Box<Item>),
+    LetRegion(NodeId, Ident),
     Let(Box<Pattern>, Option<Box<Type>>, Box<Expr>),
     ExprWithSemi(Box<Expr>),
     Expr(Box<Expr>),
@@ -159,16 +160,11 @@ pub enum LiteralKind {
     String(Symbol),
     IntErr,
 }
-
-#[derive(Clone, Debug)]
-pub enum IteratorExprKind {
-    Range(Box<Expr>, Box<Expr>),
-    Expr(Box<Expr>),
-}
 #[derive(Clone, Debug)]
 pub struct IteratorExpr {
     pub span: Span,
-    pub kind: IteratorExprKind,
+    pub start: Expr,
+    pub end: Expr,
 }
 #[derive(Clone, Debug)]
 pub struct ExprField {

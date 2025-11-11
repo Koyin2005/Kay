@@ -102,18 +102,22 @@ const ALL_SYMBOLS: &[&str] = &[
 pub mod symbols {
     use crate::span::symbol::{ALL_SYMBOLS, Symbol};
 
-    const fn find_symbol_index(txt: &'static str) -> u32 {
+    const fn find_symbol(txt: &'static str) -> Symbol {
         let mut i = 0;
         while i < ALL_SYMBOLS.len() {
             let curr = ALL_SYMBOLS[i];
             if curr.eq_ignore_ascii_case(txt) {
-                return i as u32;
+                return Symbol(i as u32);
             }
             i += 1;
         }
         panic!("Found an unknown symbol.")
     }
-    pub const PANIC: Symbol = Symbol::new(find_symbol_index("panic"));
-    pub const LEN: Symbol = Symbol::new(find_symbol_index("len"));
-    pub const BUILTINS: Symbol = Symbol::new(find_symbol_index("builtins"));
+    pub const PANIC: Symbol = find_symbol("panic");
+    pub const LEN: Symbol = find_symbol("len");
+    pub const BUILTINS: Symbol = find_symbol("builtins");
+    pub const OPTION: Symbol = find_symbol("Option");
+    pub const SOME: Symbol = find_symbol("Some");
+    pub const NONE: Symbol = find_symbol("None");
+    pub const PRINTLN: Symbol = find_symbol("println");
 }

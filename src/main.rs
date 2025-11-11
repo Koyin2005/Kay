@@ -49,6 +49,7 @@ fn main() {
             return;
         }
     };
+    let global_diagnostics = DiagnosticReporter::new(source_files.clone());
     let mut next_id = NodeId::FIRST;
     let modules = source_files
         .get_source_files()
@@ -57,8 +58,7 @@ fn main() {
         .filter_map(|(file_index, source_file)| {
             let file_index = file_index.try_into().ok()?;
             let lexer = Lexer::new(source_file, file_index);
-            let parse_diagnostics = DiagnosticReporter::new(source_files.clone());
-            let parser = Parser::new(source_file.name(), lexer, parse_diagnostics, next_id);
+            let parser = Parser::new(source_file.name(), lexer, &global_diagnostics, next_id);
             parser.parse().ok().inspect(|module| {
                 next_id = module.id.plus(1);
             })
@@ -66,7 +66,6 @@ fn main() {
     let ast = Ast {
         modules: modules.collect(),
     };
-    let global_diagnostics = DiagnosticReporter::new(source_files.clone());
     let results = Resolver::new(&global_diagnostics).resolve(&ast);
 
     let hir = AstLower::new(results, &global_diagnostics).lower_ast(&ast);

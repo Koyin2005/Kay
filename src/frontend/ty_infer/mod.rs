@@ -128,8 +128,10 @@ impl TypeInfer {
                 Ok(Region::Generic(*name, *index))
             }
 
-            (Region::Local(index), Region::Local(other_index)) if index == other_index => {
-                Ok(Region::Local(*index))
+            (Region::Local(name, index), Region::Local(other_name, other_index))
+                if index == other_index && name == other_name =>
+            {
+                Ok(Region::Local(*name, *index))
             }
             (Region::Infer(var), region) | (region, Region::Infer(var)) => {
                 let mut occurs_check = OccursCheck {

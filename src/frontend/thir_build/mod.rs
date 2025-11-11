@@ -59,6 +59,45 @@ impl<'ctxt> ThirBuilder<'ctxt> {
         }
     }
     fn lower_expr(&mut self, expr: &hir::Expr) -> ExprId {
+        let expr = self.make_expr_adjusted(expr);
+        self.body.exprs.push(expr)
+    }
+    fn get_res(&self, id: HirId) -> Option<Resolution> {
+        self.results.get_res(id)
+    }
+    fn lower_exprs<'a>(&mut self, exprs: impl IntoIterator<Item = &'a hir::Expr>) -> Box<[ExprId]> {
+        exprs
+            .into_iter()
+            .map(|expr| self.lower_expr(expr))
+            .collect()
+    }
+    fn lower_stmt(&mut self, stmt: &hir::Stmt) -> Option<StmtId> {
+        let stmt = match &stmt.kind {
+            hir::StmtKind::Expr(expr) | hir::StmtKind::ExprWithSemi(expr) => Stmt {
+                span: stmt.span,
+                kind: StmtKind::Expr(self.lower_expr(expr)),
+            },
+            hir::StmtKind::Let(pattern, _, expr) => Stmt {
+                span: stmt.span,
+                kind: StmtKind::Let(Box::new(self.lower_pattern(pattern)), self.lower_expr(expr)),
+            },
+            hir::StmtKind::Item(_) | hir::StmtKind::LetRegion(..) => return None,
+        };
+        Some(self.body.stmts.push(stmt))
+    }
+    fn lower_block(&mut self, block: &hir::Block) -> ExprKind {
+        let stmts = block
+            .stmts
+            .iter()
+            .filter_map(|stmt| self.lower_stmt(stmt))
+            .collect();
+        let block = Block {
+            stmts,
+            expr: block.result.as_ref().map(|expr| self.lower_expr(expr)),
+        };
+        ExprKind::Block(self.body.blocks.push(block))
+    }
+    fn make_expr_adjusted(&mut self, expr: &hir::Expr) -> Expr {
         let id = expr.id;
         let mut expr = self.make_expr(expr);
         if let Some(coercion) = self.results.get_coercion(id) {
@@ -82,44 +121,8 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                 }
             }
         }
-        self.body.exprs.push(expr)
+        expr
     }
-    fn get_res(&self, id: HirId) -> Option<Resolution> {
-        self.results.get_res(id)
-    }
-    fn lower_exprs<'a>(&mut self, exprs: impl IntoIterator<Item = &'a hir::Expr>) -> Box<[ExprId]> {
-        exprs
-            .into_iter()
-            .map(|expr| self.lower_expr(expr))
-            .collect()
-    }
-    fn lower_stmt(&mut self, stmt: &hir::Stmt) -> Option<StmtId> {
-        let stmt = match &stmt.kind {
-            hir::StmtKind::Expr(expr) | hir::StmtKind::ExprWithSemi(expr) => Stmt {
-                span: stmt.span,
-                kind: StmtKind::Expr(self.lower_expr(expr)),
-            },
-            hir::StmtKind::Let(pattern, _, expr) => Stmt {
-                span: stmt.span,
-                kind: StmtKind::Let(Box::new(self.lower_pattern(pattern)), self.lower_expr(expr)),
-            },
-            hir::StmtKind::Item(_) => return None,
-        };
-        Some(self.body.stmts.push(stmt))
-    }
-    fn lower_block(&mut self, block: &hir::Block) -> ExprKind {
-        let stmts = block
-            .stmts
-            .iter()
-            .filter_map(|stmt| self.lower_stmt(stmt))
-            .collect();
-        let block = Block {
-            stmts,
-            expr: block.result.as_ref().map(|expr| self.lower_expr(expr)),
-        };
-        ExprKind::Block(self.body.blocks.push(block))
-    }
-
     fn make_expr(&mut self, expr: &hir::Expr) -> Expr {
         let kind = match &expr.kind {
             hir::ExprKind::Err => unreachable!("Can't use an ExprKind::Err in thir"),
@@ -208,8 +211,23 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                     expr.as_ref().map(|expr| self.lower_expr(expr)),
                 )
             }
-            hir::ExprKind::For(..) => {
-                todo!("For loop lowering")
+            hir::ExprKind::For(pattern, iterator, block) => {
+                let label = LoopLabel(expr.id);
+
+                ExprKind::For(
+                    label,
+                    Box::new(self.lower_pattern(pattern)),
+                    self.lower_expr(&iterator.start),
+                    self.lower_expr(&iterator.end),
+                    {
+                        let body = Expr {
+                            ty: Type::new_unit(),
+                            span: block.span,
+                            kind: self.lower_block(block),
+                        };
+                        self.body.exprs.push(body)
+                    },
+                )
             }
 
             hir::ExprKind::Match(scrutinee, arms) => ExprKind::Match(
@@ -283,6 +301,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                         self.ctxt.diag().span_info(expr.span)
                     )
                 }) {
+                    Resolution::Region(_) => unreachable!("Can't have regions as values"),
                     Resolution::Variable(var) => break 'a ExprKind::Var(LocalVar(var)),
                     Resolution::Def(id, _) => Definition::Def(id),
                     Resolution::Err => unreachable!("Can't have err resolutions for path"),
@@ -330,7 +349,10 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                         )
                     }) {
                         Resolution::Def(id, DefKind::VariantCase) => id,
-                        Resolution::Def(_, _) | Resolution::Err | Resolution::Variable(..) => {
+                        Resolution::Def(_, _)
+                        | Resolution::Err
+                        | Resolution::Variable(..)
+                        | Resolution::Region(..) => {
                             unreachable!("This can only be a variant case")
                         }
                     };
@@ -339,6 +361,7 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                         .type_def(self.ctxt.expect_parent(id).into())
                         .index_of_case_with_id(id.into());
                     let generic_args = self.results.get_generic_args_or_empty(pattern.id).clone();
+                    let id = self.ctxt.expect_parent(id);
                     PatternKind::Case(
                         id,
                         case,

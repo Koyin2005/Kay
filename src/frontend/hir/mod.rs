@@ -79,6 +79,7 @@ impl DefKind {
 pub enum Resolution<VarId = HirId> {
     Def(DefId, DefKind),
     Variable(VarId),
+    Region(VarId),
     Err,
 }
 impl<Id> Resolution<Id> {
@@ -91,6 +92,7 @@ impl<Id> Resolution<Id> {
     pub fn as_str(&self) -> &str {
         match self {
             Self::Variable(_) => "variable",
+            Self::Region(_) => "region",
             Self::Def(_, kind) => kind.as_str(),
             Self::Err => "{error}",
         }
@@ -124,6 +126,7 @@ pub struct Block {
 }
 #[derive(Debug)]
 pub enum StmtKind {
+    LetRegion(HirId, Ident),
     Let(Pattern, Option<Type>, Box<Expr>),
     Expr(Expr),
     ExprWithSemi(Expr),
@@ -152,9 +155,10 @@ pub struct ExprField {
     pub expr: Expr,
 }
 #[derive(Debug)]
-pub enum Iterator {
-    Ranged(Span, Box<Expr>, Box<Expr>),
-    Expr(HirId, Box<Expr>),
+pub struct Iterator {
+    pub span: Span,
+    pub start: Box<Expr>,
+    pub end: Box<Expr>,
 }
 #[derive(Debug)]
 pub enum ExprKind {
@@ -211,6 +215,7 @@ pub struct GenericArgs {
 pub enum Region {
     Static,
     Param(Ident, DefId),
+    Local(HirId),
     Err,
 }
 #[derive(Debug)]
@@ -357,8 +362,12 @@ impl Generics {
 pub enum Builtin {
     Len,
     Panic,
+    Option,
+    Some,
+    None,
+    Println,
 }
 
 impl Builtin {
-    pub const COUNT: usize = 2;
+    pub const COUNT: usize = 6;
 }

@@ -65,6 +65,7 @@ pub struct Block {
     pub stmts: Box<[StmtId]>,
     pub expr: Option<ExprId>,
 }
+#[derive(Debug)]
 pub enum PatternKind {
     Wilcard,
     Binding(HirId, Symbol, ByRef, Mutable, Type),
@@ -72,6 +73,7 @@ pub enum PatternKind {
     Tuple(Box<[Pattern]>),
     Lit(LiteralKind),
 }
+#[derive(Debug)]
 pub struct Pattern {
     pub ty: Type,
     pub span: Span,
@@ -147,6 +149,7 @@ pub enum ExprKind {
     NeverToAny(ExprId),
     Return(Option<ExprId>),
     Break(LoopLabel, Option<ExprId>),
+    For(LoopLabel, Box<Pattern>, ExprId, ExprId, ExprId),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LocalVar(pub HirId);

@@ -7,10 +7,10 @@ use crate::{
         ast::{
             BinaryOp, BinaryOpKind, Block, ByRef, Expr, ExprField, ExprKind, FunctionDef,
             GenericArg, GenericArgs, GenericParam, GenericParamKind, GenericParams, Item, ItemKind,
-            IteratorExpr, IteratorExprKind, LiteralKind, MatchArm, Module, Mutable, NodeId, Param,
-            PathSegment, Pattern, PatternKind, QualifiedName, Region, RegionKind, Stmt, StmtKind,
-            Struct, StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind,
-            Variant, VariantCase, VariantField,
+            IteratorExpr, LiteralKind, MatchArm, Module, Mutable, NodeId, Param, PathSegment,
+            Pattern, PatternKind, QualifiedName, Region, RegionKind, Stmt, StmtKind, Struct,
+            StructField, Type, TypeDef, TypeDefKind, TypeKind, UnaryOp, UnaryOpKind, Variant,
+            VariantCase, VariantField,
         },
         parsing::token::{Literal, StringComplete, Token, TokenKind},
     },
@@ -40,7 +40,7 @@ impl<T> From<ElementsParsed<T>> for Vec<T> {
     }
 }
 pub struct Parser<'source> {
-    diag_reporter: DiagnosticReporter,
+    diag_reporter: &'source DiagnosticReporter,
     lexer: Lexer<'source>,
     current_token: Token,
     next_id: NodeId,
@@ -54,7 +54,7 @@ impl<'source> Parser<'source> {
     pub fn new(
         name: &str,
         lexer: Lexer<'source>,
-        diag_reporter: DiagnosticReporter,
+        diag_reporter: &'source DiagnosticReporter,
         start_id: NodeId,
     ) -> Self {
         Self {
@@ -286,28 +286,22 @@ impl<'source> Parser<'source> {
         })
     }
     fn parse_for_expr(&mut self) -> ParseResult<Expr> {
-        let start = self.current_token.span;
+        let full_start = self.current_token.span;
         self.advance();
         let pattern = self.parse_pattern()?;
         let _ = self.expect(TokenKind::In, "Expected 'in' after 'for' pattern.");
-        let expr = self.parse_expr(0)?;
-        let iterator = if self.matches_current(TokenKind::DotDot) {
-            let end = self.parse_expr(0)?;
-            let span = start.combined(end.span);
-            IteratorExpr {
-                span,
-                kind: IteratorExprKind::Range(Box::new(expr), Box::new(end)),
-            }
-        } else {
-            IteratorExpr {
-                span: expr.span,
-                kind: IteratorExprKind::Expr(Box::new(expr)),
-            }
+        let start = self.parse_expr(0)?;
+        let start_span = start.span;
+        let _ = self.expect(TokenKind::DotDot, "Expected '..' after 'for' start.");
+        let end = self.parse_expr(0)?;
+        let iterator = IteratorExpr {
+            span: start_span.combined(end.span),
+            start,
+            end,
         };
-        let start_span = self.current_token.span;
         let _ = self.expect(TokenKind::Do, "Expected 'do' after 'for' iterator.");
         let block = self.parse_block_with_end(start_span)?;
-        let span = start.combined(block.span);
+        let span = full_start.combined(block.span);
         Ok(Expr {
             id: self.new_id(),
             kind: ExprKind::For(Box::new(pattern), Box::new(iterator), Box::new(block)),
@@ -1205,6 +1199,19 @@ impl<'source> Parser<'source> {
             span,
         })
     }
+
+    fn parse_region_stmt(&mut self) -> ParseResult<Stmt> {
+        let start = self.current_token.span;
+        self.advance();
+        let name = self.expect_ident("Expected a region name.")?;
+        let end = self.current_token.span;
+        let _ = self.expect(TokenKind::Semicolon, "Expected ';'");
+        Ok(Stmt {
+            id: self.new_id(),
+            kind: StmtKind::LetRegion(self.new_id(), name),
+            span: start.combined(end),
+        })
+    }
     fn parse_let_stmt(&mut self) -> ParseResult<Stmt> {
         let start = self.current_token.span;
         self.advance();
@@ -1442,6 +1449,7 @@ impl<'source> Parser<'source> {
         } else {
             match self.current_token.kind {
                 TokenKind::Let => self.parse_let_stmt(),
+                TokenKind::Region => self.parse_region_stmt(),
                 _ => self.parse_expr_stmt(in_block),
             }
         }

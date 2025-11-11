@@ -44,6 +44,12 @@ impl<'diag> AstLower<'diag> {
                         .copied()
                         .expect("There should always be a hir id for a variable"),
                 ),
+                hir::Resolution::Region(id) => hir::Resolution::Region(
+                    self.node_ids_to_hir_ids
+                        .get(&id)
+                        .copied()
+                        .expect("There should always be a hir id for a region"),
+                ),
                 hir::Resolution::Def(id, kind) => hir::Resolution::Def(id, kind),
                 hir::Resolution::Err => hir::Resolution::Err,
             })
@@ -86,6 +92,7 @@ impl<'diag> AstLower<'diag> {
                     hir::Resolution::Def(id, hir::DefKind::RegionParam) => {
                         hir::Region::Param(name, id)
                     }
+                    hir::Resolution::Region(id) => hir::Region::Local(id),
                     _ => {
                         self.diag.emit_diag("Invalid region.", region.span);
                         hir::Region::Err
@@ -231,6 +238,9 @@ impl<'diag> AstLower<'diag> {
                     let (id, item) = self.lower_item(item)?;
                     self.items.insert(id, item);
                     hir::StmtKind::Item(id)
+                }
+                ast::StmtKind::LetRegion(id, name) => {
+                    hir::StmtKind::LetRegion(self.lower_id(id), name)
                 }
                 ast::StmtKind::Let(ref pat, ref ty, ref expr) => hir::StmtKind::Let(
                     self.lower_pattern(pat),
@@ -640,20 +650,16 @@ impl<'diag> AstLower<'diag> {
         iterator: &ast::IteratorExpr,
         body: &ast::Block,
     ) -> hir::Expr {
+        let loop_label = self.next_hir_id();
         let pat = self.lower_pattern(pat);
-        let iterator = match &iterator.kind {
-            ast::IteratorExprKind::Expr(expr) => {
-                hir::Iterator::Expr(self.next_hir_id(), Box::new(self.lower_expr(expr)))
-            }
-            ast::IteratorExprKind::Range(start, end) => hir::Iterator::Ranged(
-                iterator.span,
-                Box::new(self.lower_expr(start)),
-                Box::new(self.lower_expr(end)),
-            ),
+        let iterator = hir::Iterator {
+            span: iterator.span,
+            start: Box::new(self.lower_expr(&iterator.start)),
+            end: Box::new(self.lower_expr(&iterator.end)),
         };
-        let body = self.lower_block(body);
+        let body = self.with_loop_label(loop_label, |this| this.lower_block(body));
         hir::Expr {
-            id: self.next_hir_id(),
+            id: loop_label,
             span: expr.span,
             kind: hir::ExprKind::For(Box::new(pat), Box::new(iterator), Box::new(body)),
         }

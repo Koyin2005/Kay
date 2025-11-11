@@ -1,5 +1,5 @@
 use crate::{
-    context::{CtxtRef, TypeDefKind},
+    context::{CtxtRef, NodeInfo, TypeDefKind},
     frontend::hir::Definition,
     indexvec::Idx,
     mir::{
@@ -84,14 +84,11 @@ impl<'body> DebugMir<'body> {
                             }
                             TypeDefKind::Variant(variant_cases) => {
                                 let case = case.expect("There should be a case for field");
-                                let (id, variant_case) = &variant_cases[case];
+                                let (id, _) = &variant_cases[case];
                                 let case_ident = self.ctxt.ident((*id).into());
                                 let case_name = case_ident.symbol.as_str();
-                                string = format!("({} as {})", string, case_name);
-                                let field_ident =
-                                    self.ctxt.ident(variant_case.fields[*field].id.into());
-                                let field_name = field_ident.symbol.as_str();
-                                string.push_str(field_name);
+                                string =
+                                    format!("({} as {}).{}", string, case_name, field.into_index());
                             }
                         },
                         _ => unreachable!("Can't get field for this ty {:?}", ty),
@@ -111,7 +108,16 @@ impl<'body> DebugMir<'body> {
         match value {
             Constant::Bool(value) => self.write(if *value { "true" } else { "false" }),
             Constant::Int(value) => self.write(&format!("{value}")),
-            Constant::Function(id, args) => {
+            Constant::Named(id, args) => {
+                if let NodeInfo::VariantCase(_) = self.ctxt.expect_node(*id) {
+                    self.write(
+                        self.ctxt
+                            .ident(self.ctxt.expect_parent(*id))
+                            .symbol
+                            .as_str(),
+                    );
+                    self.write_char('.');
+                }
                 self.write(self.ctxt.ident(*id).symbol.as_str());
                 if !args.is_empty() {
                     self.write_char('[');
@@ -119,7 +125,11 @@ impl<'body> DebugMir<'body> {
                     self.write_char(']');
                 }
             }
-            Constant::String(string) => self.write(string.as_str()),
+            Constant::String(string) => {
+                self.write_char('\"');
+                self.write(string.as_str());
+                self.write_char('\"');
+            }
             Constant::ZeroSized(ty) => self.write(&TypeFormat::new(self.ctxt).format_type(ty)),
         }
     }
@@ -157,11 +167,12 @@ impl<'body> DebugMir<'body> {
                     }
                     Rvalue::Binary(op, left_and_right) => {
                         let (left, right) = left_and_right.as_ref();
+                        self.write(op.name());
+                        self.write_char('(');
                         self.format_value(left);
-                        self.write_space();
-                        self.write(op.as_str());
-                        self.write_space();
+                        self.write_coma();
                         self.format_value(right);
+                        self.write_char(')');
                     }
                     Rvalue::Unary(op, value) => {
                         self.write(match op {
@@ -179,7 +190,7 @@ impl<'body> DebugMir<'body> {
                         self.write(&self.format_place(value));
                         self.write_char(')');
                     }
-                    Rvalue::Ref(borrow_kind, place) => {
+                    Rvalue::Ref(borrow_kind, region, place) => {
                         self.write("ref ");
                         match borrow_kind {
                             BorrowKind::Read => (),
@@ -187,33 +198,42 @@ impl<'body> DebugMir<'body> {
                                 self.write("mut ");
                             }
                         }
+                        self.write_char('{');
+                        self.write(&TypeFormat::new(self.ctxt).format_region(region));
+                        self.write("} ");
                         self.write(&self.format_place(place));
                     }
                     Rvalue::Aggregate(kind, fields) => {
                         let format_fields = |this: &mut DebugMir, ty: &Type| match ty {
                             Type::Nominal(def, _) => {
-                                let field_defs = &self
-                                    .ctxt
-                                    .type_def(*def)
-                                    .as_struct()
-                                    .expect("Should be a struct")
-                                    .fields;
-                                let field_defs_with_field_vals = field_defs
-                                    .iter()
-                                    .map(|def| {
-                                        let Definition::Def(id) = def.id;
-                                        id
-                                    })
-                                    .zip(fields.iter());
-                                let mut first = true;
-                                for (field, value) in field_defs_with_field_vals {
-                                    if !first {
-                                        this.write_char(',');
+                                if let Some(struct_def) = self.ctxt.type_def(*def).as_struct() {
+                                    let field_defs = &struct_def.fields;
+                                    let field_defs_with_field_vals = field_defs
+                                        .iter()
+                                        .map(|def| {
+                                            let Definition::Def(id) = def.id;
+                                            id
+                                        })
+                                        .zip(fields.iter());
+                                    let mut first = true;
+                                    for (field, value) in field_defs_with_field_vals {
+                                        if !first {
+                                            this.write_char(',');
+                                        }
+                                        this.write(self.ctxt.ident(field).symbol.as_str());
+                                        this.write_char('=');
+                                        this.format_value(value);
+                                        first = false;
                                     }
-                                    this.write(self.ctxt.ident(field).symbol.as_str());
-                                    this.write_char('=');
-                                    this.format_value(value);
-                                    first = false;
+                                } else {
+                                    let mut first = true;
+                                    for value in fields.iter() {
+                                        if !first {
+                                            this.write_char(',');
+                                        }
+                                        this.format_value(value);
+                                        first = false;
+                                    }
                                 }
                             }
                             _ => {
@@ -278,7 +298,6 @@ impl<'body> DebugMir<'body> {
                                     );
                                     self.write_char(']');
                                 }
-                                self.write_space();
                                 self.write_char('(');
                                 format_fields(self, &ty);
                                 self.write_char(')');
@@ -314,13 +333,18 @@ impl<'body> DebugMir<'body> {
 
                 self.write(" -> ");
                 self.write_char('[');
+                let mut first = true;
                 for (constant, target) in targets {
+                    if !first {
+                        self.write(", ");
+                    }
                     self.format_constant(constant);
                     self.write(" : ");
                     self.write(&format!("bb{}", target.0));
+                    first = false;
                 }
                 if !targets.is_empty() {
-                    self.write_char(',');
+                    self.write(", ");
                 }
                 self.write("otherwise : ");
                 self.write(&format!("bb{}", otherwise.0));
@@ -366,6 +390,16 @@ impl<'body> DebugMir<'body> {
                 self.write(&format!("bb{}", target.0));
                 self.write_char(';');
             }
+            TerminatorKind::FalseEdge {
+                real_target,
+                false_target,
+            } => {
+                self.write("false_edge real -> ");
+                self.write(&format!("bb{}, ", real_target.0));
+                self.write("imaginary -> ");
+                self.write(&format!("bb{}", false_target.0));
+                self.write_char(';');
+            }
         }
         self.write_newline();
     }
@@ -376,7 +410,9 @@ impl<'body> DebugMir<'body> {
         for stmt in &self.body.blocks[block].stmts {
             self.format_stmt(stmt);
         }
-        self.format_terminator(&self.body.blocks[block].terminator);
+        if let Some(ref terminator) = self.body.blocks[block].terminator {
+            self.format_terminator(terminator);
+        }
     }
     fn format_body(&mut self) {
         for (local, info) in self.body.locals.iter_enumerated() {

@@ -1,6 +1,10 @@
-use crate::frontend::ast::{
-    self, Ast, Block, Expr, ExprKind, GenericArgs, Item, ItemKind, IteratorExpr, IteratorExprKind,
-    Module, Pattern, PatternKind, Stmt, StmtKind, Type, TypeDefKind, TypeKind,
+use crate::{
+    NodeId,
+    frontend::ast::{
+        self, Ast, Block, Expr, ExprKind, GenericArgs, Item, ItemKind, IteratorExpr, Module,
+        Pattern, PatternKind, Stmt, StmtKind, Type, TypeDefKind, TypeKind,
+    },
+    span::symbol::Ident,
 };
 
 pub trait Visitor: Sized {
@@ -27,8 +31,12 @@ pub trait Visitor: Sized {
             StmtKind::Let(pat, ty, expr) => {
                 self.visit_let_stmt(pat, ty.as_ref().map(|ty| &**ty), expr);
             }
+            StmtKind::LetRegion(id, name) => {
+                self.visit_region(*id, *name);
+            }
         }
     }
+    fn visit_region(&mut self, _id: NodeId, _name: Ident) {}
     fn visit_let_stmt(&mut self, pat: &Pattern, ty: Option<&Type>, expr: &Expr) {
         self.visit_pat(pat);
         if let Some(ty) = ty {
@@ -143,13 +151,8 @@ pub fn walk_type(visitor: &mut impl Visitor, ty: &Type) {
     }
 }
 pub fn walk_iterator(visitor: &mut impl Visitor, iterator: &IteratorExpr) {
-    match &iterator.kind {
-        IteratorExprKind::Range(start, end) => {
-            visitor.visit_expr(start);
-            visitor.visit_expr(end);
-        }
-        IteratorExprKind::Expr(expr) => visitor.visit_expr(expr),
-    }
+    visitor.visit_expr(&iterator.start);
+    visitor.visit_expr(&iterator.end);
 }
 pub fn walk_expr(visitor: &mut impl Visitor, expr: &Expr) {
     match &expr.kind {

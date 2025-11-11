@@ -1,19 +1,30 @@
+use fxhash::FxHashMap;
+
 use crate::{
     context::CtxtRef,
     frontend::{
-        hir::{self, DefId},
+        hir::{self, DefId, HirId},
         ty_infer::TypeInfer,
     },
-    span::Span,
+    span::{Span, symbol::Symbol},
     types::{GenericArg, GenericArgs, Region, Type},
 };
 pub struct TypeLower<'ctxt> {
     ctxt: CtxtRef<'ctxt>,
     infer: Option<&'ctxt TypeInfer>,
+    local_regions: Option<&'ctxt FxHashMap<HirId, (Symbol, u32)>>,
 }
 impl<'a> TypeLower<'a> {
-    pub fn new(ctxt: CtxtRef<'a>, infer: Option<&'a TypeInfer>) -> Self {
-        Self { ctxt, infer }
+    pub fn new(
+        ctxt: CtxtRef<'a>,
+        infer: Option<&'a TypeInfer>,
+        local_regions: Option<&'a FxHashMap<HirId, (Symbol, u32)>>,
+    ) -> Self {
+        Self {
+            ctxt,
+            infer,
+            local_regions,
+        }
     }
     pub fn lower_function_sig(&self, sig: &hir::FunctionSig) -> (impl Iterator<Item = Type>, Type) {
         (
@@ -57,6 +68,10 @@ impl<'a> TypeLower<'a> {
                     .expect_index(name.symbol),
             ),
             hir::Region::Static => Region::Static,
+            hir::Region::Local(id) => {
+                let (name, index) = self.local_regions.expect("Can't lower region")[id];
+                Region::Local(name, index)
+            }
         }
     }
     fn lower_generic_arg(&self, generic_arg: &hir::GenericArg) -> GenericArg {

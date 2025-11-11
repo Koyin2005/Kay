@@ -35,6 +35,12 @@ pub fn walk_expr<'thir, 'a>(v: &mut impl Visitor<'a>, expr: &'thir thir::Expr) {
                 v.visit_expr(v.body().expr(field.expr));
             }
         }
+        ExprKind::For(_, pat, start, end, expr) => {
+            v.visit_pattern(pat);
+            v.visit_expr(v.body().expr(*start));
+            v.visit_expr(v.body().expr(*end));
+            v.visit_expr(v.body().expr(*expr));
+        }
         ExprKind::Literal(_) | ExprKind::Var(_) | ExprKind::Constant(_, _) => (),
         &ExprKind::NeverToAny(expr)
         | &ExprKind::Field {
