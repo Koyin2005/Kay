@@ -41,23 +41,23 @@ impl<'a> TypeFormat<'a> {
     pub fn format_region(&mut self, region: &Region) {
         match region {
             Region::Local(name, _) => {
-                self.write("local ");
                 self.write(name.as_str());
             }
             Region::Static => self.write("static"),
             Region::Infer(_) => self.write("_"),
             Region::Err => self.write("{unknown}"),
             Region::Generic(name, _) => {
-                self.write("generic ");
                 self.write(name.as_str());
             }
         }
     }
     pub fn format_generic_args<'b>(&mut self, args: impl IntoIterator<Item = &'b GenericArg>) {
+        self.write("[");
         self.format_multiple(args, &|this, arg| match arg {
             GenericArg::Type(ty) => this.format_type(ty),
             GenericArg::Region(region) => this.format_region(region),
-        })
+        });
+        self.write("]");
     }
     fn format_types<'b>(&mut self, tys: impl IntoIterator<Item = &'b Type>) {
         self.format_multiple(tys, &|this, ty| this.format_type(ty))
@@ -74,12 +74,12 @@ impl<'a> TypeFormat<'a> {
             Type::Err => self.write("{unknown}"),
             Type::Ref(ty, region, is_mutable) => {
                 self.write(if let IsMutable::Yes = is_mutable {
-                    "ref mut "
+                    "ref mut {"
                 } else {
-                    "ref "
+                    "ref {"
                 });
                 self.format_region(region);
-                self.write(" ");
+                self.write("} ");
                 self.format_type(ty);
             }
             Type::Function(params, return_type) => {

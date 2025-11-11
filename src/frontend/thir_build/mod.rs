@@ -249,9 +249,12 @@ impl<'ctxt> ThirBuilder<'ctxt> {
                             panic!("Resolution not finished")
                         };
                         match res {
-                            Resolution::Def(id, DefKind::VariantCase) => {
-                                Some((id, self.results.get_generic_args_or_empty(callee.id)))
-                            }
+                            Resolution::Def(id, DefKind::VariantCase) => Some((
+                                id,
+                                self.results
+                                    .get_generic_args(path.id)
+                                    .unwrap_or_else(|| panic!("Should have generic args")),
+                            )),
                             _ => None,
                         }
                     }

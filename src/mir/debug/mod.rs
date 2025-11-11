@@ -297,11 +297,9 @@ impl<'body> DebugMir<'body> {
                                         .as_str(),
                                 );
                                 if !args.is_empty() {
-                                    self.write_char('[');
                                     let mut format = TypeFormat::new(self.ctxt);
                                     format.format_generic_args(args);
                                     self.write(&format.take());
-                                    self.write_char(']');
                                 }
                                 self.write_char('(');
                                 format_fields(self, &ty);
