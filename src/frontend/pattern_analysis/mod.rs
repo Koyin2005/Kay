@@ -67,7 +67,7 @@ impl Pattern {
                     Type::Tuple(_) => String::with_capacity(2),
                     ty => unreachable!(
                         "Cannot have tuple constructor with non-product type {}",
-                        TypeFormat::new(ctxt).format_type(ty)
+                        TypeFormat::ty_to_string(ctxt, ty)
                     ),
                 };
                 txt.push('(');

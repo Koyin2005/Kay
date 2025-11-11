@@ -21,7 +21,7 @@ use crate::{
         Span,
         symbol::{Ident, Symbol},
     },
-    types::{FieldIndex, GenericArg, GenericArgs, IsMutable, Region, Type},
+    types::{FieldIndex, GenericArg, GenericArgs, IsMutable, Region, Type, format::TypeFormat},
 };
 #[derive(Clone, PartialEq, Eq)]
 pub struct LocalInfo {
@@ -102,7 +102,7 @@ impl<'ctxt> TypeCheck<'ctxt> {
         }
     }
     fn format_ty(&self, ty: &Type) -> String {
-        self.infer_ctxt.normalize(ty).format(self.context)
+        TypeFormat::ty_to_string(self.context, &self.infer_ctxt.normalize(ty))
     }
     fn diag<'a>(&'a self) -> &'a DiagnosticReporter
     where

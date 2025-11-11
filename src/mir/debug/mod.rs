@@ -44,7 +44,7 @@ impl<'body> DebugMir<'body> {
 
         self.write_char('(');
         let (params, return_ty) = self.ctxt.signature_of(self.body.info.id);
-        let formatter = TypeFormat::new(self.ctxt);
+        let mut formatter = TypeFormat::new(self.ctxt);
         let mut first = true;
         for (i, param) in params.into_iter().enumerate() {
             let i = i + 1;
@@ -52,13 +52,15 @@ impl<'body> DebugMir<'body> {
                 self.write_coma();
             }
             self.write(&format!("{} : ", Local::new(i)));
-            self.write(&formatter.format_type(&param));
+            formatter.format_type(&param);
+            self.write(&formatter.take());
             first = false;
         }
         self.write_char(')');
         self.write_space();
         self.write("-> ");
-        self.write(&formatter.format_type(&return_ty));
+        formatter.format_type(&return_ty);
+        self.write(&formatter.finish());
         self.write_space();
         self.write_char('{');
         self.write_newline();
@@ -118,10 +120,13 @@ impl<'body> DebugMir<'body> {
                     );
                     self.write_char('.');
                 }
+
                 self.write(self.ctxt.ident(*id).symbol.as_str());
                 if !args.is_empty() {
                     self.write_char('[');
-                    self.write(&TypeFormat::new(self.ctxt).format_generic_args(args));
+                    let mut format = TypeFormat::new(self.ctxt);
+                    format.format_generic_args(args);
+                    self.write(&format.finish());
                     self.write_char(']');
                 }
             }
@@ -130,7 +135,7 @@ impl<'body> DebugMir<'body> {
                 self.write(string.as_str());
                 self.write_char('\"');
             }
-            Constant::ZeroSized(ty) => self.write(&TypeFormat::new(self.ctxt).format_type(ty)),
+            Constant::ZeroSized(ty) => self.write(&TypeFormat::ty_to_string(self.ctxt, ty)),
         }
     }
     fn format_value(&mut self, value: &Value) {
@@ -199,7 +204,7 @@ impl<'body> DebugMir<'body> {
                             }
                         }
                         self.write_char('{');
-                        self.write(&TypeFormat::new(self.ctxt).format_region(region));
+                        self.write(&TypeFormat::region_to_string(self.ctxt, region));
                         self.write("} ");
                         self.write(&self.format_place(place));
                     }
@@ -263,9 +268,9 @@ impl<'body> DebugMir<'body> {
                                 self.write(self.ctxt.ident(*id).symbol.as_str());
                                 if !args.is_empty() {
                                     self.write_char('[');
-                                    self.write(
-                                        &TypeFormat::new(self.ctxt).format_generic_args(args),
-                                    );
+                                    let mut format = TypeFormat::new(self.ctxt);
+                                    format.format_generic_args(args);
+                                    self.write(&format.finish());
                                     self.write_char(']');
                                 }
                                 self.write_space();
@@ -293,9 +298,9 @@ impl<'body> DebugMir<'body> {
                                 );
                                 if !args.is_empty() {
                                     self.write_char('[');
-                                    self.write(
-                                        &TypeFormat::new(self.ctxt).format_generic_args(args),
-                                    );
+                                    let mut format = TypeFormat::new(self.ctxt);
+                                    format.format_generic_args(args);
+                                    self.write(&format.take());
                                     self.write_char(']');
                                 }
                                 self.write_char('(');
@@ -420,7 +425,7 @@ impl<'body> DebugMir<'body> {
             self.write(&format!(
                 "{} : {}",
                 local,
-                TypeFormat::new(self.ctxt).format_type(&info.ty)
+                TypeFormat::ty_to_string(self.ctxt, &info.ty)
             ));
             self.write_space();
             self.write_char('(');

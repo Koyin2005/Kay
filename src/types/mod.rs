@@ -1,11 +1,9 @@
 use std::{fmt::Debug, hash::Hash};
 
 use crate::{
-    context::CtxtRef,
     define_id,
     frontend::{ast, hir, ty_infer::InferVar},
     span::symbol::Symbol,
-    types::format::TypeFormat,
 };
 use fxhash::FxHashSet;
 
@@ -160,9 +158,6 @@ impl Type {
     }
     pub fn new_array(element: Self) -> Self {
         Self::Array(Box::new(element))
-    }
-    pub fn format(&self, ctxt: CtxtRef) -> String {
-        TypeFormat::new(ctxt).format_type(self)
     }
     pub fn region_vars(&self) -> FxHashSet<InferVar> {
         struct InferVarCollect {
