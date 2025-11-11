@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 pub const KAE_EXTENSION: &str = "k";
 pub const KAE_EXTENSION_WITH_DOT: &str = ".k";
 pub enum ConfigError {
-    ExpectedArgs { expected: usize, got: usize },
+    NoArgs,
+    NoFileArg,
     FileDoesNotExist(String),
     InvalidFile,
 }
@@ -43,20 +44,41 @@ fn try_as_file_path(path: &Path) -> Option<FilePath> {
 }
 pub struct Config {
     kind: PathKind,
+    emit_mir_file_names: Vec<String>,
 }
 impl Config {
     pub fn new(args: &[String]) -> Result<Self, ConfigError> {
-        let [_, file_name] = args else {
-            return Err(ConfigError::ExpectedArgs {
-                expected: 1,
-                got: args.len() - 1,
-            });
+        let [_, args @ ..] = args else {
+            return Err(ConfigError::NoArgs);
+        };
+        let [file_name, rest @ ..] = args else {
+            return Err(ConfigError::NoFileArg);
         };
         let path = Path::new(file_name);
         if !path.exists() {
             return Err(ConfigError::FileDoesNotExist(file_name.to_string()));
         }
+        let emit_mir_flag_index = rest
+            .iter()
+            .enumerate()
+            .find_map(|(index, name)| (name == "--emit_mir").then_some(index));
+        let mir_file_names = if let Some(emit_mir_flag_index) = emit_mir_flag_index {
+            let mut names = Vec::new();
+            for name in rest[emit_mir_flag_index + 1..]
+                .iter()
+                .map(|name| name.strip_prefix('-'))
+            {
+                let Some(name) = name else {
+                    break;
+                };
+                names.push(name.to_string());
+            }
+            names
+        } else {
+            Vec::new()
+        };
         Ok(Self {
+            emit_mir_file_names: mir_file_names,
             kind: if path.is_dir() {
                 PathKind::Folder({
                     let dir = std::fs::read_dir(path).expect("Should be a valid file.");
@@ -70,6 +92,9 @@ impl Config {
                 return Err(ConfigError::InvalidFile);
             },
         })
+    }
+    pub fn get_all_mir_file_names(&self) -> Vec<&str> {
+        self.emit_mir_file_names.iter().map(|string| string.as_str()).collect()
     }
     pub fn get_all_source_files(&self) -> Result<Box<[SourceFile]>, SourceError> {
         match &self.kind {

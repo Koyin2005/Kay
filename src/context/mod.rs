@@ -292,6 +292,13 @@ impl<'hir> GlobalContext<'hir> {
     pub fn expect_node(&self, id: DefId) -> &NodeInfo<'_> {
         &self.nodes[&id]
     }
+    pub fn expect_module(&self, id: DefId) -> Symbol{
+        let item = self.expect_item(id);
+        let hir::ItemKind::Module(module_name) = item.kind else {
+            panic!("Expected a module")
+        };
+        module_name
+    }
     pub fn expect_variant_case_node(&self, id: DefId) -> &hir::VariantCase {
         let NodeInfo::VariantCase(case) = self.expect_node(id) else {
             panic!("Expected a variant case")
@@ -487,5 +494,13 @@ impl<'hir> GlobalContext<'hir> {
         };
         name.push_str(self.ident(id).symbol.as_str());
         name
+    }
+    pub fn root_module_of(&self, mut id: DefId) -> DefId{
+        let mut old_parent = None;
+        while let Some(curr) = self.get_parent(id) {
+            old_parent = Some(curr);
+            id = curr;
+        }
+        old_parent.expect("This should be called on a non-root module")
     }
 }

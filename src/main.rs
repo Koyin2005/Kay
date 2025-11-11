@@ -13,25 +13,23 @@ fn main() {
     let args = std::env::args().collect::<Vec<_>>();
     let config = match Config::new(&args) {
         Ok(config) => config,
-        Err(error) => match error {
-            ConfigError::ExpectedArgs { expected, got } => {
-                eprintln!(
-                    "Expected {} command line arg{}got {}.",
-                    expected,
-                    if expected == 1 { " " } else { "s " },
-                    got
-                );
-                return;
+        Err(error) => {
+            match error {
+                ConfigError::NoArgs => {
+                    eprintln!("No args provided.");
+                }
+                ConfigError::NoFileArg => {
+                    eprintln!("No file or folder provided.");
+                }
+                ConfigError::FileDoesNotExist(name) => {
+                    eprintln!("'{name}' does not exist.");
+                }
+                ConfigError::InvalidFile => {
+                    eprintln!("Invalid file.");
+                }
             }
-            ConfigError::FileDoesNotExist(name) => {
-                eprintln!("'{name}' does not exist.");
-                return;
-            }
-            ConfigError::InvalidFile => {
-                eprintln!("Invalid file.");
-                return;
-            }
-        },
+            return;
+        }
     };
     let source_files = match config.get_all_source_files() {
         Ok(source_files) => source_files,
@@ -97,8 +95,15 @@ fn main() {
         .map(|body| (body.info.owner, MirBuilder::new(body, context_ref).build()))
         .collect::<IndexMap<_, _>>();
 
-    for (_, body) in bodies.iter_mut() {
-        println!("{}", DebugMir::new(body, context_ref).output());
+    let module_names_to_output = config.get_all_mir_file_names();
+    for (&id, body) in bodies.iter_mut() {
+        
+        let module = context_ref.root_module_of(id);
+        let module_name = context_ref.expect_module(module);
+        if module_names_to_output.contains(&module_name.as_str()){
+            println!("{}", DebugMir::new(body, context_ref).output());
+        }
+
     }
     global_diagnostics.emit();
 }
