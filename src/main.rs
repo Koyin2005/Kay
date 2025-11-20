@@ -85,7 +85,6 @@ fn main() {
         thir_build.build(results.owner(), body, results);
     }
     let mut thir = thir_build.finish();
-
     for body in thir.bodies.iter_mut() {
         PatCheck::new(body, context_ref).check();
     }
@@ -97,13 +96,11 @@ fn main() {
 
     let module_names_to_output = config.get_all_mir_file_names();
     for (&id, body) in bodies.iter_mut() {
-        
         let module = context_ref.root_module_of(id);
         let module_name = context_ref.expect_module(module);
-        if module_names_to_output.contains(&module_name.as_str()){
+        if module_names_to_output.contains(&module_name.as_str()) {
             println!("{}", DebugMir::new(body, context_ref).output());
         }
-
     }
     global_diagnostics.emit();
 }

@@ -63,17 +63,13 @@ impl Config {
             .enumerate()
             .find_map(|(index, name)| (name == "--emit_mir").then_some(index));
         let mir_file_names = if let Some(emit_mir_flag_index) = emit_mir_flag_index {
-            let mut names = Vec::new();
-            for name in rest[emit_mir_flag_index + 1..]
+            rest[emit_mir_flag_index + 1..]
                 .iter()
                 .map(|name| name.strip_prefix('-'))
-            {
-                let Some(name) = name else {
-                    break;
-                };
-                names.push(name.to_string());
-            }
-            names
+                .take_while(Option::is_some)
+                .filter_map(std::convert::identity)
+                .map(str::to_string)
+                .collect()
         } else {
             Vec::new()
         };
@@ -94,7 +90,10 @@ impl Config {
         })
     }
     pub fn get_all_mir_file_names(&self) -> Vec<&str> {
-        self.emit_mir_file_names.iter().map(|string| string.as_str()).collect()
+        self.emit_mir_file_names
+            .iter()
+            .map(|string| string.as_str())
+            .collect()
     }
     pub fn get_all_source_files(&self) -> Result<Box<[SourceFile]>, SourceError> {
         match &self.kind {

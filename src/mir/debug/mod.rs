@@ -8,7 +8,6 @@ use crate::{
     },
     types::{Type, format::TypeFormat},
 };
-
 pub struct DebugMir<'body> {
     output: String,
     body: &'body Body,
@@ -120,14 +119,11 @@ impl<'body> DebugMir<'body> {
                     );
                     self.write_char('.');
                 }
-
                 self.write(self.ctxt.ident(*id).symbol.as_str());
                 if !args.is_empty() {
-                    self.write_char('[');
                     let mut format = TypeFormat::new(self.ctxt);
                     format.format_generic_args(args);
                     self.write(&format.finish());
-                    self.write_char(']');
                 }
             }
             Constant::String(string) => {
@@ -267,11 +263,9 @@ impl<'body> DebugMir<'body> {
                             AggregateKind::Struct(id, args) => {
                                 self.write(self.ctxt.ident(*id).symbol.as_str());
                                 if !args.is_empty() {
-                                    self.write_char('[');
                                     let mut format = TypeFormat::new(self.ctxt);
                                     format.format_generic_args(args);
                                     self.write(&format.finish());
-                                    self.write_char(']');
                                 }
                                 self.write_space();
                                 self.write_char('{');

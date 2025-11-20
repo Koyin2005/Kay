@@ -292,7 +292,7 @@ impl<'hir> GlobalContext<'hir> {
     pub fn expect_node(&self, id: DefId) -> &NodeInfo<'_> {
         &self.nodes[&id]
     }
-    pub fn expect_module(&self, id: DefId) -> Symbol{
+    pub fn expect_module(&self, id: DefId) -> Symbol {
         let item = self.expect_item(id);
         let hir::ItemKind::Module(module_name) = item.kind else {
             panic!("Expected a module")
@@ -495,7 +495,7 @@ impl<'hir> GlobalContext<'hir> {
         name.push_str(self.ident(id).symbol.as_str());
         name
     }
-    pub fn root_module_of(&self, mut id: DefId) -> DefId{
+    pub fn root_module_of(&self, mut id: DefId) -> DefId {
         let mut old_parent = None;
         while let Some(curr) = self.get_parent(id) {
             old_parent = Some(curr);

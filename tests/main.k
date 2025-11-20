@@ -6,10 +6,10 @@ type Three =
 | One
 | Two
 | Three
-type Result[T,E] = | Ok(T) | Fail(E)
+type Result[T,E] = | Ok(T) | Err(E)
 
 fun never_to_any[T](x: never) -> T = x
 fun print_int(x : uint) = ()
 fun what_the_helly() = do
-    let a : Option[int] = never_to_any(return);
+    let a = Option.Some[uint](5);
 end

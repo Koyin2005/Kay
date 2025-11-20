@@ -42,7 +42,6 @@ struct Branch {
     arm: ArmId,
     pre_binding_block: Option<BasicBlock>,
     otherwise_block: Option<BasicBlock>,
-    false_edge_start: Option<BasicBlock>,
 }
 fn pattern_into_tests(pattern: &Pattern, place: PlaceBuilder) -> Vec<PlaceTest> {
     match pattern.kind {
@@ -97,7 +96,6 @@ impl<'a, 'body> MatchBuilder<'a, 'body> {
                     arm,
                     pre_binding_block: None,
                     otherwise_block: None,
-                    false_edge_start: None,
                 }
             })
             .collect();
@@ -177,15 +175,18 @@ impl<'a, 'body> MatchBuilder<'a, 'body> {
         targets: &Map<TestBranch, BasicBlock>,
         otherwise_block: BasicBlock,
     ) {
-        let get_branch = |target| targets.get(&target).cloned().unwrap_or(otherwise_block);
+        let get_branch = |branch| targets.get(&branch).cloned().unwrap_or(otherwise_block);
         match test {
             Test::If => {
                 self.mir_builder.switch_to_block(start_block);
+
+                let then_branch = get_branch(TestBranch::Success);
+                let else_branch = get_branch(TestBranch::Fail);
                 self.mir_builder.if_then_else(
                     self.expr.span,
                     Value::Load(place),
-                    get_branch(TestBranch::Success),
-                    get_branch(TestBranch::Fail),
+                    then_branch,
+                    else_branch,
                 );
             }
             Test::Equal(test_const) => {
@@ -193,11 +194,14 @@ impl<'a, 'body> MatchBuilder<'a, 'body> {
                 let equal_tmp = self
                     .mir_builder
                     .push_equal_tmp(Value::Constant(test_const.clone()), self.expr.span);
+
+                let then_branch = get_branch(TestBranch::Success);
+                let else_branch = get_branch(TestBranch::Fail);
                 self.mir_builder.if_then_else(
                     self.expr.span,
                     Value::Load(equal_tmp.into()),
-                    get_branch(TestBranch::Success),
-                    get_branch(TestBranch::Fail),
+                    then_branch,
+                    else_branch,
                 );
             }
             Test::Switch(_) => {
@@ -223,11 +227,12 @@ impl<'a, 'body> MatchBuilder<'a, 'body> {
                     crate::mir::Rvalue::Discrimant(place),
                     self.expr.span,
                 );
+                let otherwise_branch = get_branch(TestBranch::Fail);
                 self.mir_builder.switch(
                     self.expr.span,
                     Value::Load(discr_tmp.into()),
                     targets,
-                    get_branch(TestBranch::Fail),
+                    otherwise_branch,
                 );
             }
             Test::SwitchInt => {
@@ -241,28 +246,24 @@ impl<'a, 'body> MatchBuilder<'a, 'body> {
                         }
                     })
                     .collect();
+                let otherwise_branch = get_branch(TestBranch::Fail);
                 self.mir_builder.switch_to_block(start_block);
                 self.mir_builder.switch(
                     self.expr.span,
                     Value::Load(place),
                     targets,
-                    get_branch(TestBranch::Fail),
+                    otherwise_branch,
                 );
             }
         }
     }
     fn build_match_tree(&mut self, branches: &mut [&mut Branch]) -> BasicBlock {
         let start_block = self.mir_builder.current_block;
-        if let [first, ..] = branches
-            && first.false_edge_start.is_none()
-        {
-            first.false_edge_start = Some(start_block);
-        }
         match branches {
             [] => start_block,
             [first, rest @ ..] if first.tests.is_empty() => {
-                let otherwise_block = self.mir_builder.new_block();
                 first.pre_binding_block = Some(start_block);
+                let otherwise_block = self.mir_builder.new_block();
                 first.otherwise_block = Some(otherwise_block);
                 self.mir_builder.switch_to_block(otherwise_block);
                 self.build_match_tree(rest)
@@ -289,10 +290,11 @@ impl<'a, 'body> MatchBuilder<'a, 'body> {
                         (branch, branch_start)
                     })
                     .collect::<Map<_, _>>();
-                self.mir_builder.switch_to_block(rest_block);
-                let otherwise_block = self.build_match_tree(rest);
+
+
                 self.perform_test(place, &test, start_block, &targets, rest_block);
-                otherwise_block
+                self.mir_builder.switch_to_block(rest_block);
+                self.build_match_tree(rest)
             }
         }
     }
@@ -302,20 +304,24 @@ impl<'a, 'body> MatchBuilder<'a, 'body> {
         let otherwise_block = self.build_match_tree(&mut branches);
         self.mir_builder.switch_to_block(otherwise_block);
         self.mir_builder.unreachable(self.expr.span);
+
         let mut next_candidate_start_block = None;
         for branch in branches.iter_mut().rev() {
-            if let Some(next_candidate_start) = next_candidate_start_block {
-                let pre_binding_block = branch.pre_binding_block.unwrap();
-                let actual_binding_block = self.mir_builder.new_block();
-                self.mir_builder.switch_to_block(pre_binding_block);
-                self.mir_builder.false_edge(
-                    self.expr.span,
-                    actual_binding_block,
-                    next_candidate_start,
-                );
-                branch.pre_binding_block = Some(actual_binding_block);
-            }
-            next_candidate_start_block = branch.false_edge_start;
+            next_candidate_start_block =
+                if let Some(next_candidate_start) = next_candidate_start_block {
+                    let pre_binding_block = branch.pre_binding_block.unwrap();
+                    let actual_binding_block = self.mir_builder.new_block();
+                    self.mir_builder.switch_to_block(pre_binding_block);
+                    self.mir_builder.false_edge(
+                        self.expr.span,
+                        actual_binding_block,
+                        next_candidate_start,
+                    );
+                    branch.pre_binding_block = Some(actual_binding_block);
+                    Some(pre_binding_block)
+                } else {
+                    branch.pre_binding_block
+                }
         }
         let arm_end_blocks = branches
             .iter_mut()
